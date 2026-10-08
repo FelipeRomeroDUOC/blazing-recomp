@@ -13,8 +13,9 @@
 *.so
 *.dylib
 
-# Código C temporal generado (si no se versiona)
-# *.c
+# Código C recompilado (archivos derivados gigantes para estudio local)
+/src-c/
+*.c
 
 # Archivos de guardado de partidas
 *.sav
