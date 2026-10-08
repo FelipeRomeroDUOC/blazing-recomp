@@ -1,6 +1,6 @@
 # Propuestas de Cambio (Nivel 2)
 
-Directorio destinado a almacenar las propuestas de cambio de **Nivel 2** según el flujo de la skill [`propuesta-verificable`](file:///.agents/skills/propuesta-verificable/SKILL.md).
+Directorio destinado a almacenar las propuestas de cambio de **Nivel 2** según el flujo de la skill [`propuesta-verificable`](../../.agents/skills/propuesta-verificable/SKILL.md).
 
 ---
 
@@ -13,7 +13,7 @@ docs/propuestas/AAAA-MM-DD_nombre-descriptivo.md
 
 ## Estructura requerida
 
-Las propuestas deben crearse a partir de la plantilla en [`.agents/skills/propuesta-verificable/assets/plantilla-propuesta.md`](file:///.agents/skills/propuesta-verificable/assets/plantilla-propuesta.md) y contener:
+Las propuestas deben crearse a partir de la plantilla en [`.agents/skills/propuesta-verificable/assets/plantilla-propuesta.md`](../../.agents/skills/propuesta-verificable/assets/plantilla-propuesta.md) y contener:
 1. **Intención y Contexto:** Problema, restricciones y alternativas descartadas.
 2. **Criterios de Aceptación:** Escenarios Dado / Cuando / Entonces con nombre de test.
 3. **Suposiciones y Prototipos:** Identificación de riesgos antes de tocar código.

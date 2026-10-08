@@ -1,6 +1,6 @@
 # Arquitectura y Guía de Lectura del Código C Recompilado
 
-Esta guía documenta la estructura, convenciones y funcionamiento interno del código C11 generado por el recompilador estático (`recomp`) para **Fire Emblem: The Blazing Blade** en el repositorio [`blazing-recomp`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp).
+Esta guía documenta la estructura, convenciones y funcionamiento interno del código C11 generado por el recompilador estático (`recomp`) para **Fire Emblem: The Blazing Blade** en el repositorio **`blazing-recomp`**.
 
 ---
 
@@ -29,9 +29,9 @@ Debido al volumen de instrucciones (más de 115,000 instrucciones descubiertas),
 
 | Archivo | Tamaño | Líneas | Función en el sistema |
 | :--- | :--- | :--- | :--- |
-| [`1575 - Fire Emblem (E)(Independent)-bios.0.c`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/src-c/1575%20-%20Fire%20Emblem%20%28E%29%28Independent%29-bios.0.c) | 17.7 MB | ~640,000 | Definición de `RtApi`, macros de banderas (`f_nz`, `op_adds`) y primeros ~13,000 bloques de código del juego. |
-| [`1575 - Fire Emblem (E)(Independent)-bios.1.c`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/src-c/1575%20-%20Fire%20Emblem%20%28E%29%28Independent%29-bios.1.c) | 6.4 MB | ~160,000 | Bloques restantes y **tabla maestra de despacho**: el arreglo `rcg_blocks[]` con las 17,207 entradas y `rcg_block_count`. |
-| [`1575 - Fire Emblem (E)(Independent)-bios.def`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/src-c/1575%20-%20Fire%20Emblem%20%28E%29%28Independent%29-bios.def) | 89 B | 6 | Archivo de exportaciones para el linker (`rcg_block_count` y `rcg_blocks`). |
+| [`1575 - Fire Emblem (E)(Independent)-bios.0.c`](../src-c/1575%20-%20Fire%20Emblem%20(E)(Independent)-bios.0.c) | 17.7 MB | ~640,000 | Definición de `RtApi`, macros de banderas (`f_nz`, `op_adds`) y primeros ~13,000 bloques de código del juego. |
+| [`1575 - Fire Emblem (E)(Independent)-bios.1.c`](../src-c/1575%20-%20Fire%20Emblem%20(E)(Independent)-bios.1.c) | 6.4 MB | ~160,000 | Bloques restantes y **tabla maestra de despacho**: el arreglo `rcg_blocks[]` con las 17,207 entradas y `rcg_block_count`. |
+| [`1575 - Fire Emblem (E)(Independent)-bios.def`](../src-c/1575%20-%20Fire%20Emblem%20(E)(Independent)-bios.def) | 89 B | 6 | Archivo de exportaciones para el linker (`rcg_block_count` y `rcg_blocks`). |
 
 ---
 
@@ -127,7 +127,7 @@ En el ARM7TDMI, muchas instrucciones actualizan banderas condicionales según el
 
 ## 7. Desglose de un Caso Práctico (Patrón Real de Fire Emblem)
 
-Observa este bloque extraído de [`src-c/...0.c`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/src-c/1575%20-%20Fire%20Emblem%20%28E%29%28Independent%29-bios.0.c#L137986):
+Observa este bloque extraído de [`src-c/...0.c`](../src-c/1575%20-%20Fire%20Emblem%20(E)(Independent)-bios.0.c):
 
 ```c
 uint32_t b_08000a3e_t(const RtApi* a, void* m) {

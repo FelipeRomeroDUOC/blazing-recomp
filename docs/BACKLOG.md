@@ -25,8 +25,8 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 
 ### Fase 1: Entorno de Desarrollo y Configuración Base
 - [x] 🟩 Inicializar repositorio `blazing-recomp` con Git y `.gitignore` seguro.
-- [x] 🟩 Redactar [`AGENTS.md`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/AGENTS.md) con arquitectura, contexto y plataforma objetivo (Android).
-- [x] 🟩 Integrar y documentar skills del repositorio ([`.agents/skills/`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/.agents/skills/)).
+- [x] 🟩 Redactar [`AGENTS.md`](../AGENTS.md) con arquitectura, contexto y plataforma objetivo (Android).
+- [x] 🟩 Integrar y documentar skills del repositorio ([`.agents/skills/`](../.agents/skills/)).
 - [x] 🟩 Instalar Android NDK (`30.0.16248370`) y configurar `ANDROID_HOME` / `ANDROID_NDK_HOME`.
 - [x] 🟩 Instalar Rust (`rustc`/`cargo` 1.99.0) y añadir targets Android (`aarch64-linux-android`, `x86_64-linux-android`).
 - [x] 🟩 Instalar `cargo-ndk` v4.1.2 para compilación cruzada.
@@ -36,8 +36,8 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 
 ### Fase 2: Mapeo y Cobertura de Código (Modelo Híbrido con Intérprete)
 - [x] 🟩 Decisión arquitectónica: Adoptar modelo híbrido (99%+ C recompilado estático con intérprete como red de seguridad `interpreter = true` en `pack.toml`).
-- [x] 🟩 Redactar [`docs/ARQUITECTURA_C.md`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/docs/ARQUITECTURA_C.md) documentando el modelo de ejecución, registros `c[0..16]`, `RtApi` y análisis de bloques reales de FE7.
-- [ ] ⬜ (Opcional) Enriquecer [`blazing.labels.toml`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/pack.toml) con nombres de símbolos de la comunidad `fe7` (`Reset_Handler`, `BattleMain`, `UnitInit`).
+- [x] 🟩 Redactar [`docs/ARQUITECTURA_C.md`](ARQUITECTURA_C.md) documentando el modelo de ejecución, registros `c[0..16]`, `RtApi` y análisis de bloques reales de FE7.
+- [ ] ⬜ (Opcional) Enriquecer [`blazing.labels.toml`](../pack.toml) con nombres de símbolos de la comunidad `fe7` (`Reset_Handler`, `BattleMain`, `UnitInit`).
 
 
 ---
