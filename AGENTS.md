@@ -96,4 +96,7 @@ El repositorio cuenta con skills locales en [`.agents/skills/`](.agents/skills/)
 
 *(Espacio reservado para preferencias, decisiones de diseño y restricciones añadidas por el usuario durante el desarrollo)*
 
-- 
+- **Portabilidad y Privacidad (Prohibición de rutas locales absolutas):**
+  - **NUNCA** escribir ni versionar rutas absolutas locales del dispositivo del usuario (ej. `C:\Users\...`, `file:///C:/...` o rutas que contengan el nombre de usuario o rutas de sistema) dentro de ningún archivo del repositorio (`.md`, `.toml`, código fuente o scripts).
+  - Todas las referencias y enlaces a archivos dentro del proyecto deben ser **estrictamente relativos al repositorio** (ej. `docs/BACKLOG.md`, `.agents/skills/`, `../src-c/`).
+  - Esto garantiza que el repositorio sea 100% portable, funcione idénticamente en cualquier máquina o sistema operativo y no exponga datos de privacidad del entorno local si se publica en GitHub.
