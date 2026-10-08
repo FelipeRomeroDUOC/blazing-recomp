@@ -34,11 +34,11 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 
 ---
 
-### Fase 2: Mapeo y Cobertura de Código (Hacia 0-Interpreter)
-- [ ] ⬜ Ejecutar sesión inicial de juego con `--record-labels` en *Fire Emblem* (Prólogo y Capítulos 1–4).
-- [ ] ⬜ Generar y consolidar archivo base [`blazing.labels.toml`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/pack.toml).
-- [ ] ⬜ Analizar cobertura de funciones del motor de batalla y cinemáticas.
-- [ ] ⬜ Identificar y registrar rutinas dinámicas copiadas a IWRAM (audio, descompresores, IRQs).
+### Fase 2: Mapeo y Cobertura de Código (Modelo Híbrido con Intérprete)
+- [x] 🟩 Decisión arquitectónica: Adoptar modelo híbrido (99%+ C recompilado estático con intérprete como red de seguridad `interpreter = true` en `pack.toml`).
+- [x] 🟩 Redactar [`docs/ARQUITECTURA_C.md`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/docs/ARQUITECTURA_C.md) documentando el modelo de ejecución, registros `c[0..16]`, `RtApi` y análisis de bloques reales de FE7.
+- [ ] ⬜ (Opcional) Enriquecer [`blazing.labels.toml`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/pack.toml) con nombres de símbolos de la comunidad `fe7` (`Reset_Handler`, `BattleMain`, `UnitInit`).
+
 
 ---
 
