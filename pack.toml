@@ -1,0 +1,28 @@
+[package]
+name = "blazing-recomp"
+version = "0.1.0"
+platforms = ["windows", "linux", "macos"]
+
+[image]
+# 1575 - Fire Emblem: The Blazing Blade (Europe)
+rom-sha256  = "6f2c30823ab0237310b138739ccfad879f1a07c4a782a9cbb92317d60d03cee9"
+# GBA official BIOS
+bios-sha256 = "fd2547724b505f487e6dcb29ec2ecff3af35a841a77ab2e85fd87350abd36570"
+
+[labels]
+# Archivo de mapa de funciones (se completará con --record-labels o gba-mapper)
+file = "blazing.labels.toml"
+
+[runtime]
+menu = true                  # Menú en juego al pulsar Escape
+enhanced-audio = true        # Resampling sinc y shadow mixer
+screen-sim = true            # Simulación de panel LCD con shaders
+engine-hle = "m4a"           # Motor de audio M4A/MP2K detectado
+interpreter = true           # Red de seguridad activa mientras se completan las labels
+
+[build]
+compiler = "clang"           # clang / gcc / tcc
+
+[output]
+binary = true                # Generar ejecutable nativo empaquetado
+c-source = true              # Exportar código fuente C para inspección y mods

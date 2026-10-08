@@ -1,0 +1,26 @@
+# ROMs y BIOS (Archivos propietarios - nunca versionar)
+*.gba
+*.bin
+/roms/
+
+# Artefactos de compilación y bibliotecas nativas
+/out/
+/target/
+/dist/
+*.o
+*.obj
+*.dll
+*.so
+*.dylib
+
+# Código C temporal generado (si no se versiona)
+# *.c
+
+# Archivos de guardado de partidas
+*.sav
+
+# IDEs y sistema
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
