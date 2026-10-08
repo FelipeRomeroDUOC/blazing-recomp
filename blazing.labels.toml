@@ -1,0 +1,78 @@
+format = "gba-labels"
+version = 2
+
+[image]
+sha256 = "6f2c30823ab0237310b138739ccfad879f1a07c4a782a9cbb92317d60d03cee9"
+
+# ==============================================================================
+# VECTOR DE ARRANQUE Y CONTROL DE INTERRUPCIONES (ARM 32-bit)
+# ==============================================================================
+
+[[functions]]
+name = "Reset_Handler"
+address = 0x08000000
+mode = "arm"
+
+[[functions]]
+name = "IntrMain"
+address = 0x080000b4
+mode = "arm"
+
+[[functions]]
+name = "IntrMain_Loop"
+address = 0x080000c0
+mode = "arm"
+
+[[functions]]
+name = "IntrMain_SetSp"
+address = 0x080000c8
+mode = "arm"
+
+[[functions]]
+name = "BranchToThumb_Entry"
+address = 0x080000ec
+mode = "arm"
+
+# ==============================================================================
+# RUTINAS PRINCIPALES DEL JUEGO Y SUBSISTEMAS (Thumb 16-bit)
+# ==============================================================================
+
+[[functions]]
+name = "EventEngine_ContextRestore"
+address = 0x08000a3e
+mode = "thumb"
+
+[[functions]]
+name = "EventEngine_PopRegisters"
+address = 0x08000a40
+mode = "thumb"
+
+[[functions]]
+name = "Sound_M4A_Hook"
+address = 0x08000a90
+mode = "thumb"
+
+[[functions]]
+name = "Font_PutChar"
+address = 0x08000bca
+mode = "thumb"
+
+[[functions]]
+name = "Text_Init"
+address = 0x08000bcc
+mode = "thumb"
+
+[[functions]]
+name = "Battle_MainLoop"
+address = 0x08018844
+mode = "thumb"
+
+[[functions]]
+name = "Unit_InitStats"
+address = 0x08024410
+mode = "thumb"
+
+[[functions]]
+name = "RNG_Advance"
+address = 0x080283c8
+mode = "thumb"

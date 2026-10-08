@@ -37,7 +37,8 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 ### Fase 2: Mapeo y Cobertura de Código (Modelo Híbrido con Intérprete)
 - [x] 🟩 Decisión arquitectónica: Adoptar modelo híbrido (99%+ C recompilado estático con intérprete como red de seguridad `interpreter = true` en `pack.toml`).
 - [x] 🟩 Redactar [`docs/ARQUITECTURA_C.md`](ARQUITECTURA_C.md) documentando el modelo de ejecución, registros `c[0..16]`, `RtApi` y análisis de bloques reales de FE7.
-- [ ] ⬜ (Opcional) Enriquecer [`blazing.labels.toml`](../pack.toml) con nombres de símbolos de la comunidad `fe7` (`Reset_Handler`, `BattleMain`, `UnitInit`).
+- [x] 🟩 Crear y validar [`blazing.labels.toml`](../blazing.labels.toml) enriquecido con símbolos base de FE7 (`Reset_Handler`, `Battle_MainLoop`, `Unit_InitStats`, etc.).
+- [x] 🟩 Generar documentación de referencia técnica Diátaxis en [`docs/referencia/`](referencia/README.md) ([`CONFIGURACION_PACK.md`](referencia/CONFIGURACION_PACK.md) y [`FORMATO_LABELS.md`](referencia/FORMATO_LABELS.md)).
 
 
 ---
