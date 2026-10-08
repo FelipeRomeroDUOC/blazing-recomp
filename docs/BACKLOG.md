@@ -30,7 +30,7 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 - [x] 🟩 Instalar Android NDK (`30.0.16248370`) y configurar `ANDROID_HOME` / `ANDROID_NDK_HOME`.
 - [x] 🟩 Instalar Rust (`rustc`/`cargo` 1.99.0) y añadir targets Android (`aarch64-linux-android`, `x86_64-linux-android`).
 - [x] 🟩 Instalar `cargo-ndk` v4.1.2 para compilación cruzada.
-- [ ] ⬜ Realizar primera compilación de prueba en PC para generar código C11 de *Fire Emblem* y verificar pipeline.
+- [x] 🟩 Realizar primera compilación de prueba en PC para generar código C11 de *Fire Emblem* y verificar pipeline.
 
 ---
 
