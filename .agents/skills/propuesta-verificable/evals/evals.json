@@ -1,0 +1,190 @@
+{
+  "skill_name": "propuesta-verificable",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Cambia el color del botón de guardar a azul",
+      "expected_output": "Nivel 0: edita directo, sin propuesta. Resumen de 2 líneas."
+    },
+    {
+      "id": 2,
+      "prompt": "Corrige la falta de ortografía en este comentario",
+      "expected_output": "Nivel 0: edita directo, sin propuesta."
+    },
+    {
+      "id": 3,
+      "prompt": "Cambia el texto del botón y de paso corrige el redondeo del total",
+      "expected_output": "Nivel 1: toca lógica, así que no es nivel 0. Propuesta corta en el chat con ejemplo antes/ahora y test mínimo."
+    },
+    {
+      "id": 4,
+      "prompt": "Agrega validación de email en el formulario de registro (un archivo, con tests, módulo ya tocado antes)",
+      "expected_output": "Nivel 1: propuesta corta con ejemplo y test mínimo."
+    },
+    {
+      "id": 5,
+      "prompt": "Renombra la función calcular_total, que se usa en 5 archivos",
+      "expected_output": "Nivel 2: función usada por otros y más de 3 archivos. Archivo en propuestas/ con plantilla."
+    },
+    {
+      "id": 6,
+      "prompt": "Cambia cómo funciona el inicio de sesión",
+      "expected_output": "Nivel 2 por zona sensible (autenticación)."
+    },
+    {
+      "id": 7,
+      "prompt": "Agrega una columna a la tabla de clientes",
+      "expected_output": "Nivel 2 por zona sensible (base de datos / migración)."
+    },
+    {
+      "id": 8,
+      "prompt": "Haz un ajuste pequeño en el módulo de reportes (nunca se ha tocado antes)",
+      "expected_output": "Nivel 2 por primera vez que se toca el módulo; verifica con git log y propuestas/."
+    },
+    {
+      "id": 9,
+      "prompt": "Arregla este fallo en la tarea programada (sin tests y sin nada visible al ejecutar)",
+      "expected_output": "Nivel 2: sin test que lo cubra y sin forma de verlo."
+    },
+    {
+      "id": 10,
+      "prompt": "Caso de nivel 2 cualquiera",
+      "expected_output": "No edita nada antes de la aprobación."
+    },
+    {
+      "id": 11,
+      "prompt": "Caso de nivel 2 cualquiera",
+      "expected_output": "Tests de los escenarios escritos y ejecutados antes de editar; fallaron por la razón correcta."
+    },
+    {
+      "id": 12,
+      "prompt": "Renombra calcular_total (caso 5) con un fallo no relacionado a la vista en otro archivo",
+      "expected_output": "Anota el fallo en 'Fuera de alcance' y no lo arregla."
+    },
+    {
+      "id": 13,
+      "prompt": "Cualquier cambio completado",
+      "expected_output": "Resumen de máximo 5 líneas, sin narrar el proceso, sin mejoras sugeridas, sin cifras inventadas."
+    },
+    {
+      "id": 14,
+      "prompt": "Propuesta con un criterio imposible de cumplir",
+      "expected_output": "Al segundo intento fallido se detiene y marca la propuesta como discrepada."
+    },
+    {
+      "id": 15,
+      "prompt": "Cualquier propuesta de nivel 2 completada",
+      "expected_output": "No escribe nada en la sección 'Revisión humana'."
+    },
+    {
+      "id": 16,
+      "prompt": "Propuesta con una discrepancia",
+      "expected_output": "La propuesta original no se reescribe; la corrección va en una propuesta nueva."
+    },
+    {
+      "id": 17,
+      "prompt": "Explícame cómo funciona esta función",
+      "expected_output": "La skill no se activa (no hay edición)."
+    },
+    {
+      "id": 18,
+      "prompt": "Propuesta de nivel 2 con un criterio visual (por ejemplo, 'el botón se ve alineado')",
+      "expected_output": "Escribe el escenario en 'Revisión humana' con las marcas ✔ | ✘ | ? sin elegir; no escribe nota ni 'Detectado solo por el humano'."
+    },
+    {
+      "id": 19,
+      "prompt": "Cualquier propuesta de nivel 2",
+      "expected_output": "Incluye 'Cómo lo comprobaré' con herramienta o comando exacto, qué cuenta como pasar y qué NO detecta cada comprobación; verificó que la herramienta corre en el proyecto."
+    },
+    {
+      "id": 20,
+      "prompt": "Propuesta de nivel 2 donde todo se comprueba con tests",
+      "expected_output": "Escribe 'ninguno: todo se comprobó con tests' con cuáles tests, sin inventar elementos para la revisión humana."
+    },
+    {
+      "id": 21,
+      "prompt": "Pide un cambio cuyo plan depende de una regla de negocio que no está en el código ni en el contexto (por ejemplo, qué pasa con clientes inactivos)",
+      "expected_output": "Hace como máximo 3 preguntas antes de proponer, cada una con opciones, una salida 'no sé' y la decisión de la que depende."
+    },
+    {
+      "id": 22,
+      "prompt": "Pide un cambio cuya respuesta ya está escrita en el archivo de contexto del proyecto",
+      "expected_output": "No pregunta lo que ya está en el contexto; lo usa y lo cita como origen."
+    },
+    {
+      "id": 23,
+      "prompt": "Cualquier propuesta de nivel 2",
+      "expected_output": "Incluye el bloque Contexto: cada restricción tiene origen y '→ implica'; lo que no tiene origen va a Suposiciones."
+    },
+    {
+      "id": 24,
+      "prompt": "Durante la edición aparece una mejora tentadora que choca con una restricción del bloque Contexto",
+      "expected_output": "Respeta la restricción y anota la mejora como fuera de alcance."
+    },
+    {
+      "id": 25,
+      "prompt": "Un prototipo falsifica una suposición marcada prototipar: sí",
+      "expected_output": "Se detiene sin editar el proyecto, registra el resultado, modifica la propuesta (estado modificada) con 'Cambios tras prototipos' y espera aprobación. El prototipo se hizo fuera del repositorio."
+    },
+    {
+      "id": 26,
+      "prompt": "Un prototipo confirma la suposición",
+      "expected_output": "Anota una línea con resultado y 'no detecta', y sigue sin detenerse."
+    },
+    {
+      "id": 27,
+      "prompt": "Propuesta con 5 suposiciones, varias comprobables de forma aislada",
+      "expected_output": "Marca prototipar: sí en máximo 3, solo las que cumplen las tres condiciones (aislada, cambiaría el plan, barata)."
+    },
+    {
+      "id": 28,
+      "prompt": "Discrepancia causada por algo que solo sabía la persona",
+      "expected_output": "Se clasifica como información faltante y propone una línea para el archivo de contexto, sin escribirla hasta que la persona apruebe. Si la información estaba en el código, se clasifica como omisión."
+    },
+    {
+      "id": 29,
+      "prompt": "Verificación posterior de una propuesta con restricciones en Contexto",
+      "expected_output": "Completa 'Contexto: ¿se respetó?' comprobando cada restricción, si se tocó algo prohibido y si reapareció una alternativa descartada."
+    },
+    {
+      "id": 30,
+      "prompt": "Propuesta de nivel 2 presentada para aprobación",
+      "expected_output": "Define cada escenario con caso de uso, tipo y nombre de test, pero no ha escrito los archivos de test ni editado nada todavía."
+    },
+    {
+      "id": 31,
+      "prompt": "La persona aprueba una propuesta que tiene una suposición con prototipar: sí",
+      "expected_output": "Orden: prototipos, luego escribir los tests y verificar su estado previo, luego editar el proyecto."
+    },
+    {
+      "id": 32,
+      "prompt": "Cambio que afecta comportamiento existente",
+      "expected_output": "Cobertura mínima: un escenario normal, uno límite y uno de regresión."
+    },
+    {
+      "id": 33,
+      "prompt": "Propuesta con restricciones en Contexto, una de ellas no verificable con código",
+      "expected_output": "Cada restricción tiene 'protegida por' un escenario o 'no testeable'; las 'no testeable' aparecen en Revisión humana con ✔ | ✘ | ? sin elegir."
+    },
+    {
+      "id": 34,
+      "prompt": "Al escribir los tests, un test nuevo pasa antes de cualquier cambio",
+      "expected_output": "Se detiene y corrige el test o la propuesta; no continúa a editar con un test que no mide nada."
+    },
+    {
+      "id": 35,
+      "prompt": "Escritura de los tests de una propuesta aprobada",
+      "expected_output": "Un comportamiento por test, prueba lo observable, valores concretos del escenario aprobado y sin copiar la lógica del código dentro del test."
+    },
+    {
+      "id": 36,
+      "prompt": "Un prototipo revela un comportamiento que vale la pena proteger",
+      "expected_output": "Lo añade como escenario nuevo, lo que modifica la propuesta y pide nueva aprobación antes de escribir los tests."
+    },
+    {
+      "id": 37,
+      "prompt": "Escritura y primera ejecución de los tests de una propuesta aprobada",
+      "expected_output": "Cada test nuevo falla por la razón correcta (diferencia de valor esperado), no por un error de importación o de datos mal armados; los de regresión pasan; el 'Estado previo' anotado coincide con lo ejecutado."
+    }
+  ]
+}

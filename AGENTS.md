@@ -62,9 +62,37 @@ Directrices, arquitectura y reglas operativas para agentes de IA que trabajen en
    - Preservar comentarios arquitectónicos y decisiones de diseño no obvias.
    - Crear commits atómicos con mensajes descriptivos siguiendo *Conventional Commits* (`feat:`, `fix:`, `refactor:`, `docs:`).
 
+## 5. Skills del Repositorio (`.agents/skills/`)
+
+El repositorio cuenta con skills locales en [`.agents/skills/`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/.agents/skills/) que los agentes deben consultar y aplicar rigurosamente según la tarea solicitada:
+
+### 1. `propuesta-verificable`
+- **Definición:** [`.agents/skills/propuesta-verificable/SKILL.md`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/.agents/skills/propuesta-verificable/SKILL.md)
+- **Propósito:** Flujo estricto de propuesta antes de editar código. El agente predice el cambio exacto (con ejemplos "antes / ahora" o criterios Dado/Cuando/Entonces), espera la aprobación explícita del usuario, edita únicamente lo autorizado y valida el resultado contrastando lo predicho contra lo real.
+- **Niveles de detalle:**
+  - **Nivel 0:** Cambios triviales de texto, formato o comentarios (edición directa sin propuesta previa).
+  - **Nivel 1:** Cambios acotados a un solo archivo sin riesgo sistémico (propuesta concisa en chat con antes/ahora, test o verificación y comando).
+  - **Nivel 2:** Modificación de más de 3 archivos, creación/borrado de archivos, cambios en lógica compartida, módulos nuevos o zonas sensibles (requiere crear una propuesta formal en `propuestas/AAAA-MM-DD_nombre.md` y esperar aprobación antes de tocar código).
+- **Activación:** Siempre que se vaya a modificar, crear o borrar código del proyecto, refactorizar, agregar funciones o modificar la configuración de compilación del port. *No aplica para consultas teóricas o explicaciones.*
+
+### 2. `diataxis-docs`
+- **Definición:** [`.agents/skills/diataxis-docs/SKILL.md`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/.agents/skills/diataxis-docs/SKILL.md)
+- **Propósito:** Diseño y mantenimiento de documentación técnica en español bajo el estándar Diátaxis, manteniendo estricta separación entre los cuatro cuadrantes para no mezclar necesidades del lector.
+- **Estructura en `docs/`:**
+  - **Tutoriales (`docs/tutoriales/`):** Aprendizaje guiado paso a paso para recién llegados.
+  - **Guías prácticas (`docs/guias/`):** Pasos directos para tareas concretas (ej. compilación cruzada con NDK, integración JNI, generación del APK).
+  - **Referencia (`docs/referencia/`):** Especificaciones técnicas puras (APIs nativas, flags de `pack.toml`, comandos).
+  - **Explicación (`docs/explicacion/`):** Decisiones de diseño, arquitectura del port Android y compromisos técnicos.
+- **Activación:** Siempre que se solicite documentar el proyecto, crear guías de instalación o despliegue para Android, documentar interfaces nativas, actualizar docs tras cambios de código o estructurar la carpeta `docs/`.
+
+### 3. `explicar-codigo-documento`
+- **Definición:** [`.agents/skills/explicar-codigo-documento/SKILL.md`](file:///c:/Users/felipe-pc/Desktop/PROYECTOS/blazing-recomp/.agents/skills/explicar-codigo-documento/SKILL.md)
+- **Propósito:** Creación de guías de estudio didácticas paso a paso en Markdown, estructuradas con estilo *rubber-duck* y momentos interactivos "Tu turno" para que el usuario explique y asimile el código antes de ver la respuesta.
+- **Activación:** Siempre que el usuario solicite estudiar o entender el código, generar guías de aprendizaje, apuntes técnicos de un módulo o diga "explícame cómo funciona esto".
+
 ---
 
-## 5. Notas y Reglas Personalizadas del Usuario
+## 6. Notas y Reglas Personalizadas del Usuario
 
 *(Espacio reservado para preferencias, decisiones de diseño y restricciones añadidas por el usuario durante el desarrollo)*
 
