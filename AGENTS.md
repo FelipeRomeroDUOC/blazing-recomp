@@ -62,6 +62,17 @@ Directrices, arquitectura y reglas operativas para agentes de IA que trabajen en
    - Preservar comentarios arquitectónicos y decisiones de diseño no obvias.
    - Crear commits atómicos con mensajes descriptivos siguiendo *Conventional Commits* (`feat:`, `fix:`, `refactor:`, `docs:`).
 
+### Topología de Repositorios Hermanos
+Este proyecto depende de los componentes y crates del motor base ubicados en el repositorio hermano:
+- **Port de Fire Emblem (este repositorio):** `blazing-recomp/`
+- **Toolkit y Motor Upstream:** `../gba-recomp/` (directorio hermano en el mismo entorno de trabajo):
+  - Motor de hardware y bus de GBA: `../gba-recomp/crates/gba-core/`
+  - Decodificador de instrucciones ARMv4T: `../gba-recomp/crates/armv4t/`
+  - Shaders y renderizado GPU: `../gba-recomp/crates/screen/`
+- En `Cargo.toml`, todas las dependencias a componentes del motor base se vinculan exclusivamente mediante rutas relativas:
+  `gba-core = { path = "../gba-recomp/crates/gba-core" }`
+
+
 ## 5. Skills del Repositorio (`.agents/skills/`)
 
 El repositorio cuenta con skills locales en [`.agents/skills/`](.agents/skills/) que los agentes deben consultar y aplicar rigurosamente según la tarea solicitada:
