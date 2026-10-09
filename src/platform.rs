@@ -1,0 +1,835 @@
+//! Plataforma Android (solo compila con `cfg(target_os = "android")`):
+//! ciclo de vida NativeActivity, presentación GPU, entrada táctil con
+//! háptica y logging a Logcat.
+
+use std::sync::Arc;
+
+use android_activity::input::{InputEvent, MotionEvent, MotionAction};
+use android_activity::{InputStatus, MainEvent, PollEvent};
+use gba_core::Machine;
+use raw_window_handle::{
+    AndroidDisplayHandle, DisplayHandle, HandleError, HasDisplayHandle,
+    HasWindowHandle, RawDisplayHandle,
+};
+use screen::blend::default_rho;
+use screen::{ColorLut, ColorSettings, ResponseMode, ScreenKind, Temporal};
+use jni::{jni_sig, jni_str};
+
+use crate::input::TouchController;
+use crate::overlay::{build_elems_with_orientation, build_globals};
+
+/// Dimensiones del framebuffer de la GBA (3:2).
+const GBA_W: u32 = 240;
+const GBA_H: u32 = 160;
+const GBA_PIXELS: usize = (GBA_W * GBA_H) as usize;
+
+/// Duración de la vibración háptica de pulsación, en ms (~15 ms del
+/// ejemplo de la propuesta).
+const HAPTIC_MS: i64 = 15;
+
+/// Envoltorio seguro de la ventana nativa Android para `wgpu`.
+///
+/// El `NativeWindow` interno es dueño de su referencia adquirida: se
+/// libera al descartar esta estructura.
+struct AndroidWindow {
+    window: android_activity::ndk::native_window::NativeWindow,
+}
+
+impl AndroidWindow {
+    fn new(window: android_activity::ndk::native_window::NativeWindow) -> AndroidWindow {
+        AndroidWindow { window }
+    }
+
+    /// Tamaño físico de la superficie en píxeles.
+    fn size(&self) -> (u32, u32) {
+        (
+            self.window.width().max(0) as u32,
+            self.window.height().max(0) as u32,
+        )
+    }
+}
+
+impl HasWindowHandle for AndroidWindow {
+    fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, HandleError> {
+        // SAFETY: el puntero `ANativeWindow` es válido mientras esta
+        // estructura exista (el `NativeWindow` retiene su referencia) y no
+        // cambia durante la vida del handle prestado.
+        let raw = raw_window_handle::RawWindowHandle::AndroidNdk(
+            raw_window_handle::AndroidNdkWindowHandle::new(
+                self.window.ptr().cast::<std::ffi::c_void>(),
+            ),
+        );
+        Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(raw) })
+    }
+}
+
+impl HasDisplayHandle for AndroidWindow {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
+        // SAFETY: `AndroidDisplayHandle` no contiene punteros prestados
+        // (Android es un display único), según documenta raw-window-handle.
+        let raw = RawDisplayHandle::Android(AndroidDisplayHandle::new());
+        Ok(unsafe { DisplayHandle::borrow_raw(raw) })
+    }
+}
+
+/// Compositor GPU unificado para Android: compone el marco de la GBA
+/// (240x160 letterbox 3:2) y el overlay táctil procedural en una sola pasada.
+struct Compositor {
+    surface: wgpu::Surface<'static>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
+
+    // Pipeline 1: Game Blit
+    game_pipeline: wgpu::RenderPipeline,
+    game_bind_group: wgpu::BindGroup,
+    game_texture: wgpu::Texture,
+    game_params_buffer: wgpu::Buffer,
+
+    // Pipeline 2: Overlay táctil
+    overlay_pipeline: wgpu::RenderPipeline,
+    overlay_bind_group: wgpu::BindGroup,
+    overlay_globals_buffer: wgpu::Buffer,
+    overlay_elems_buffer: wgpu::Buffer,
+}
+
+impl Compositor {
+    fn new(window: Arc<AndroidWindow>, vsync: bool) -> Result<Compositor, String> {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        let surface = instance
+            .create_surface(window.clone())
+            .map_err(|e| format!("surface: {e}"))?;
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::LowPower,
+            compatible_surface: Some(&surface),
+            force_fallback_adapter: false,
+        }))
+        .map_err(|e| format!("no graphics adapter: {e}"))?;
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("blazing-compositor"),
+            ..Default::default()
+        }))
+        .map_err(|e| format!("graphics device: {e}"))?;
+
+        let caps = surface.get_capabilities(&adapter);
+        let format = caps
+            .formats
+            .iter()
+            .copied()
+            .find(|f| !f.is_srgb())
+            .unwrap_or(caps.formats[0]);
+
+        let (w, h) = window.size();
+        let (w, h) = (w.max(1), h.max(1));
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            width: w,
+            height: h,
+            present_mode: if vsync {
+                wgpu::PresentMode::AutoVsync
+            } else {
+                wgpu::PresentMode::AutoNoVsync
+            },
+            alpha_mode: caps.alpha_modes[0],
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+        surface.configure(&device, &config);
+
+        // 1. Game Blit Pipeline
+        let game_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("game-blit-shader"),
+            source: wgpu::ShaderSource::Wgsl(crate::overlay_shader::GAME_BLIT_WGSL.into()),
+        });
+        let game_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("game-blit-bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let game_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("game-blit-pl"),
+            bind_group_layouts: &[&game_bgl],
+            push_constant_ranges: &[],
+        });
+        let game_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("game-blit-pipeline"),
+            layout: Some(&game_pl),
+            vertex: wgpu::VertexState {
+                module: &game_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &game_shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        let game_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("game-texture"),
+            size: wgpu::Extent3d {
+                width: GBA_W,
+                height: GBA_H,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let game_texture_view = game_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let game_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("game-sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+        let game_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("game-params-buffer"),
+            size: 32,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let game_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("game-bind-group"),
+            layout: &game_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Sampler(&game_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&game_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: game_params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        // 2. Overlay Pipeline
+        let overlay_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("overlay-shader"),
+            source: wgpu::ShaderSource::Wgsl(crate::overlay_shader::WGSL.into()),
+        });
+        let overlay_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("overlay-bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let overlay_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("overlay-pl"),
+            bind_group_layouts: &[&overlay_bgl],
+            push_constant_ranges: &[],
+        });
+        let overlay_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("overlay-pipeline"),
+            layout: Some(&overlay_pl),
+            vertex: wgpu::VertexState {
+                module: &overlay_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &overlay_shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        let overlay_globals_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("overlay-globals-buffer"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let overlay_elems_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("overlay-elems-buffer"),
+            size: 576,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let overlay_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("overlay-bind-group"),
+            layout: &overlay_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: overlay_globals_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: overlay_elems_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
+        Ok(Compositor {
+            surface,
+            device,
+            queue,
+            config,
+            game_pipeline,
+            game_bind_group,
+            game_texture,
+            game_params_buffer,
+            overlay_pipeline,
+            overlay_bind_group,
+            overlay_globals_buffer,
+            overlay_elems_buffer,
+        })
+    }
+
+    fn render(
+        &mut self,
+        rgba: &[[u8; 4]],
+        window_physical: (u32, u32),
+        touch: &TouchController,
+    ) -> Result<(), String> {
+        let (w, h) = (window_physical.0.max(1), window_physical.1.max(1));
+        if (w, h) != (self.config.width, self.config.height) {
+            self.config.width = w;
+            self.config.height = h;
+            self.surface.configure(&self.device, &self.config);
+        }
+
+        // 1. Upload frame GBA
+        debug_assert_eq!(rgba.len(), GBA_PIXELS);
+        let rgba_bytes = unsafe { std::slice::from_raw_parts(rgba.as_ptr().cast(), rgba.len() * 4) };
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.game_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            rgba_bytes,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(GBA_W * 4),
+                rows_per_image: Some(GBA_H),
+            },
+            wgpu::Extent3d {
+                width: GBA_W,
+                height: GBA_H,
+                depth_or_array_layers: 1,
+            },
+        );
+
+        // 2. Colocación del marco del juego (3:2)
+        // Portrait: mitad superior (hasta 0.48 de la altura)
+        // Landscape: centrado
+        let (origin_x, origin_y, dst_w, dst_h) = if w < h {
+            let available_h = (h as f32) * 0.48;
+            let scale = ((w as f32) / (GBA_W as f32)).min(available_h / (GBA_H as f32));
+            let dw = (GBA_W as f32) * scale;
+            let dh = (GBA_H as f32) * scale;
+            let ox = ((w as f32) - dw) * 0.5;
+            let oy = (available_h - dh) * 0.5;
+            (ox, oy, dw, dh)
+        } else {
+            let scale = ((w as f32) / (GBA_W as f32)).min((h as f32) / (GBA_H as f32));
+            let dw = (GBA_W as f32) * scale;
+            let dh = (GBA_H as f32) * scale;
+            let ox = ((w as f32) - dw) * 0.5;
+            let oy = ((h as f32) - dh) * 0.5;
+            (ox, oy, dw, dh)
+        };
+
+        let game_params: [f32; 8] = [
+            origin_x,
+            origin_y,
+            dst_w,
+            dst_h,
+            w as f32,
+            h as f32,
+            0.0,
+            0.0,
+        ];
+        self.queue.write_buffer(
+            &self.game_params_buffer,
+            0,
+            bytemuck::cast_slice(&game_params),
+        );
+
+        // 3. Parámetros del overlay
+        let mut globals = build_globals(w, h, touch.orientation());
+        globals.shell = if w < h { 1.0 } else { 0.0 };
+        let globals_packed = globals.pack();
+        self.queue.write_buffer(
+            &self.overlay_globals_buffer,
+            0,
+            bytemuck::cast_slice(&globals_packed),
+        );
+
+        let elems = build_elems_with_orientation(touch.areas(), touch.orientation(), |b| touch.is_pressed(b));
+        let mut elems_packed = [0.0f32; 12 * 12];
+        for (i, elem) in elems.iter().take(12).enumerate() {
+            let p = elem.pack();
+            elems_packed[i * 12..(i + 1) * 12].copy_from_slice(&p);
+        }
+        self.queue.write_buffer(
+            &self.overlay_elems_buffer,
+            0,
+            bytemuck::cast_slice(&elems_packed),
+        );
+
+        // 4. Render pass en el swapchain
+        let frame = match self.surface.get_current_texture() {
+            Ok(f) => f,
+            Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost | wgpu::SurfaceError::OutOfMemory) => {
+                self.surface.configure(&self.device, &self.config);
+                self.surface
+                    .get_current_texture()
+                    .map_err(|e| e.to_string())?
+            }
+            Err(e) => return Err(e.to_string()),
+        };
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("compositor-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    depth_slice: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            // Pase 1: Marco de juego
+            pass.set_pipeline(&self.game_pipeline);
+            pass.set_bind_group(0, &self.game_bind_group, &[]);
+            pass.draw(0..3, 0..1);
+
+            // Pase 2: Overlay táctil y carcasa (con alpha blending)
+            if touch.touch_enabled {
+                pass.set_pipeline(&self.overlay_pipeline);
+                pass.set_bind_group(0, &self.overlay_bind_group, &[]);
+                pass.draw(0..3, 0..1);
+            }
+        }
+
+        self.queue.submit([encoder.finish()]);
+        frame.present();
+        Ok(())
+    }
+}
+
+/// Respuesta háptica por vibración, vía JNI sobre el servicio `Vibrator`
+/// del sistema.
+///
+/// Seguridad (contexto de la propuesta): toda llamada JNI pasa por
+/// `attach_current_thread`, que captura las excepciones Java y las
+/// devuelve como `Error::CaughtJavaException`; cualquier fallo (sin motor,
+/// sin permiso, sin JVM) se registra y es un no-op silencioso que nunca
+/// detiene el bucle de la aplicación.
+struct Haptics {
+    vm: jni::JavaVM,
+    /// Objeto Activity de la NativeActivity (referencia global).
+    activity: jni::objects::Global<jni::objects::JObject<'static>>,
+}
+
+impl Haptics {
+    /// Conecta con la JVM y la Activity entregadas por `android-activity`.
+    /// `None` si el entorno no ofrece JNI (háptica desactivada).
+    fn connect(
+        vm_ptr: *mut std::ffi::c_void,
+        activity_ptr: *mut std::ffi::c_void,
+    ) -> Option<Haptics> {
+        if vm_ptr.is_null() || activity_ptr.is_null() {
+            log::info!("haptics: sin punteros JNI; vibración desactivada");
+            return None;
+        }
+        // SAFETY: android-activity garantiza que `vm_as_ptr()` es la
+        // `JavaVM` válida y `activity_as_ptr()` el jobject de la
+        // NativeActivity viva durante la llamada.
+        let vm = unsafe { jni::JavaVM::from_raw(vm_ptr.cast()) };
+        let activity = vm
+            .attach_current_thread(|env| -> Result<_, jni::errors::Error> {
+                // SAFETY: puntero de Activity válido entregado arriba.
+                let obj =
+                    unsafe { jni::objects::JObject::from_raw(env, activity_ptr.cast()) };
+                let global = env.new_global_ref(&obj)?;
+                // El handle original es una referencia global mantenida
+                // por android-activity, no un local: no se borra como
+                // local (DeleteLocalRef sobre un global sería inválido).
+                std::mem::forget(obj);
+                Ok(global)
+            })
+            .ok()?;
+        log::info!("haptics: conectado al servicio del sistema");
+        Some(Haptics { vm, activity })
+    }
+
+    /// Vibración de `ms` milisegundos. No-op ante cualquier error.
+    fn vibrate(&self, ms: i64) {
+        let run = |env: &mut jni::Env| -> Result<(), jni::errors::Error> {
+            // `Object Context.VIBRATOR_SERVICE` (String constante desde
+            // API 1; uniforme en toda la gama objetivo del port).
+            let service = env
+                .get_static_field(
+                    jni_str!("android/content/Context"),
+                    jni_str!("VIBRATOR_SERVICE"),
+                    jni_sig!("Ljava/lang/String;"),
+                )?
+                .l()?;
+            let vibrator = env
+                .call_method(
+                    self.activity.as_obj(),
+                    jni_str!("getSystemService"),
+                    jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
+                    &[jni::objects::JValue::Object(&service)],
+                )?
+                .l()?;
+            if vibrator.is_null() {
+                return Ok(()); // sin motor de vibración: no-op
+            }
+            // `void vibrate(long)`: API 1..26 (26+ lo deprecó en favor de
+            // VibrationEffect; limitación documentada de la suposición 1).
+            env.call_method(
+                &vibrator,
+                jni_str!("vibrate"),
+                jni_sig!("(J)V"),
+                &[jni::objects::JValue::Long(ms)],
+            )?;
+            Ok(())
+        };
+        if let Err(e) = self.vm.attach_current_thread(run) {
+            log::debug!("haptics: vibración no disponible ({e:?})");
+        }
+    }
+}
+
+/// Estado de la aplicación: lo que persiste entre pausas y reanudaciones
+/// del sistema Android.
+struct AppState {
+    /// Modelo de hardware de la consola. `None` hasta que se carguen la
+    /// ROM y el BIOS del usuario con hashes verificados (AGENTS.md §3).
+    machine: Option<Machine>,
+    /// Compositor GPU unificado (`wgpu`) sobre la ventana Android. `None`
+    /// cuando no hay ventana viva (`TerminateWindow`, `Pause`, `Destroy`).
+    compositor: Option<Compositor>,
+    /// Ventana propiedad del compositor, para consultar su tamaño físico.
+    window: Option<Arc<AndroidWindow>>,
+    /// Panel físico que se simula (perfil de `screen`). Se usará para
+    /// reconstruir la LUT cuando el usuario cambie de perfil (Fase 5+).
+    #[allow(dead_code)]
+    screen_kind: ScreenKind,
+    /// BGR555 → RGBA8 precalibrado para el panel y destino elegidos.
+    lut: ColorLut,
+    /// Resolución temporal del panel LCD (respuesta entre fotogramas).
+    temporal: Temporal,
+    /// Búfer RGBA de presentación (salida de `temporal.compose`).
+    rgba: Vec<[u8; 4]>,
+    /// Controlador táctil (hitboxes, estado KEYINPUT, `touch_enabled`).
+    touch: TouchController,
+    /// Háptica; `None` si no hay JNI disponible (no-op).
+    haptics: Option<Haptics>,
+}
+
+impl AppState {
+    fn new() -> AppState {
+        // Perfil por defecto de la biblioteca: panel original con
+        // frontlight (la vista "diseñada" del juego), destino sRGB.
+        let screen_kind = ScreenKind::Frontlit;
+        let lut = ColorLut::build(&ColorSettings::default());
+        let temporal = Temporal::new(
+            GBA_PIXELS,
+            // `Smart` es el modo documentado como default en `blend.rs`.
+            ResponseMode::Smart,
+            1,
+            default_rho(screen_kind),
+        );
+        AppState {
+            machine: None,
+            compositor: None,
+            window: None,
+            screen_kind,
+            lut,
+            temporal,
+            rgba: vec![[0, 0, 0, 255]; GBA_PIXELS],
+            touch: TouchController::new(),
+            haptics: None,
+        }
+    }
+
+    /// Carga ROM y BIOS en el modelo de hardware de la consola (perfiles de
+    /// AGENTS.md §3). Se invoca una vez verificados los hashes SHA-256.
+    #[allow(dead_code)]
+    fn load(&mut self, rom: Vec<u8>, bios: &[u8]) {
+        self.machine = Some(Machine::new_with_bios(rom, bios));
+    }
+
+    /// Libera los recursos GPU y de emulación al pausar; Android puede
+    /// matar la NativeActivity sin aviso y conviene no sostener RAM del
+    /// juego ni una superficie de una ventana que ya no existe.
+    fn suspend(&mut self) {
+        if self.compositor.take().is_some() || self.window.take().is_some() {
+            log::debug!("recursos GPU liberados (suspend)");
+        }
+        if let Some(machine) = self.machine.take() {
+            log::debug!("Machine liberada (suspend)");
+            drop(machine);
+        }
+    }
+
+    /// Destruye el compositor y su ventana (evento `TerminateWindow`).
+    fn remove_compositor(&mut self) {
+        self.compositor = None;
+        self.window = None;
+    }
+
+    /// Crea el compositor GPU sobre `window`. Solo con ventana viva:
+    /// llamarlo fuera de `InitWindow` dejaría el compositor con un puntero
+    /// a ventana huérfana. Recalcula también las hitboxes táctiles.
+    fn create_compositor(&mut self, window: Option<Arc<AndroidWindow>>) {
+        self.remove_compositor();
+        let Some(window) = window else {
+            log::warn!("event: InitWindow sin ventana nativa");
+            return;
+        };
+        let (w, h) = window.size();
+        log::info!("ventana nativa {}x{}: creando compositor", w, h);
+        // Auto-rotación: la geometría de controles sigue a la ventana.
+        if w > 0 && h > 0 {
+            self.touch.resize(w, h);
+        }
+        match Compositor::new(
+            window.clone(),
+            true, // vsync activo
+        ) {
+            Ok(c) => {
+                self.window = Some(window);
+                self.compositor = Some(c);
+                log::info!("compositor GPU listo (juego + overlay)");
+            }
+            Err(e) => log::error!("Compositor::new: {e}"),
+        }
+    }
+
+    /// Compone el fotograma visible y el overlay táctil. No-op si no hay
+    /// ventana viva.
+    fn redraw(&mut self) {
+        let Some(window) = &self.window else { return };
+        let (w, h) = window.size();
+        if w > 0 && h > 0 && self.touch.size() != (w, h) {
+            self.touch.resize(w, h);
+        }
+        let Some(compositor) = self.compositor.as_mut() else { return };
+        // Pipeline: temporal compose → render compositor (juego + overlay)
+        self.temporal.compose(&self.lut, &mut self.rgba);
+        if let Err(e) = compositor.render(&self.rgba, (w, h), &self.touch) {
+            log::warn!("compositor: {e}");
+        }
+    }
+
+    /// Publica la máscara KEYINPUT del controlador táctil en `Machine`.
+    /// Con `touch_enabled == false` el método del controlador ya devuelve
+    /// la máscara sin cambios; con `Machine == None` no hay nada que hacer.
+    fn publish_keys(&mut self) {
+        if let Some(machine) = self.machine.as_mut() {
+            machine.bus.keys = self.touch.key_mask();
+        }
+    }
+
+    /// Procesa un evento de movimiento táctil: actualiza el estado del
+    /// controlador, la máscara de teclas, dispara háptica en las
+    /// transiciones de pulsación y redibuja para feedback visual inmediato.
+    fn on_motion(&mut self, event: &MotionEvent<'_>) {
+        if let Some(window) = &self.window {
+            let (w, h) = window.size();
+            if w > 0 && h > 0 && self.touch.size() != (w, h) {
+                self.touch.resize(w, h);
+            }
+        }
+        let action = event.action();
+        match action {
+            MotionAction::Down | MotionAction::PointerDown => {
+                let pointer_id = event.pointer_at_index(event.pointer_index()).pointer_id();
+                let p = event.pointer_at_index(event.pointer_index());
+                let (x, y) = (p.x(), p.y());
+                if let Some(button) = self.touch.touch_down(pointer_id, x, y) {
+                    log::debug!("touch: {button:?} pulsado en ({x},{y})");
+                    if let Some(h) = &self.haptics {
+                        h.vibrate(HAPTIC_MS);
+                    }
+                }
+                self.publish_keys();
+                self.redraw();
+            }
+            MotionAction::Up | MotionAction::PointerUp => {
+                let pointer_id = event.pointer_at_index(event.pointer_index()).pointer_id();
+                if let Some(button) = self.touch.touch_up(pointer_id) {
+                    log::debug!("touch: {button:?} liberado");
+                }
+                self.publish_keys();
+                self.redraw();
+            }
+            MotionAction::Cancel => {
+                self.touch.cancel_all();
+                self.publish_keys();
+                self.redraw();
+            }
+            _ => {
+                // Move y Hover* no cambian el estado de botones
+            }
+        }
+    }
+}
+
+#[no_mangle]
+pub fn android_main(app: android_activity::AndroidApp) {
+    // Logging a Logcat con el tag "BlazingRecomp" (visible en `adb logcat`).
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_max_level(log::LevelFilter::Info)
+            .with_tag("BlazingRecomp"),
+    );
+    log::info!("Blazing Recomp: android_main (fase overlay táctil y marco SP)");
+
+    let mut state = AppState::new();
+    state.haptics = Haptics::connect(app.vm_as_ptr(), app.activity_as_ptr());
+    let mut finishing = false;
+
+    while !finishing {
+        app.poll_events(None, |event| {
+            let PollEvent::Main(main) = event else { return };
+            match main {
+                MainEvent::InitWindow { .. } => {
+                    log::info!("ciclo de vida: InitWindow");
+                    state.create_compositor(
+                        app.native_window().map(AndroidWindow::new).map(Arc::new),
+                    );
+                    state.redraw();
+                }
+                MainEvent::WindowResized { .. } | MainEvent::RedrawNeeded { .. } => {
+                    log::info!("ciclo de vida: redibujar ventana");
+                    state.redraw();
+                }
+                MainEvent::TerminateWindow { .. } => {
+                    log::info!("ciclo de vida: TerminateWindow");
+                    state.remove_compositor();
+                }
+                MainEvent::Resume { .. } => {
+                    log::info!("ciclo de vida: Resume");
+                    if state.machine.is_none() {
+                        log::info!("sin Machine cargada: esperando ROM/BIOS del usuario");
+                    }
+                }
+                MainEvent::Pause => {
+                    log::info!("ciclo de vida: Pause");
+                    state.suspend();
+                }
+                MainEvent::Destroy => {
+                    log::info!("ciclo de vida: Destroy");
+                    finishing = true;
+                }
+                _ => {}
+            }
+        });
+
+        if let Ok(mut input) = app.input_events_iter() {
+            while input.next(|event| match event {
+                InputEvent::MotionEvent(m) => {
+                    state.on_motion(m);
+                    InputStatus::Handled
+                }
+                _ => InputStatus::Unhandled,
+            }) {}
+        }
+    }
+
+    log::info!("Blazing Recomp: android_main finalizado");
+}
+

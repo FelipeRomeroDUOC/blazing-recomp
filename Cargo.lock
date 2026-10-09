@@ -117,10 +117,15 @@ version = "0.1.0"
 dependencies = [
  "android-activity",
  "android_logger",
+ "bytemuck",
  "gba-core",
+ "jni",
  "log",
+ "naga",
+ "pollster",
  "raw-window-handle",
  "screen",
+ "wgpu",
 ]
 
 [[package]]

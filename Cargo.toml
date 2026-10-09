@@ -12,8 +12,15 @@ crate-type = ["cdylib"]
 gba-core = { path = "../gba-recomp/crates/gba-core" }
 screen = { path = "../gba-recomp/crates/screen" }
 log = "0.4"
-android_logger = "0.14"
 raw-window-handle = "0.6"
+jni = "0.22"
+wgpu = "26"
+bytemuck = "1"
+pollster = "0.4"
+
+[dev-dependencies]
+naga = { version = "26", features = ["wgsl-in"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android-activity = { version = "0.6", features = ["native-activity"] }
+android_logger = "0.14"

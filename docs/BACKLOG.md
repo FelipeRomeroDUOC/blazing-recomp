@@ -60,13 +60,21 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 ---
 
 ### Fase 5: Sistema de Entrada y Controles Táctiles
-- [ ] ⬜ Diseñar superposición táctil (*touch overlay*) en pantalla:
-  - D-Pad virtual (Cruceta direccional).
-  - Botones A, B, L, R, Start, Select.
-  - Botón de acceso rápido al menú.
-- [ ] ⬜ Mapear eventos táctiles Android (`AMotionEvent`) a las teclas de la GBA (`KEYINPUT` en `gba-core`).
-- [ ] ⬜ Soporte para mandos físicos Bluetooth / USB (Gamepads Xbox, PlayStation, 8BitDo).
-- [ ] ⬜ Respuesta háptica (vibración sutil al pulsar botones táctiles).
+- [x] 🟩 Fase 5.1: Mapeo táctil ergonómico y respuesta háptica ([`docs/propuestas/2026-10-08_controles-tactiles-haptica.md`](propuestas/2026-10-08_controles-tactiles-haptica.md)):
+  - D-Pad virtual con cuenca circular y zona muerta central.
+  - Clúster ergonómico diagonal GBA SP: L y R sobre B y A inclinados a 16° (eje B→A paralelo).
+  - Botones Select y Start centrados en la base.
+  - Geometría adaptativa según orientación (Portrait maximizado en mitad inferior, Landscape en franja base).
+  - Opción de desactivación manual (`touch_enabled`).
+  - Mapeo de eventos táctiles Android (`MotionEvent`) a la máscara `bus.keys` de `gba-core` (`KEYINPUT`).
+  - Respuesta háptica por micro-vibración (~15 ms) vía JNI sobre `Vibrator` con tolerancia a fallos.
+- [x] 🟩 Fase 5.2: Renderizado visual del overlay en pantalla ([`docs/propuestas/2026-10-09_renderizado-overlay-tactil.md`](propuestas/2026-10-09_renderizado-overlay-tactil.md)):
+  - Compositor GPU unificado en `wgpu` (marco de juego 3:2 + overlay táctil en un solo swapchain).
+  - Shaders WGSL procedurales SDF sin texturas rasterizadas (bordes nítidos a cualquier DPI).
+  - Colores temáticos GBA SP en Portrait (B rojo, A verde, L/R blanco, carcasa plateada en mitad inferior).
+  - Modo Landscape translúcido para visibilidad de la acción de juego.
+  - Retroalimentación visual inmediata al pulsar botones (resaltado y anillo activo).
+- [ ] ⬜ Fase 5.3: Soporte para mandos físicos Bluetooth / USB (Gamepads Xbox, PlayStation, 8BitDo) y auto-desactivación táctil.
 
 ---
 
@@ -83,4 +91,4 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
   - Selector de archivos para que el usuario elija su ROM y BIOS.
   - Validación de hashes SHA-256 antes de permitir iniciar el juego.
 - [ ] ⬜ Menú en juego (pausa, configuración de controles, audio y filtros visuales).
-- [ ] ⬜ Generación de APK firmado para instalación directa en dispositivos Android.
+- [x] 🟩 Arnés de empaquetado y generación de APK firmado para instalación directa en dispositivos Android ([`docs/propuestas/2026-10-09_arnes-empaquetado-apk.md`](propuestas/2026-10-09_arnes-empaquetado-apk.md)).
