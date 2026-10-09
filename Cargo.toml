@@ -1,0 +1,17 @@
+[package]
+name = "blazing-recomp"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Native Android port of Fire Emblem: The Blazing Blade built on gba-recomp"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+gba-core = { path = "../gba-recomp/crates/gba-core" }
+log = "0.4"
+android_logger = "0.14"
+
+[target.'cfg(target_os = "android")'.dependencies]
+android-activity = { version = "0.6", features = ["native-activity"] }

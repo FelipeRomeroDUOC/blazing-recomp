@@ -44,10 +44,10 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 ---
 
 ### Fase 3: Arquitectura y Runtime Android (NDK & Rust)
-- [ ] ⬜ Diseñar estructura del proyecto Android (`android/` o crate nativo con `android-activity`).
-- [ ] ⬜ Configurar `Cargo.toml` para compilar biblioteca dinámica (`cdylib` / `.so`) para `aarch64-linux-android`.
-- [ ] ⬜ Implementar ciclo de vida de aplicación Android (`on_create`, `on_resume`, `on_pause`, `on_destroy`).
-- [ ] ⬜ Probar compilación con `cargo ndk -t arm64-v8a build`.
+- [x] 🟩 Diseñar estructura del proyecto Android (crate nativo en Rust con `android-activity`).
+- [x] 🟩 Configurar `Cargo.toml` para compilar biblioteca dinámica (`cdylib` / `.so`) para `aarch64-linux-android` e integrar `gba-core`.
+- [x] 🟩 Implementar ciclo de vida de aplicación Android (`android_main`, `Resume`, `Pause`, `Destroy`, suspensión limpia de memoria).
+- [x] 🟩 Probar compilación con `cargo ndk -t arm64-v8a build` (generó `libblazing_recomp.so` ELF ARM64 de 29.5 MB con éxito).
 
 ---
 

@@ -2,7 +2,7 @@
 
 Fecha: 2026-10-08
 Nivel: 2
-Estado: pendiente
+Estado: verificada por agente
 
 <!-- Estados: pendiente | aprobada | modificada | descartada |
      verificada por agente | revisada por humano | discrepada | cerrada -->
@@ -109,21 +109,37 @@ Ninguna.
 
 ### Predicho vs. real
 
-- Compilación cruzada exitosa para arquitectura ARM64 de Android: pendiente
-  Resultado real:
-  Método: el anunciado
-- Verificación de tipos e integración con Machine y AndroidApp: pendiente
-  Resultado real:
-  Método: el anunciado
-- Independencia de rutas absolutas en configuración de Cargo: pendiente
-  Resultado real:
-  Método: el anunciado
+- Compilación cruzada exitosa para arquitectura ARM64 de Android: coincide
+  Resultado real: `cargo ndk -t arm64-v8a build` terminó con código 0 y
+  generó `target/aarch64-linux-android/debug/libblazing_recomp.so`.
+  Método: el anunciado.
+- Verificación de tipos e integración con Machine y AndroidApp: difiere
+  (corregido y luego coincide)
+  Resultado real: `cargo check --target aarch64-linux-android` termina con
+  código 0. La primera pasada falló con 6 errores porque la API de
+  `android-activity 0.6.1` (crates.io, resuelta por Cargo) difiere del modo
+  iterator asumido en la propuesta: `poll_events` toma un closure (no
+  devuelve `Result`), `PollMode` no existe, no hay evento `Terminate` (se
+  usa `Destroy`) y `Resume` es una variante con campo `loader`. Se reescribió
+  el bucle de eventos en `src/lib.rs` contra la API real; segunda pasada
+  correcta. `Machine` sí se integra vía `Machine::new_with_bios`.
+  Método: el anunciado + corrección del bucle de eventos documentada aquí.
+- Independencia de rutas absolutas en configuración de Cargo: coincide
+  Resultado real: `git grep -i "C:/" -- Cargo.toml src/` → 0 coincidencias
+  (código de salida 1 de grep = sin resultados).
+  Método: el anunciado.
 
 ### Contexto: ¿se respetó?
 
-- Integración modular con el motor gba-core sin duplicar código → pendiente
-- Plataforma objetivo nativa ARM64 vía NDK y Rust → pendiente
-- Portabilidad absoluta sin rutas locales → pendiente
+- Integración modular con el motor gba-core sin duplicar código → respetada
+  (`gba-core` vía `path` relativo en `Cargo.toml`; prototipo previo:
+  `cargo check -p gba-core --target aarch64-linux-android` exitoso en el
+  repositorio hermano).
+- Plataforma objetivo nativa ARM64 vía NDK y Rust → respetada (`.so`
+  compilado para `aarch64-linux-android` con `cargo-ndk` + NDK vía
+  `ANDROID_NDK_HOME`).
+- Portabilidad absoluta sin rutas locales → respetada (verificación git grep
+  con 0 coincidencias).
 
 ### Revisión humana
 
