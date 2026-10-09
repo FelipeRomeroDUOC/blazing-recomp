@@ -2,7 +2,7 @@
 
 Fecha: 2026-10-08
 Nivel: 2
-Estado: pendiente
+Estado: verificada por agente
 
 <!-- Estados: pendiente | aprobada | modificada | descartada |
      verificada por agente | revisada por humano | discrepada | cerrada -->
@@ -114,11 +114,40 @@ Ninguna.
 
 ### Predicho vs. real
 
-*(Se completará tras la verificación)*
+- Compilación cruzada exitosa del pipeline gráfico para ARM64: coincide
+  Resultado real: `cargo ndk -t arm64-v8a build` terminó con código 0 y
+  generó `target/aarch64-linux-android/debug/libblazing_recomp.so`
+  (134.332.168 bytes en debug; wgpu es la mayor parte).
+  Método: el anunciado.
+- Manejo de eventos de ventana y enlace con raw-window-handle: coincide
+  (con dos desviaciones menores corregidas)
+  Resultado real: `cargo check --target aarch64-linux-android` termina con
+  código 0 y sin advertencias. Desviaciones durante la primera pasada:
+  (1) `netk::native_window::NativeWindow` de ndk 0.9 no exporta su impl de
+  `HasWindowHandle` (requiere feature `rwh_06`, no activada vía
+  `android-activity`): el impl se escribió directamente en `AndroidWindow`
+  construyendo `AndroidNdkWindowHandle::new(NativeWindow::ptr().cast())`;
+  (2) el advisor `screen_kind` quedó sin lectores temporalmente (no hay
+  reconstrucción de LUT hasta Fase 5): anotado con `#[allow(dead_code)]`
+  y comentario. El evento de cierre de ventana real es `TerminateWindow`
+  (la propuesta lo llamaba `WindowDestroyed`, nombre winit); mismo
+  significado, mismo manejo.
+  Método: el anunciado + correcciones documentadas aquí.
+- Independencia de rutas absolutas en configuración de Cargo: coincide
+  Resultado real: `git grep -i "C:/" -- Cargo.toml src/` → 0 coincidencias.
+  Método: el anunciado.
 
 ### Contexto: ¿se respetó?
 
-*(Se completará tras la verificación)*
+- Integración modular con `screen` sin duplicar código → respetada
+  (`screen` vía `path` relativo en `Cargo.toml`; `Creator`, `Temporal`,
+  `ColorLut`, `GridParams` y `ScreenKind` son tipos del motor, no copias).
+- Gestión segura del ciclo de vida de `ANativeWindow` → respetada
+  (presenter creado solo dentro de `InitWindow` con `app.native_window()`;
+  destruido en `TerminateWindow` y en `Pause`) → verificado por tipos con
+  `cargo check` (runtime en dispositivo pendiente de Fases 5-6).
+- Portabilidad absoluta sin rutas locales → respetada (git grep con 0
+  coincidencias).
 
 ### Revisión humana
 

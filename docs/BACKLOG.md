@@ -6,7 +6,7 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 
 ## Estado del Proyecto
 
-- **Fase Actual:** Fase 1 — Configuración base y verificación del motor.
+- **Fase Actual:** Fase 5 — Sistema de entrada y controles táctiles.
 - **ROM Objetivo:** `Fire Emblem (Europe)` (`6f2c30823ab0237310b138739ccfad879f1a07c4a782a9cbb92317d60d03cee9`)
 - **BIOS Objetivo:** `gba_bios.bin` (`fd2547724b505f487e6dcb29ec2ecff3af35a841a77ab2e85fd87350abd36570`)
 
@@ -40,7 +40,6 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 - [x] 🟩 Crear y validar [`blazing.labels.toml`](../blazing.labels.toml) enriquecido con símbolos base de FE7 (`Reset_Handler`, `Battle_MainLoop`, `Unit_InitStats`, etc.).
 - [x] 🟩 Generar documentación de referencia técnica Diátaxis en [`docs/referencia/`](referencia/README.md) ([`CONFIGURACION_PACK.md`](referencia/CONFIGURACION_PACK.md) y [`FORMATO_LABELS.md`](referencia/FORMATO_LABELS.md)).
 
-
 ---
 
 ### Fase 3: Arquitectura y Runtime Android (NDK & Rust)
@@ -52,10 +51,11 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 ---
 
 ### Fase 4: Renderizado y Presentación Gráfica
-- [ ] ⬜ Adaptar backend de renderizado de `screen` / `wgpu` a `ANativeWindow` de Android (Vulkan / OpenGL ES 3.0).
-- [ ] ⬜ Implementar escalado de aspecto fijo (3:2) con bandas laterales limpias y escalado de píxeles nítido (*integer scaling*).
-- [ ] ⬜ Adaptar shaders de simulación LCD y paleta de color (LUT) para GPUs móviles (Adreno / Mali).
-- [ ] ⬜ Probar sincronización vertical (VSync / Choreographer a 60 FPS estables).
+- [x] 🟩 Adaptar backend de renderizado de `screen` / `wgpu` a `ANativeWindow` de Android (Vulkan / OpenGL ES 3.0).
+- [x] 🟩 Implementar escalado de aspecto fijo (3:2) con bandas laterales limpias y escalado de píxeles nítido (*integer scaling*).
+- [x] 🟩 Integrar shaders de simulación LCD y paleta de color (LUT) para GPUs móviles (Adreno / Mali).
+- [x] 🟩 Configurar sincronización vertical (VSync activo con pacing de presentación desacoplado a 60 FPS).
+- [x] 🟩 Probar compilación con `cargo ndk -t arm64-v8a build` (generó `libblazing_recomp.so` ELF ARM64 de 134.3 MB con éxito).
 
 ---
 
