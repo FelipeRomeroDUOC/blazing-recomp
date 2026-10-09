@@ -45,16 +45,27 @@ fn test_manifest_declares_native_activity() {
         "El manifiesto debe solicitar el permiso android.permission.VIBRATE"
     );
 
-    // Validar extractNativeLibs="false" para carga directa mmap sin duplicar almacenamiento
+    // Validar extractNativeLibs="true" para garantizar extracción física en emuladores como BlueStacks
     assert!(
-        content.contains("android:extractNativeLibs=\"false\""),
-        "El manifiesto debe declarar android:extractNativeLibs=\"false\" para permitir carga por mmap"
+        content.contains("android:extractNativeLibs=\"true\""),
+        "El manifiesto debe declarar android:extractNativeLibs=\"true\" para permitir carga directa y compatibilidad con emuladores"
     );
 
     // Validar hasCode="false" para NativeActivity pura
     assert!(
         content.contains("android:hasCode=\"false\""),
         "El manifiesto debe declarar android:hasCode=\"false\" para ejecucion sin runtime Java"
+    );
+}
+
+#[test]
+fn test_manifest_extract_native_libs_enabled() {
+    let manifest_path = repo_root().join("android").join("AndroidManifest.xml");
+    let content = fs::read_to_string(&manifest_path)
+        .expect("Debe poder leerse android/AndroidManifest.xml");
+    assert!(
+        content.contains("android:extractNativeLibs=\"true\""),
+        "El manifiesto debe tener android:extractNativeLibs=\"true\" configurado para compatibilidad con emuladores"
     );
 }
 

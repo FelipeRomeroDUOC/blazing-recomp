@@ -40,6 +40,10 @@ impl AndroidWindow {
         AndroidWindow { window }
     }
 
+    fn native_window(&self) -> &android_activity::ndk::native_window::NativeWindow {
+        &self.window
+    }
+
     /// Tamaño físico de la superficie en píxeles.
     fn size(&self) -> (u32, u32) {
         (
@@ -91,20 +95,83 @@ struct Compositor {
     overlay_bind_group: wgpu::BindGroup,
     overlay_globals_buffer: wgpu::Buffer,
     overlay_elems_buffer: wgpu::Buffer,
+    _overlay_font_texture: wgpu::Texture,
+}
+
+fn request_adapter_fallback(
+    instance: &wgpu::Instance,
+    surface: &wgpu::Surface<'_>,
+) -> Result<wgpu::Adapter, String> {
+    if let Ok(a) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::LowPower,
+        compatible_surface: Some(surface),
+        force_fallback_adapter: false,
+    })) {
+        return Ok(a);
+    }
+
+    if let Ok(a) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: Some(surface),
+        force_fallback_adapter: false,
+    })) {
+        return Ok(a);
+    }
+
+    if let Ok(a) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::None,
+        compatible_surface: Some(surface),
+        force_fallback_adapter: true,
+    })) {
+        return Ok(a);
+    }
+
+    pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::None,
+        compatible_surface: None,
+        force_fallback_adapter: false,
+    }))
+    .map_err(|e| format!("no graphics adapter: {e}"))
+}
+
+fn create_gpu_context(
+    window: Arc<AndroidWindow>,
+) -> Result<(wgpu::Surface<'static>, wgpu::Adapter), String> {
+    // En Android (y especialmente en emuladores como BlueStacks), probar primero
+    // Backends::GL (OpenGL ES 3.0). De este modo, la ventana nativa (ANativeWindow)
+    // se conecta limpiamente a EGL sin interferencias de capas Vulkan parciales
+    // que puedan bloquear el descriptor con EGL_BAD_ALLOC.
+    let gl_instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::GL,
+        ..Default::default()
+    });
+    if let Ok(gl_surface) = gl_instance.create_surface(window.clone()) {
+        if let Ok(gl_adapter) = request_adapter_fallback(&gl_instance, &gl_surface) {
+            log::info!("Adaptador GPU inicializado exitosamente con OpenGL ES");
+            return Ok((gl_surface, gl_adapter));
+        }
+    }
+
+    log::warn!("Backend OpenGL ES no pudo inicializar la superficie. Probando Vulkan...");
+
+    let vk_instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::VULKAN,
+        ..Default::default()
+    });
+    let vk_surface = vk_instance
+        .create_surface(window.clone())
+        .map_err(|e| format!("surface Vulkan: {e}"))?;
+    let vk_adapter = request_adapter_fallback(&vk_instance, &vk_surface)
+        .map_err(|e| format!("no se encontró adaptador GPU compatible ni en GLES ni en Vulkan: {e}"))?;
+
+    log::info!("Adaptador GPU inicializado exitosamente con Vulkan");
+    Ok((vk_surface, vk_adapter))
 }
 
 impl Compositor {
     fn new(window: Arc<AndroidWindow>, vsync: bool) -> Result<Compositor, String> {
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-        let surface = instance
-            .create_surface(window.clone())
-            .map_err(|e| format!("surface: {e}"))?;
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::LowPower,
-            compatible_surface: Some(&surface),
-            force_fallback_adapter: false,
-        }))
-        .map_err(|e| format!("no graphics adapter: {e}"))?;
+        let (surface, adapter) = create_gpu_context(window.clone())?;
+
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("blazing-compositor"),
             ..Default::default()
@@ -112,12 +179,10 @@ impl Compositor {
         .map_err(|e| format!("graphics device: {e}"))?;
 
         let caps = surface.get_capabilities(&adapter);
-        let format = caps
-            .formats
-            .iter()
-            .copied()
-            .find(|f| !f.is_srgb())
-            .unwrap_or(caps.formats[0]);
+        let (format, alpha_mode) = crate::error_screen::select_surface_format_and_alpha(
+            &caps.formats,
+            &caps.alpha_modes,
+        );
 
         let (w, h) = window.size();
         let (w, h) = (w.max(1), h.max(1));
@@ -131,7 +196,7 @@ impl Compositor {
             } else {
                 wgpu::PresentMode::AutoNoVsync
             },
-            alpha_mode: caps.alpha_modes[0],
+            alpha_mode,
             view_formats: vec![],
             desired_maximum_frame_latency: 2,
         };
@@ -282,6 +347,22 @@ impl Compositor {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
             ],
         });
         let overlay_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -323,10 +404,57 @@ impl Compositor {
         });
         let overlay_elems_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("overlay-elems-buffer"),
-            size: 576,
+            size: 768, // 12 elems * 64 B (16 floats)
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+
+        let font_atlas = crate::overlay::build_font_atlas();
+        let overlay_font_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("overlay-font-texture"),
+            size: wgpu::Extent3d {
+                width: font_atlas.width,
+                height: font_atlas.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::R8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &overlay_font_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &font_atlas.data,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(font_atlas.width),
+                rows_per_image: Some(font_atlas.height),
+            },
+            wgpu::Extent3d {
+                width: font_atlas.width,
+                height: font_atlas.height,
+                depth_or_array_layers: 1,
+            },
+        );
+        let overlay_font_view = overlay_font_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let overlay_font_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("overlay-font-sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
         let overlay_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("overlay-bind-group"),
             layout: &overlay_bgl,
@@ -338,6 +466,14 @@ impl Compositor {
                 wgpu::BindGroupEntry {
                     binding: 1,
                     resource: overlay_elems_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&overlay_font_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&overlay_font_sampler),
                 },
             ],
         });
@@ -355,6 +491,7 @@ impl Compositor {
             overlay_bind_group,
             overlay_globals_buffer,
             overlay_elems_buffer,
+            _overlay_font_texture: overlay_font_texture,
         })
     }
 
@@ -441,10 +578,10 @@ impl Compositor {
         );
 
         let elems = build_elems_with_orientation(touch.areas(), touch.orientation(), |b| touch.is_pressed(b));
-        let mut elems_packed = [0.0f32; 12 * 12];
+        let mut elems_packed = [0.0f32; 12 * 16];
         for (i, elem) in elems.iter().take(12).enumerate() {
             let p = elem.pack();
-            elems_packed[i * 12..(i + 1) * 12].copy_from_slice(&p);
+            elems_packed[i * 16..(i + 1) * 16].copy_from_slice(&p);
         }
         self.queue.write_buffer(
             &self.overlay_elems_buffer,
@@ -616,6 +753,10 @@ struct AppState {
     touch: TouchController,
     /// Háptica; `None` si no hay JNI disponible (no-op).
     haptics: Option<Haptics>,
+    /// Error fatal retenido para presentación visual de diagnóstico.
+    fatal_error: Option<String>,
+    /// Renderizador tipográfico por software para la pantalla de error.
+    error_renderer: Option<crate::error_screen::ErrorScreenRenderer>,
 }
 
 impl AppState {
@@ -641,6 +782,35 @@ impl AppState {
             rgba: vec![[0, 0, 0, 255]; GBA_PIXELS],
             touch: TouchController::new(),
             haptics: None,
+            fatal_error: None,
+            error_renderer: None,
+        }
+    }
+
+    /// Renderiza un mensaje de error por software en la superficie nativa de Android.
+    fn render_software_error(&mut self, title: &str, message: &str) {
+        let Some(window) = &self.window else { return };
+        let (w, h) = window.size();
+        if w == 0 || h == 0 {
+            return;
+        }
+        if self.error_renderer.is_none() {
+            self.error_renderer = crate::error_screen::ErrorScreenRenderer::new().ok();
+        }
+        let Some(renderer) = &self.error_renderer else { return };
+
+        let native_win = window.native_window();
+        if let Ok(mut guard) = native_win.lock(None) {
+            let stride = guard.stride();
+            let height = guard.height();
+            let width = guard.width();
+            let bpp = guard.format().bytes_per_pixel().unwrap_or(4);
+            if let Some(bytes) = guard.bytes() {
+                let slice: &mut [u8] = unsafe {
+                    std::slice::from_raw_parts_mut(bytes.as_mut_ptr().cast(), bytes.len())
+                };
+                renderer.render(slice, width, height, stride, bpp, title, message);
+            }
         }
     }
 
@@ -692,15 +862,31 @@ impl AppState {
             Ok(c) => {
                 self.window = Some(window);
                 self.compositor = Some(c);
+                self.fatal_error = None;
                 log::info!("compositor GPU listo (juego + overlay)");
             }
-            Err(e) => log::error!("Compositor::new: {e}"),
+            Err(e) => {
+                log::error!("Compositor::new: {e}");
+                self.window = Some(window);
+                self.compositor = None;
+                self.fatal_error = Some(format!(
+                    "Fallo al inicializar aceleración gráfica (wgpu):\n\n{e}\n\nRecomendaciones para BlueStacks 5:\n- Ve a Ajustes -> Gráficos.\n- Cambia el Renderizador de interfaz (OpenGL / Software).\n- Alterna el Renderizador de gráficos entre OpenGL y DirectX."
+                ));
+            }
         }
     }
 
     /// Compone el fotograma visible y el overlay táctil. No-op si no hay
-    /// ventana viva.
+    /// ventana viva. Ante fallos de GPU, presenta la pantalla de error por software.
     fn redraw(&mut self) {
+        if let Some(error_msg) = self.fatal_error.clone() {
+            self.render_software_error(
+                "[BLAZING RECOMP] ERROR DE INICIALIZACIÓN GPU",
+                &error_msg,
+            );
+            return;
+        }
+
         let Some(window) = &self.window else { return };
         let (w, h) = window.size();
         if w > 0 && h > 0 && self.touch.size() != (w, h) {
@@ -768,6 +954,8 @@ impl AppState {
     }
 }
 
+static LAST_PANIC: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
 #[no_mangle]
 pub fn android_main(app: android_activity::AndroidApp) {
     // Logging a Logcat con el tag "BlazingRecomp" (visible en `adb logcat`).
@@ -778,55 +966,122 @@ pub fn android_main(app: android_activity::AndroidApp) {
     );
     log::info!("Blazing Recomp: android_main (fase overlay táctil y marco SP)");
 
-    let mut state = AppState::new();
-    state.haptics = Haptics::connect(app.vm_as_ptr(), app.activity_as_ptr());
-    let mut finishing = false;
+    // Hook global de pánicos: captura el mensaje y ubicación en lugar de aborto silencioso.
+    std::panic::set_hook(Box::new(|info| {
+        let msg = if let Some(s) = info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Pánico nativo en ejecución".to_string()
+        };
+        let loc = if let Some(l) = info.location() {
+            format!("{}:{}:{}", l.file(), l.line(), l.column())
+        } else {
+            "ubicación desconocida".to_string()
+        };
+        let full = format!("CRASH CRÍTICO (PANIC):\n\n{msg}\n\nUbicación: {loc}\n\nRevisa Logcat ('adb logcat -s BlazingRecomp') para el reporte completo.");
+        log::error!("{full}");
+        if let Ok(mut lock) = LAST_PANIC.lock() {
+            *lock = Some(full);
+        }
+    }));
 
-    while !finishing {
-        app.poll_events(None, |event| {
-            let PollEvent::Main(main) = event else { return };
-            match main {
-                MainEvent::InitWindow { .. } => {
-                    log::info!("ciclo de vida: InitWindow");
-                    state.create_compositor(
-                        app.native_window().map(AndroidWindow::new).map(Arc::new),
-                    );
-                    state.redraw();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut state = AppState::new();
+        state.haptics = Haptics::connect(app.vm_as_ptr(), app.activity_as_ptr());
+        let mut finishing = false;
+
+        while !finishing {
+            app.poll_events(None, |event| {
+                let PollEvent::Main(main) = event else { return };
+                match main {
+                    MainEvent::InitWindow { .. } => {
+                        log::info!("ciclo de vida: InitWindow");
+                        state.create_compositor(
+                            app.native_window().map(AndroidWindow::new).map(Arc::new),
+                        );
+                        state.redraw();
+                    }
+                    MainEvent::WindowResized { .. } | MainEvent::RedrawNeeded { .. } => {
+                        log::info!("ciclo de vida: redibujar ventana");
+                        state.redraw();
+                    }
+                    MainEvent::TerminateWindow { .. } => {
+                        log::info!("ciclo de vida: TerminateWindow");
+                        state.remove_compositor();
+                    }
+                    MainEvent::Resume { .. } => {
+                        log::info!("ciclo de vida: Resume");
+                        if state.machine.is_none() {
+                            log::info!("sin Machine cargada: esperando ROM/BIOS del usuario");
+                        }
+                    }
+                    MainEvent::Pause => {
+                        log::info!("ciclo de vida: Pause");
+                        state.suspend();
+                    }
+                    MainEvent::Destroy => {
+                        log::info!("ciclo de vida: Destroy");
+                        finishing = true;
+                    }
+                    _ => {}
                 }
-                MainEvent::WindowResized { .. } | MainEvent::RedrawNeeded { .. } => {
-                    log::info!("ciclo de vida: redibujar ventana");
-                    state.redraw();
-                }
-                MainEvent::TerminateWindow { .. } => {
-                    log::info!("ciclo de vida: TerminateWindow");
-                    state.remove_compositor();
-                }
-                MainEvent::Resume { .. } => {
-                    log::info!("ciclo de vida: Resume");
-                    if state.machine.is_none() {
-                        log::info!("sin Machine cargada: esperando ROM/BIOS del usuario");
+            });
+
+            if let Ok(mut input) = app.input_events_iter() {
+                while input.next(|event| match event {
+                    InputEvent::MotionEvent(m) => {
+                        state.on_motion(m);
+                        InputStatus::Handled
+                    }
+                    _ => InputStatus::Unhandled,
+                }) {}
+            }
+        }
+    }));
+
+    if result.is_err() {
+        let panic_msg = LAST_PANIC
+            .lock()
+            .ok()
+            .and_then(|mut lock| lock.take())
+            .unwrap_or_else(|| "Error fatal desconocido en el hilo de la aplicación".to_string());
+        log::error!("android_main capturó pánico no manejado: {panic_msg}");
+
+        if let Some(win) = app.native_window() {
+            if let Ok(renderer) = crate::error_screen::ErrorScreenRenderer::new() {
+                if let Ok(mut guard) = win.lock(None) {
+                    let stride = guard.stride();
+                    let height = guard.height();
+                    let width = guard.width();
+                    let bpp = guard.format().bytes_per_pixel().unwrap_or(4);
+                    if let Some(bytes) = guard.bytes() {
+                        let slice: &mut [u8] = unsafe {
+                            std::slice::from_raw_parts_mut(bytes.as_mut_ptr().cast(), bytes.len())
+                        };
+                        renderer.render(
+                            slice,
+                            width,
+                            height,
+                            stride,
+                            bpp,
+                            "[BLAZING RECOMP] CRASH CRÍTICO",
+                            &panic_msg,
+                        );
                     }
                 }
-                MainEvent::Pause => {
-                    log::info!("ciclo de vida: Pause");
-                    state.suspend();
-                }
-                MainEvent::Destroy => {
-                    log::info!("ciclo de vida: Destroy");
-                    finishing = true;
-                }
-                _ => {}
             }
-        });
 
-        if let Ok(mut input) = app.input_events_iter() {
-            while input.next(|event| match event {
-                InputEvent::MotionEvent(m) => {
-                    state.on_motion(m);
-                    InputStatus::Handled
-                }
-                _ => InputStatus::Unhandled,
-            }) {}
+            // Mantener ventana abierta para lectura del diagnóstico hasta que Android la destruya
+            let mut done = false;
+            while !done {
+                app.poll_events(None, |event| {
+                    if let PollEvent::Main(MainEvent::Destroy) = event {
+                        done = true;
+                    }
+                });
+            }
         }
     }
 

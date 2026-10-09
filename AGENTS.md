@@ -101,6 +101,69 @@ El repositorio cuenta con skills locales en [`.agents/skills/`](.agents/skills/)
 - **Propósito:** Creación de guías de estudio didácticas paso a paso en Markdown, estructuradas con estilo *rubber-duck* y momentos interactivos "Tu turno" para que el usuario explique y asimile el código antes de ver la respuesta.
 - **Activación:** Siempre que el usuario solicite estudiar o entender el código, generar guías de aprendizaje, apuntes técnicos de un módulo o diga "explícame cómo funciona esto".
 
+### 4. `test-generation`
+- **Definición:** [`.agents/skills/test-generation/SKILL.md`](.agents/skills/test-generation/SKILL.md)
+- **Propósito:** Generación, mejora y auditoría de tests (unitarios, de integración y de mutación) orientados a detectar fallos reales sin inflar métricas artificiales de cobertura ni alterar el código de producción.
+- **Principios y tipos:**
+  - **Unitarios:** Lógica pura y funciones aisladas con aserciones concretas y deterministas.
+  - **Integración:** Conexión e interoperabilidad entre módulos y subsistemas.
+  - **Mutación:** Evaluación de la efectividad y resistencia de la suite de pruebas mediante mutantes.
+- **Activación:** Siempre que se solicite crear, ampliar o auditar pruebas, mejorar la cobertura de tests, diseñar fixtures o evaluar la solidez del sistema ante cambios.
+
+### 5. Pipeline Operativo al Modificar Código
+
+Todo agente que vaya a modificar, crear o refactorizar código en este repositorio debe ejecutar de forma obligatoria y secuencial este pipeline de 5 fases, encadenando las skills locales:
+
+```
+[Solicitud de Cambio]
+         │
+         ▼
+ 1. Diagnóstico & Tests Previos ──► test-generation (estrategia temporal) + propuesta-verificable (nivel y alcance)
+         │
+         ▼
+ 2. Aprobación (Gatekeeper)     ──► Esperar "OK" explícito del usuario (Nivel 1 o 2)
+         │
+         ▼
+ 3. Edición Atómica             ──► Aplicar estrictamente el cambio acordado (Cero refactors no pactados)
+         │
+         ▼
+ 4. Verificación & Robustez     ──► test-generation (ejecutar suite + edge cases + mutación)
+         │
+         ▼
+ 5. Sincronización & Cierre     ──► diataxis-docs + registro de "Fuera de alcance" + reporte "Predicho vs. Real"
+```
+
+#### Fase 1: Diagnóstico y Estrategia de Tests
+1. **Clasificar el objetivo:** Determinar si es un **Bugfix**, **Refactor** o **Nueva Feature**.
+2. **Definir el test previo (`test-generation`):**
+   - *Bugfix:* Diseñar el test de reproducción. **Debe fallar en rojo** antes de tocar el código de producción.
+   - *Refactor:* Verificar que la suite actual pase **en verde** antes de cambiar nada (línea base).
+   - *Feature:* Diseñar el test de contrato/especificación (estilo TDD).
+3. **Clasificar el nivel (`propuesta-verificable`):** Determinar Nivel 0 (trivial/texto), Nivel 1 (acotado a 1 archivo) o Nivel 2 (crítico, nuevo módulo o >3 archivos). Delimitar explícitamente en el alcance qué **No incluye** el cambio.
+
+#### Fase 2: Propuesta y Gatekeeper
+- En **Nivel 1:** Presentar en el chat el "Antes / Ahora", comando de verificación y tests esperados.
+- En **Nivel 2:** Redactar la propuesta formal en `docs/propuestas/AAAA-MM-DD_nombre.md` (o `propuestas/`).
+- **Regla estricta:** En Niveles 1 y 2 está **prohibido modificar código** sin la confirmación explícita del usuario.
+
+#### Fase 3: Edición Atómica
+- Modificar únicamente lo autorizado en la propuesta.
+- **Manejo de hallazgos colaterales:** Si durante la edición se detectan bugs secundarios, código muerto o tentaciones de refactorizar piezas no acordadas:
+  - **Prohibido:** Aplicar "refactorizaciones oportunistas" no autorizadas dentro de la misma tarea.
+  - **Obligatorio:** Anotar el hallazgo para registrarlo en el cierre sin desviar el alcance acordado.
+
+#### Fase 4: Verificación y Robustez
+1. **Ejecutar tests:** Comprobar que los tests previos ahora pasen en verde.
+2. **Blindaje (`test-generation`):** Añadir tests de casos límite (nulos, vacíos, desbordamientos, límites numéricos).
+3. **Comprobación de solidez:** Verificar con mutación o alterando deliberadamente una condición del código para asegurar que los tests fallen si la lógica se altera.
+4. **Regla estricta:** Nunca debilitar asserts ni modificar código de producción solo para forzar el paso de un test.
+
+#### Fase 5: Sincronización Documental y Cierre
+1. **Impacto en documentación (`diataxis-docs`):** Si el cambio altera APIs nativas, flags, arquitectura o guías de compilación Android, actualizar el cuadrante correspondiente en `docs/`.
+2. **Registro de hallazgos fuera de alcance:** Registrar obligatoriamente todo bug o refactor detectado durante la edición en la sección de la propuesta:
+   `### Fuera de alcance (hallazgos que no se arreglaron)` con su nivel de impacto (`bajo | medio`), o en el resumen de cierre del chat (en Nivel 1) para alimentar futuras propuestas.
+3. **Reporte final:** Contrastar lo predicho en la propuesta contra el resultado real obtenido (`Predicho vs. real`).
+
 ---
 
 ## 6. Notas y Reglas Personalizadas del Usuario

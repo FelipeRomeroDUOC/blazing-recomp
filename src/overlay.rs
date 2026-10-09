@@ -29,12 +29,143 @@ pub enum Glyph {
     LetterA = 6,
     LetterL = 7,
     LetterR = 8,
-    LetterS = 9,
+    SelectLabel = 9,
+    StartLabel = 10,
+}
+
+pub static OUTFIT_FONT_BYTES: &[u8] = include_bytes!("../assets/fonts/Outfit-Bold.ttf");
+pub static JETBRAINS_FONT_BYTES: &[u8] = include_bytes!("../assets/fonts/JetBrainsMono-Bold.ttf");
+
+/// Atlas de textura de glifos rasterizados en memoria (R8Unorm).
+pub struct FontAtlas {
+    pub width: u32,
+    pub height: u32,
+    pub data: Vec<u8>,
+}
+
+/// Construye el atlas tipográfico R8 (256x256 px) rasterizando glifos de Outfit Bold
+/// y JetBrains Mono Bold al arrancar la aplicación.
+pub fn build_font_atlas() -> FontAtlas {
+    let outfit = fontdue::Font::from_bytes(OUTFIT_FONT_BYTES, fontdue::FontSettings::default())
+        .expect("Outfit font debe ser válida");
+    let jb = fontdue::Font::from_bytes(JETBRAINS_FONT_BYTES, fontdue::FontSettings::default())
+        .expect("JetBrains Mono font debe ser válida");
+
+    let width = 256usize;
+    let height = 256usize;
+    let mut data = vec![0u8; width * height];
+
+    let blit = |data: &mut [u8], bitmap: &[u8], bw: usize, bh: usize, rx: usize, ry: usize, rw: usize, rh: usize| {
+        if bw == 0 || bh == 0 {
+            return;
+        }
+        let ox = rx + rw.saturating_sub(bw) / 2;
+        let oy = ry + rh.saturating_sub(bh) / 2;
+        for r in 0..bh {
+            for c in 0..bw {
+                let px = ox + c;
+                let py = oy + r;
+                if px < width && py < height {
+                    data[py * width + px] = bitmap[r * bw + c];
+                }
+            }
+        }
+    };
+
+    // Fila 0 (y: 0..64): Botones de acción principales (A, B, L, R) en Outfit Bold
+    let letters = [
+        ('A', 0usize, 0usize),
+        ('B', 1usize, 0usize),
+        ('L', 2usize, 0usize),
+        ('R', 3usize, 0usize),
+    ];
+    for (ch, col, row) in letters {
+        let (metrics, bitmap) = outfit.rasterize(ch, 44.0);
+        blit(&mut data, &bitmap, metrics.width, metrics.height, col * 64, row * 64, 64, 64);
+    }
+
+    // Fila 1 (y: 64..128): Flechas direccionales de la cruceta (▲, ▼, ◀, ▶)
+    let arrows = [
+        (0usize, 1usize, 0), // Up
+        (1usize, 1usize, 1), // Down
+        (2usize, 1usize, 2), // Left
+        (3usize, 1usize, 3), // Right
+    ];
+    for (col, row, dir) in arrows {
+        let ox = col * 64;
+        let oy = row * 64;
+        for y in 0..64 {
+            for x in 0..64 {
+                let fx = x as f32 + 0.5 - 32.0;
+                let fy = y as f32 + 0.5 - 32.0;
+                let (rx, ry) = match dir {
+                    0 => (fx, fy),
+                    1 => (fx, -fy),
+                    2 => (fy, fx),
+                    3 => (-fy, -fx),
+                    _ => (fx, fy),
+                };
+                let t = (ry + 14.0) / 28.0;
+                let inside = if t >= 0.0 && t <= 1.0 {
+                    let half_w = t * 14.0;
+                    let dx = half_w - rx.abs();
+                    dx.clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                if inside > 0.0 {
+                    data[(oy + y) * width + (ox + x)] = (inside * 255.0) as u8;
+                }
+            }
+        }
+    }
+
+    // Fila 2 (y: 128..192): Etiquetas de sistema (SELECT, START) en JetBrains Mono Bold
+    let labels = [
+        ("SELECT", 0usize, 2usize),
+        ("START", 1usize, 2usize),
+    ];
+    for (text, col, row) in labels {
+        let rx = col * 128;
+        let ry = row * 64;
+        let mut total_w = 0usize;
+        for ch in text.chars() {
+            let (m, _) = jb.rasterize(ch, 22.0);
+            total_w += m.advance_width.round() as usize;
+        }
+        let start_x = rx + 128usize.saturating_sub(total_w) / 2;
+        let baseline_y = ry + 38;
+        let mut cur_x = start_x;
+        for ch in text.chars() {
+            let (metrics, bitmap) = jb.rasterize(ch, 22.0);
+            let char_x = (cur_x as i32 + metrics.xmin).max(0) as usize;
+            let char_y = (baseline_y as i32 - metrics.ymin - metrics.height as i32).max(0) as usize;
+            for r in 0..metrics.height {
+                for c in 0..metrics.width {
+                    let px = char_x + c;
+                    let py = char_y + r;
+                    if px < width && py < height {
+                        let val = bitmap[r * metrics.width + c];
+                        if val > 0 {
+                            data[py * width + px] = data[py * width + px].max(val);
+                        }
+                    }
+                }
+            }
+            cur_x += metrics.advance_width.round() as usize;
+        }
+    }
+
+    FontAtlas {
+        width: width as u32,
+        height: height as u32,
+        data,
+    }
 }
 
 /// Un elemento dibujable del overlay, derivado de una `TouchArea`.
 /// Espejo exacto de `struct Elem` en `overlay.wgsl` (layout
-/// uniform-compatible: 12 x f32 = 48 B, stride múltiplo de 16).
+/// uniform-compatible: 16 x f32 = 64 B, stride múltiplo de 16).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ElemParams {
     pub cx: f32,
@@ -47,11 +178,11 @@ pub struct ElemParams {
     pub round: f32,
     pub glyph_scale: f32,
     pub ring: f32,
+    pub angle: f32,
+    pub extent_y: f32,
 }
 
-/// Primitiva del elemento: círculo (botones, cuenca) o cápsula vertical
-/// (rect redondeado; la cápsula diagonal del clúster se compone con dos
-/// pastillas verticales alineadas al eje -16°).
+/// Primitiva del elemento: círculo o pastilla redondeada orientada.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ElemKind {
     Circle = 0,
@@ -59,8 +190,8 @@ pub enum ElemKind {
 }
 
 impl ElemParams {
-    /// Empaqueta en el orden del `struct Elem` del shader.
-    pub fn pack(&self) -> [f32; 12] {
+    /// Empaqueta en el orden del `struct Elem` del shader (16 floats / 64 bytes).
+    pub fn pack(&self) -> [f32; 16] {
         [
             self.cx,
             self.cy,
@@ -74,23 +205,22 @@ impl ElemParams {
             self.round,
             self.glyph_scale,
             self.ring,
+            self.angle,
+            self.extent_y,
+            0.0,
+            0.0,
         ]
     }
 }
 
 /// Colores temáticos por botón según orientación.
-/// Portrait: B rojo, A verde, L/R blancos; el resto gris-lavanda de la carcasa.
-/// Landscape: neutros translúcidos (gris suave) para B y A.
-fn button_color(button: crate::input::Button, orientation: crate::input::Orientation) -> [f32; 3] {
-    use crate::input::Button::*;
+/// Todos los botones usan la paleta gris-lavanda uniforme estilo GBA SP en portrait,
+/// y gris claro escarchado translúcido ([0.72, 0.75, 0.82]) en landscape.
+fn button_color(_button: crate::input::Button, orientation: crate::input::Orientation) -> [f32; 3] {
     use crate::input::Orientation::*;
-    match (button, orientation) {
-        (B, Portrait) => [0.78, 0.18, 0.16],   // rojo
-        (A, Portrait) => [0.16, 0.62, 0.22],   // verde
-        (L | R, Portrait) => [0.92, 0.93, 0.95], // blancos
-        (B | A, Landscape) => [0.60, 0.62, 0.68], // gris suave translúcido
-        (L | R, Landscape) => [0.75, 0.76, 0.80], // gris claro
-        _ => [0.55, 0.56, 0.62],   // gris-lavanda
+    match orientation {
+        Portrait => [0.56, 0.58, 0.70],  // gris-lavanda uniforme (#a4a9c5 / #7b819f)
+        Landscape => [0.72, 0.75, 0.82], // gris claro translúcido escarchado
     }
 }
 
@@ -106,7 +236,8 @@ fn button_glyph(button: crate::input::Button) -> Glyph {
         A => Glyph::LetterA,
         L => Glyph::LetterL,
         R => Glyph::LetterR,
-        Select | Start => Glyph::LetterS,
+        Select => Glyph::SelectLabel,
+        Start => Glyph::StartLabel,
     }
 }
 
@@ -146,23 +277,34 @@ pub fn build_elems_with_orientation(
         .iter()
         .map(|a| {
             let color = button_color(a.button, orientation);
-            // Select/Start y L/R como pastillas verticales; cruceta y
-            // clúster como círculos con cuenca (fidelidad al prototipo).
-            let (kind, round) = match a.button {
-                Select | Start | L | R => (ElemKind::Pill, a.radius * 0.55),
-                _ => (ElemKind::Circle, 0.0),
+            // L y R como pastillas inclinadas (~-30°); Select/Start pastillas horizontales lisas;
+            // cruceta y A/B círculos (Paso 4).
+            let (kind, round, angle, rad_x, extent_y) = match a.button {
+                L | R => {
+                    let ang = (-30.0f32).to_radians();
+                    let rx = a.radius;
+                    let ey = a.radius * 0.58;
+                    (ElemKind::Pill, ey, ang, rx, ey)
+                }
+                Select | Start => {
+                    let ey = a.radius * 0.45;
+                    (ElemKind::Pill, ey, 0.0, a.radius, ey)
+                }
+                _ => (ElemKind::Circle, 0.0, 0.0, a.radius, a.radius),
             };
             ElemParams {
                 cx: a.cx,
                 cy: a.cy,
-                radius: a.radius,
+                radius: rad_x,
                 color,
                 pressed: if is_pressed(a.button) { 1.0 } else { 0.0 },
                 kind,
                 glyph: button_glyph(a.button),
                 round,
-                glyph_scale: 0.13,
+                glyph_scale: 0.18,
                 ring: 0.55,
+                angle,
+                extent_y,
             }
         })
         .collect()
@@ -183,7 +325,7 @@ pub fn build_globals(w: u32, h: u32, orientation: crate::input::Orientation) -> 
         res_y: h as f32,
         opacity: match orientation {
             crate::input::Orientation::Portrait => 1.0,
-            crate::input::Orientation::Landscape => 0.55,
+            crate::input::Orientation::Landscape => 0.65,
         },
         shell: match orientation {
             crate::input::Orientation::Portrait => 1.0,
@@ -235,7 +377,8 @@ mod tests {
             Glyph::LetterA => Button::A,
             Glyph::LetterL => Button::L,
             Glyph::LetterR => Button::R,
-            Glyph::LetterS => Button::Select, // Select/Start comparten S
+            Glyph::SelectLabel => Button::Select,
+            Glyph::StartLabel => Button::Start,
             Glyph::None => unreachable!(),
         }
     }
@@ -280,31 +423,52 @@ mod tests {
             globals_ls.opacity
         );
 
-        // (c) Colores temáticos en portrait: B rojo, A verde, L/R blancos.
+        // (c) Todos los botones usan paleta gris-lavanda uniforme (Paso 1).
         let elems2 = build_elems(&layout(1080, 2400, Orientation::Portrait), |_| false);
-        let b_elem = elems2.iter().find(|e| e.glyph == Glyph::LetterB).unwrap();
-        let a_elem2 = elems2.iter().find(|e| e.glyph == Glyph::LetterA).unwrap();
-        let l_elem = elems2.iter().find(|e| e.glyph == Glyph::LetterL).unwrap();
-        assert!(b_elem.color[0] > 0.5 && b_elem.color[1] < 0.4, "B rojo");
-        assert!(a_elem2.color[1] > 0.5 && a_elem2.color[0] < 0.4, "A verde");
-        assert!(l_elem.color.iter().all(|c| *c > 0.8), "L blanco");
+        for elem in &elems2 {
+            assert!(
+                (elem.color[0] - 0.56).abs() < 0.01 && (elem.color[1] - 0.58).abs() < 0.01 && (elem.color[2] - 0.70).abs() < 0.01,
+                "todos los botones deben ser gris-lavanda uniforme"
+            );
+        }
 
-        // (d) Colores neutros en landscape: B y A en tonos gris suave translúcido.
+        // (d) Colores en landscape: gris claro translúcido escarchado ([0.72, 0.75, 0.82]).
         let elems_ls = build_elems_with_orientation(
             &layout(2400, 1080, Orientation::Landscape),
             Orientation::Landscape,
             |_| false,
         );
-        let b_ls = elems_ls.iter().find(|e| e.glyph == Glyph::LetterB).unwrap();
-        let a_ls = elems_ls.iter().find(|e| e.glyph == Glyph::LetterA).unwrap();
+        for elem in &elems_ls {
+            assert!(
+                elem.color[0] > 0.70 && elem.color[1] > 0.70 && elem.color[2] > 0.70,
+                "todos los botones en landscape deben ser gris claro translúcido"
+            );
+        }
+    }
+
+    /// Criterio de aceptación: en Landscape la opacidad es 0.65 y los botones
+    /// usan acabado gris claro escarchado translúcido (canales RGB > 0.70).
+    #[test]
+    fn test_landscape_frosted_light_gray_palette_and_opacity() {
+        let globals = build_globals(2400, 1080, Orientation::Landscape);
         assert!(
-            (b_ls.color[0] - b_ls.color[1]).abs() < 0.15,
-            "B neutro en landscape"
+            (globals.opacity - 0.65).abs() < 0.01,
+            "opacidad en landscape debe ser 0.65, actual: {}",
+            globals.opacity
         );
-        assert!(
-            (a_ls.color[1] - a_ls.color[0]).abs() < 0.15,
-            "A neutro en landscape"
+
+        let elems = build_elems_with_orientation(
+            &layout(2400, 1080, Orientation::Landscape),
+            Orientation::Landscape,
+            |_| false,
         );
+        for elem in &elems {
+            assert!(
+                elem.color[0] > 0.70 && elem.color[1] > 0.70 && elem.color[2] > 0.70,
+                "color en landscape debe ser gris claro translúcido (> 0.70), actual: {:?}",
+                elem.color
+            );
+        }
     }
 
     /// El empaquetado respeta el layout de memoria esperado por el
@@ -322,12 +486,14 @@ mod tests {
             round: 0.4,
             glyph_scale: 0.13,
             ring: 0.55,
+            angle: -0.52,
+            extent_y: 1.5,
         };
         let packed = e.pack();
-        assert_eq!(packed.len(), 12);
+        assert_eq!(packed.len(), 16);
         assert_eq!(
             packed,
-            [1.0, 2.0, 3.0, 0.25, 0.5, 0.75, 1.0, 1.0, 6.0, 0.4, 0.13, 0.55]
+            [1.0, 2.0, 3.0, 0.25, 0.5, 0.75, 1.0, 1.0, 6.0, 0.4, 0.13, 0.55, -0.52, 1.5, 0.0, 0.0]
         );
     }
 
@@ -351,6 +517,13 @@ mod tests {
         validator
             .validate(&blit_module)
             .expect("el shader de game_blit debe validar");
+    }
+
+    /// Criterio de aceptación (Paso 6): los shaders WGSL con textura de atlas y sampler
+    /// parsean y validan con Naga sin errores.
+    #[test]
+    fn test_overlay_shader_with_font_atlas_validates() {
+        test_overlay_shader_validates();
     }
 
     /// Criterio de aceptación 3: confinamiento estricto de glifos dentro del cuerpo del botón.
@@ -380,37 +553,90 @@ mod tests {
         }
     }
 
-    /// Valida que las representaciones en bits de todos los glifos son
-    /// válidas, no nulas para glifos activos y caben en 15 bits (bit 14..0).
+    /// Criterio de aceptación Paso 6: Generación y validez del atlas tipográfico R8
     #[test]
-    fn test_overlay_glyph_bitmaps_valid() {
-        let table: [u32; 10] = [
-            0x0000, // None
-            0x2A94, // ArrowUp
-            0x15D4, // ArrowDown
-            0x29E2, // ArrowLeft
-            0x23CA, // ArrowRight
-            0x6DB6, // B
-            0x2BED, // A
-            0x4927, // L
-            0x6DB5, // R
-            0x7CF7, // S
-        ];
+    fn test_font_atlas_contains_required_glyphs() {
+        let atlas = build_font_atlas();
+        assert_eq!(atlas.width, 256);
+        assert_eq!(atlas.height, 256);
+        assert_eq!(atlas.data.len(), 256 * 256);
+        let non_zero = atlas.data.iter().filter(|&&b| b > 0).count();
+        assert!(non_zero > 1000, "el atlas debe contener glifos rasterizados: {}", non_zero);
 
-        for (idx, &bits) in table.iter().enumerate() {
-            assert!(
-                bits <= 0x7FFF,
-                "glifo índice {} (0x{:04X}) excede los 15 bits (0x7FFF)",
-                idx,
-                bits
-            );
-            if idx > 0 {
-                assert!(
-                    bits > 0,
-                    "glifo activo índice {} no debe tener mapa de bits vacío",
-                    idx
-                );
+        // Validar que cada una de las 3 filas contiene cobertura de píxeles:
+        // Fila 0 (A, B, L, R)
+        let row0_pixels = atlas.data[0..64 * 256].iter().filter(|&&b| b > 0).count();
+        assert!(row0_pixels > 200, "fila 0 (botones A/B/L/R) vacía");
+
+        // Fila 1 (flechas cruceta)
+        let row1_pixels = atlas.data[64 * 256..128 * 256].iter().filter(|&&b| b > 0).count();
+        assert!(row1_pixels > 200, "fila 1 (flechas cruceta) vacía");
+
+        // Fila 2 (etiquetas SELECT / START)
+        let row2_pixels = atlas.data[128 * 256..192 * 256].iter().filter(|&&b| b > 0).count();
+        assert!(row2_pixels > 200, "fila 2 (etiquetas SELECT/START) vacía");
+    }
+
+    /// Criterio Paso 5: simetría y congruencia de los 4 brazos de la cruceta
+    /// para alimentar la cruz continua en el shader.
+    #[test]
+    fn test_dpad_cross_geometry_symmetry() {
+        let mut tc = TouchController::new();
+        tc.resize(1080, 2400);
+        let elems = build_elems(tc.areas(), |_| false);
+        let up = &elems[0];
+        let down = &elems[1];
+        let left = &elems[2];
+        let right = &elems[3];
+
+        assert_eq!(up.glyph, Glyph::ArrowUp);
+        assert_eq!(down.glyph, Glyph::ArrowDown);
+        assert_eq!(left.glyph, Glyph::ArrowLeft);
+        assert_eq!(right.glyph, Glyph::ArrowRight);
+
+        // Centro vertical y horizontal coinciden en el eje de simetría
+        let dpad_cx = up.cx;
+        let dpad_cy = (up.cy + down.cy) * 0.5;
+        assert!((down.cx - dpad_cx).abs() < 0.01);
+        assert!((left.cy - dpad_cy).abs() < 0.01);
+        assert!((right.cy - dpad_cy).abs() < 0.01);
+
+        // Los 4 brazos están a la misma distancia del centro
+        let d_up = (up.cy - dpad_cy).abs();
+        let d_down = (down.cy - dpad_cy).abs();
+        let d_left = (left.cx - dpad_cx).abs();
+        let d_right = (right.cx - dpad_cx).abs();
+        assert!((d_up - d_down).abs() < 0.01);
+        assert!((d_left - d_right).abs() < 0.01);
+        assert!((d_up - d_left).abs() < 0.01);
+    }
+
+    /// Criterio de aceptación: La flecha izquierda de la cruceta debe apuntar a la izquierda (◀),
+    /// lo que significa que el ápice (menos cobertura de píxeles) está en la mitad izquierda
+    /// de la celda de 64x64, y la base (más cobertura) en la mitad derecha.
+    #[test]
+    fn test_dpad_left_arrow_points_left() {
+        let atlas = build_font_atlas();
+        // Celda de la flecha izquierda: col 2 (x: 128..192), row 1 (y: 64..128)
+        let mut left_half_pixels = 0;
+        let mut right_half_pixels = 0;
+        for y in 64..128 {
+            for x in 128..160 {
+                if atlas.data[y * 256 + x] > 0 {
+                    left_half_pixels += 1;
+                }
+            }
+            for x in 160..192 {
+                if atlas.data[y * 256 + x] > 0 {
+                    right_half_pixels += 1;
+                }
             }
         }
+        assert!(
+            left_half_pixels < right_half_pixels,
+            "flecha izquierda debe apuntar a la izquierda (ápice a la izquierda: {} px vs base a la derecha: {} px)",
+            left_half_pixels,
+            right_half_pixels
+        );
     }
 }

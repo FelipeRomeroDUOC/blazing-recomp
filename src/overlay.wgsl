@@ -12,20 +12,24 @@
 // evaluados con bit-math puro (sin arreglos dinámicos, WGSL uniform).
 
 // Nota de layout: el array uniform exige stride múltiplo de 16 bytes;
-// Elem son 12 floats (48 B) para cumplirlo.
+// Elem son 16 floats (64 B) para cumplir el alineamiento uniform a múltiplos de 16.
 struct Elem {
     cx: f32,
     cy: f32,
-    radius: f32,      // radio del círculo (o half-extent para rects)
+    radius: f32,      // radio del círculo (o half-extent X para pastillas)
     r: f32,           // color
     g: f32,           // color
     b: f32,           // color
     pressed: f32,     // 1.0 = resaltado
-    kind: f32,        // 0 = circle, 1 = rounded-rect (vertical pill)
+    kind: f32,        // 0 = circle, 1 = rounded-rect (vertical / oriented pill)
     glyph: f32,       // índice de glifo (0 = ninguno)
     round: f32,       // radio de esquina (para kind 1)
     glyph_scale: f32, // tamaño del glifo relativo al radio (0.42)
     ring: f32,        // intensidad del anillo exterior (0..1)
+    angle: f32,       // rotación en radianes (para L y R inclinadas)
+    extent_y: f32,    // half-extent vertical
+    pad1: f32,
+    pad2: f32,
 };
 
 struct Globals {
@@ -37,7 +41,9 @@ struct Globals {
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var<uniform> elems: array<Elem, 12>;
-// 12 * 48 B = 576, múltiplo de 16: válido como uniform.
+@group(0) @binding(2) var font_texture: texture_2d<f32>;
+@group(0) @binding(3) var font_sampler: sampler;
+// 12 * 64 B = 768 B, múltiplo de 16: válido como uniform.
 
 struct VSOut {
     @builtin(position) pos: vec4<f32>,
@@ -66,39 +72,20 @@ fn sd_round_rect(p: vec2<f32>, c: vec2<f32>, half: vec2<f32>, round: f32) -> f32
          + min(max(q.x, q.y), 0.0) - round;
 }
 
-// ---------- Glifos 3x5 (15 bits, fila por fila desde el MSB) ----------
+// ---------- Muestreo de Glifos desde el Atlas Tipográfico R8 (Fase 6) ----------
 
-// Devuelve [0,1] dentro del glifo; `g` en coords locales del botón,
-// con (0,0) en el centro y glifo de 3x5 "unidades" de tamaño u.
-fn glyph_bit(idx: u32, row: u32, col: u32) -> f32 {
-    // Tabla compacta: glifos x 15 bits, empaquetados en u32 (los 15
-    // bits más bajos son el glifo; fila 0 = bit 14 ... fila 4 = bit 0).
-    // Glifos: 0=nada, 1=arriba, 2=abajo, 3=izq, 4=der, 5=B, 6=A,
-    //         7=L, 8=R, 9=S(select/start resumido)
-    var table = array<u32, 10>(
-        0x0000u,
-        0x2A94u, // flecha arriba
-        0x15D4u, // flecha abajo
-        0x29E2u, // flecha izquierda (tip col 0, alas col 1, stem col 2)
-        0x23CAu, // flecha derecha (stem col 0, alas col 1, tip col 2)
-        0x6DB6u, // B
-        0x2BEDu, // A
-        0x4927u, // L
-        0x6DB5u, // R
-        0x7CF7u, // S
-    );
-    let i = min(idx, 9u);
-    let bit = 14u - (row * 3u + col);
-    return select(0.0, 1.0, ((table[i] >> bit) & 1u) == 1u);
-}
-
-// Lectura segura de píxeles del glifo con comprobación previa de límites
-// para evitar desbordamientos o corrimientos indefinidos en GPUs móviles.
-fn glyph_pixel(idx: u32, row: i32, col: i32) -> f32 {
-    if col < 0 || col > 2 || row < 0 || row > 4 {
-        return 0.0;
+fn glyph_cell_coords(idx: u32) -> vec2<f32> {
+    switch idx {
+        case 6u: { return vec2<f32>(0.0, 0.0); } // 'A' (Outfit Bold)
+        case 5u: { return vec2<f32>(1.0, 0.0); } // 'B' (Outfit Bold)
+        case 7u: { return vec2<f32>(2.0, 0.0); } // 'L' (Outfit Bold)
+        case 8u: { return vec2<f32>(3.0, 0.0); } // 'R' (Outfit Bold)
+        case 1u: { return vec2<f32>(0.0, 1.0); } // Flecha Arriba
+        case 2u: { return vec2<f32>(1.0, 1.0); } // Flecha Abajo
+        case 3u: { return vec2<f32>(2.0, 1.0); } // Flecha Izquierda
+        case 4u: { return vec2<f32>(3.0, 1.0); } // Flecha Derecha
+        default: { return vec2<f32>(0.0, 0.0); }
     }
-    return glyph_bit(idx, u32(row), u32(col));
 }
 
 fn glyph_color(idx: f32, local: vec2<f32>, u: f32, ink: vec3<f32>) -> vec4<f32> {
@@ -106,45 +93,38 @@ fn glyph_color(idx: f32, local: vec2<f32>, u: f32, ink: vec3<f32>) -> vec4<f32> 
     if i == 0u {
         return vec4<f32>(0.0);
     }
-    // Glifo centrado: 3 cols x 5 filas de tamaño u
-    let origin = vec2<f32>(-1.5 * u, -2.5 * u);
-    let q = local - origin;
-    let col = i32(floor(q.x / u));
-    let row = i32(floor(q.y / u));
-    if col < 0 || col > 2 || row < 0 || row > 4 {
-        return vec4<f32>(0.0);
-    }
-    let on = glyph_pixel(i, row, col);
-    if on < 0.5 {
-        return vec4<f32>(0.0);
+
+    // Casos 1..8: Glifos individuales en celdas cuadradas de 64x64 px (0.25 x 0.25 UV)
+    if i <= 8u {
+        // Para botones de acción (A, B, L, R: 5..8), escala generosa y legible.
+        // Para flechas de cruceta (1..4), escala adaptada al ancho del brazo.
+        let scale_factor = select(5.2, 3.6, i <= 4u);
+        let box_size = max(u * scale_factor, 14.0);
+        let q = (local / box_size) + vec2<f32>(0.5, 0.5);
+        if q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 {
+            return vec4<f32>(0.0);
+        }
+        let cell = glyph_cell_coords(i);
+        let uv = vec2<f32>((cell.x + q.x) * 0.25, (cell.y + q.y) * 0.25);
+        let coverage = textureSample(font_texture, font_sampler, uv).r;
+        return vec4<f32>(ink, coverage);
     }
 
-    // Suavizado del borde del píxel del glifo con comprobación de vecinos adyacentes
-    let cell_frac = fract(q / u);
-    let left_on   = glyph_pixel(i, row, col - 1);
-    let right_on  = glyph_pixel(i, row, col + 1);
-    let top_on    = glyph_pixel(i, row - 1, col);
-    let bottom_on = glyph_pixel(i, row + 1, col);
-
-    var d_x = 0.0;
-    if left_on < 0.5 && cell_frac.x < 0.5 {
-        d_x = max(d_x, (0.5 - cell_frac.x) * 2.0);
-    }
-    if right_on < 0.5 && cell_frac.x > 0.5 {
-        d_x = max(d_x, (cell_frac.x - 0.5) * 2.0);
-    }
-
-    var d_y = 0.0;
-    if top_on < 0.5 && cell_frac.y < 0.5 {
-        d_y = max(d_y, (0.5 - cell_frac.y) * 2.0);
-    }
-    if bottom_on < 0.5 && cell_frac.y > 0.5 {
-        d_y = max(d_y, (cell_frac.y - 0.5) * 2.0);
+    // Casos 9..10: Etiquetas SELECT y START (JetBrains Mono Bold, fila 2, celdas de 128x64 px)
+    if i == 9u || i == 10u {
+        let half_w = max(u * 3.8, 24.0);
+        let half_h = max(u * 1.9, 12.0);
+        let q = vec2<f32>(local.x / (half_w * 2.0) + 0.5, local.y / (half_h * 2.0) + 0.5);
+        if q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0 {
+            return vec4<f32>(0.0);
+        }
+        let col_off = select(0.50, 0.00, i == 9u);
+        let uv = vec2<f32>(col_off + q.x * 0.50, 0.50 + q.y * 0.25);
+        let coverage = textureSample(font_texture, font_sampler, uv).r;
+        return vec4<f32>(ink, coverage);
     }
 
-    let edge = max(d_x, d_y);
-    let aa = 1.0 - smoothstep(0.70, 0.98, edge);
-    return vec4<f32>(ink * aa, aa);
+    return vec4<f32>(0.0);
 }
 
 // ---------- Fragmento ----------
@@ -154,108 +134,336 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let res = vec2<f32>(globals.res_x, globals.res_y);
     let p = in.pos.xy; // píxeles físicos (y hacia abajo)
 
-    // 1. Fondo: carcasa plateada en la franja de controles (mitad
-    //    inferior en portrait; franja base en landscape). Se dibuja solo
-    //    si globals.shell == 1.0.
+    // 1. Fondo: carcasa plateada GBA SP en portrait con esquinas redondeadas
+    //    y márgenes laterales (fidelidad al prototipo layout_tactil_v2.html).
     var color = vec3<f32>(0.0, 0.0, 0.0);
     var total_a = 0.0;
     if globals.shell > 0.5 {
-        let shell_top = res.y * 0.48;
-        let in_shell = step(shell_top, p.y);
-        // Gradiente sutil de carcasa (plateado GBA SP).
-        let t = (p.y - shell_top) / max(res.y - shell_top, 1.0);
-        let plate = mix(vec3<f32>(0.66, 0.67, 0.70), vec3<f32>(0.50, 0.51, 0.56), t);
-        color = plate * in_shell;
-        total_a = in_shell;
+        let shell_top = res.y * 0.49;
+        let corner_r = min(res.x * 0.08, 36.0);
+        var d_shell = p.y - shell_top;
+        if p.y < shell_top + corner_r {
+            if p.x < corner_r {
+                d_shell = corner_r - length(p - vec2<f32>(corner_r, shell_top + corner_r));
+            } else if p.x > res.x - corner_r {
+                d_shell = corner_r - length(p - vec2<f32>(res.x - corner_r, shell_top + corner_r));
+            }
+        }
+        let in_shell = smoothstep(-1.0, 1.0, d_shell);
 
-        // Pozos de fondo para cruceta y clúster AB (cuencas y cápsulas hundidas)
+        // Gradiente plateado claro (#dcdee6 a #b3b7c7) que cubre el cuerpo del control
+        let t_plate = clamp((p.y - shell_top) / max(res.y - shell_top, 1.0), 0.0, 1.0);
+        let plate_light = vec3<f32>(0.86, 0.87, 0.90);
+        let plate_dark  = vec3<f32>(0.70, 0.72, 0.78);
+        var plate = mix(plate_light, plate_dark, t_plate);
+
+        // Bisel superior iluminado continuo a lo largo del borde y esquinas redondeadas
+        let bevel_t = (1.0 - smoothstep(0.0, 5.0, abs(d_shell))) * in_shell;
+        plate = mix(plate, vec3<f32>(0.96, 0.97, 1.0), bevel_t * 0.55);
+
+        // Sombra suave superior proyectada sobre el marco del juego
+        let top_shadow = (1.0 - smoothstep(-8.0, 0.0, d_shell)) * 0.45;
+
+        color = mix(vec3<f32>(0.0, 0.0, 0.0), plate, in_shell);
+        total_a = max(in_shell, top_shadow);
+
+        // 1. Hendidura 3D para la cruceta (cuenca circular hundida)
         if elems[0].radius > 0.0 && elems[1].radius > 0.0 {
             let dpad_c = vec2<f32>(elems[0].cx, (elems[0].cy + elems[1].cy) * 0.5);
-            let dpad_r = abs(elems[1].cy - elems[0].cy) * 1.08;
+            let arm_len = abs(elems[1].cy - elems[0].cy) * 0.5;
+            let dpad_r = arm_len + elems[0].radius * 1.15;
             let d_well = length(p - dpad_c) - dpad_r;
+
+            // Bisel exterior iluminado (reborde exterior inferior de la hendidura)
+            let outer_lip = (1.0 - smoothstep(0.0, 3.0, abs(d_well))) * clamp((p.y - dpad_c.y) / dpad_r * 0.8 + 0.2, 0.0, 1.0) * 0.55;
+            color = mix(color, vec3<f32>(0.96, 0.97, 1.0), outer_lip * in_shell);
+
             if d_well < 0.0 {
-                let well_mask = 1.0 - smoothstep(-2.0, 0.0, d_well);
+                let well_mask = 1.0 - smoothstep(-2.5, 0.0, d_well);
+                // Degradado del fondo de la cuenca
                 let well_t = (p.y - (dpad_c.y - dpad_r)) / (2.0 * dpad_r);
-                let well_col = mix(vec3<f32>(0.42, 0.43, 0.48), vec3<f32>(0.58, 0.59, 0.64), well_t);
-                color = mix(color, well_col, well_mask * 0.75);
+                var well_col = mix(vec3<f32>(0.38, 0.39, 0.45), vec3<f32>(0.60, 0.61, 0.67), well_t);
+
+                // Profundidad 3D: Sombra interior superior (pared superior de la cuenca)
+                let norm_w = (p - dpad_c) / dpad_r;
+                let top_inner_shadow = smoothstep(-dpad_r * 0.45, 0.0, d_well) * clamp(-norm_w.y * 0.80 - norm_w.x * 0.35 + 0.20, 0.0, 1.0);
+                well_col = mix(well_col, vec3<f32>(0.12, 0.13, 0.16), top_inner_shadow * 0.90);
+
+                // Profundidad 3D: Labio interior inferior iluminado (pared inferior)
+                let bottom_inner_lip = smoothstep(-dpad_r * 0.25, 0.0, d_well) * clamp(norm_w.y * 0.80 + norm_w.x * 0.35, 0.0, 1.0);
+                well_col = mix(well_col, vec3<f32>(0.88, 0.90, 0.96), bottom_inner_lip * 0.50);
+
+                color = mix(color, well_col, well_mask);
             }
         }
 
+        // 2. Hendidura 3D para clúster de acción (cápsula redondeada simétricamente balanceada)
         if elems[4].radius > 0.0 && elems[5].radius > 0.0 {
             let b_pos = vec2<f32>(elems[4].cx, elems[4].cy);
             let a_pos = vec2<f32>(elems[5].cx, elems[5].cy);
-            let ba_mid = (b_pos + a_pos) * 0.5;
             let ba_vec = a_pos - b_pos;
             let ba_len = length(ba_vec);
             let u_axis = ba_vec / max(ba_len, 0.001);
             let v_axis = vec2<f32>(u_axis.y, -u_axis.x);
 
-            var cluster_center = ba_mid;
-            var half_h = elems[4].radius * 1.35;
+            var cluster_center = (b_pos + a_pos) * 0.5;
+            var half_h = elems[4].radius * 1.55;
             if elems[6].radius > 0.0 && elems[7].radius > 0.0 {
                 let l_pos = vec2<f32>(elems[6].cx, elems[6].cy);
                 let r_pos = vec2<f32>(elems[7].cx, elems[7].cy);
                 let lr_mid = (l_pos + r_pos) * 0.5;
+                let ba_mid = (b_pos + a_pos) * 0.5;
                 cluster_center = (ba_mid + lr_mid) * 0.5;
-                let lr_dist = length(lr_mid - ba_mid);
-                half_h = lr_dist * 0.5 + elems[4].radius * 1.30;
+                let row_dist = length(lr_mid - ba_mid);
+                half_h = row_dist * 0.5 + max(elems[4].radius, elems[6].radius) * 1.35;
             }
 
             let half_w = ba_len * 0.5 + elems[4].radius * 1.30;
             let p_rel = p - cluster_center;
             let p_local = vec2<f32>(dot(p_rel, u_axis), dot(p_rel, v_axis));
-            let round_r = elems[4].radius * 0.95;
+            let round_r = min(half_w, half_h) * 0.65;
             let d_ab_well = sd_round_rect(p_local, vec2<f32>(0.0, 0.0), vec2<f32>(half_w, half_h), round_r);
+
+            // Bisel exterior iluminado (reborde exterior inferior de la cápsula)
+            let norm_ab = p_rel / max(half_w, half_h);
+            let ab_outer_lip = (1.0 - smoothstep(0.0, 3.0, abs(d_ab_well))) * clamp(norm_ab.y * 0.80 + norm_ab.x * 0.35 + 0.20, 0.0, 1.0) * 0.55;
+            color = mix(color, vec3<f32>(0.96, 0.97, 1.0), ab_outer_lip * in_shell);
+
             if d_ab_well < 0.0 {
                 let ab_mask = 1.0 - smoothstep(-2.5, 0.0, d_ab_well);
-                let ab_col = vec3<f32>(0.44, 0.45, 0.50);
-                color = mix(color, ab_col, ab_mask * 0.65);
+                // Degradado del fondo de la cápsula
+                let t_ab = clamp(norm_ab.y * 0.5 + 0.5, 0.0, 1.0);
+                var ab_col = mix(vec3<f32>(0.38, 0.39, 0.45), vec3<f32>(0.60, 0.61, 0.67), t_ab);
+
+                // Profundidad 3D: Sombra interior superior (pared superior de la cápsula hundida)
+                let top_inner_shadow = smoothstep(-half_h * 0.45, 0.0, d_ab_well) * clamp(-norm_ab.y * 0.80 - norm_ab.x * 0.35 + 0.20, 0.0, 1.0);
+                ab_col = mix(ab_col, vec3<f32>(0.12, 0.13, 0.16), top_inner_shadow * 0.90);
+
+                // Profundidad 3D: Labio interior inferior iluminado (pared inferior)
+                let bottom_inner_lip = smoothstep(-half_h * 0.25, 0.0, d_ab_well) * clamp(norm_ab.y * 0.80 + norm_ab.x * 0.35, 0.0, 1.0);
+                ab_col = mix(ab_col, vec3<f32>(0.88, 0.90, 0.96), bottom_inner_lip * 0.50);
+
+                color = mix(color, ab_col, ab_mask);
             }
         }
     }
 
-    // 2. Elementos táctiles: el menor SDF gana (los elementos son
-    //    disjuntos por diseño del layout).
-    for (var e = 0; e < 12; e = e + 1) {
+    // 2. Cruceta continua unificada en cruz (elementos 0..3: Up, Down, Left, Right)
+    //    con brazos redondeados y centro cuadrado (estilo GBA SP / layout_tactil_v2.html).
+    if elems[0].radius > 0.0 && elems[1].radius > 0.0 {
+        let dpad_c = vec2<f32>(elems[0].cx, (elems[0].cy + elems[1].cy) * 0.5);
+        let arm_len = abs(elems[1].cy - elems[0].cy) * 0.5;
+        let r_base = elems[0].radius;
+        let half_len = arm_len + r_base * 0.85;
+        let half_thick = r_base * 0.82;
+        let corner_r = r_base * 0.30;
+
+        let d_v = sd_round_rect(p, dpad_c, vec2<f32>(half_thick, half_len), corner_r);
+        let d_h = sd_round_rect(p, dpad_c, vec2<f32>(half_len, half_thick), corner_r);
+        let d_cross = min(d_v, d_h);
+
+        let aa = 1.25;
+        let fill = 1.0 - smoothstep(-aa, aa, d_cross);
+
+        // 2a. Sombra proyectada exterior inferior de la cruz completa
+        let shadow_off = vec2<f32>(0.0, max(half_thick * 0.15, 3.5));
+        let p_sh = p - shadow_off;
+        let d_sh_v = sd_round_rect(p_sh, dpad_c, vec2<f32>(half_thick, half_len), corner_r);
+        let d_sh_h = sd_round_rect(p_sh, dpad_c, vec2<f32>(half_len, half_thick), corner_r);
+        let d_cross_sh = min(d_sh_v, d_sh_h);
+        let btn_shadow = (1.0 - smoothstep(-2.0, half_thick * 0.35 + 8.0, d_cross_sh)) * 0.42 * (1.0 - fill);
+        color = mix(color, vec3<f32>(0.06, 0.07, 0.10), btn_shadow * globals.opacity);
+        total_a = max(total_a, btn_shadow * globals.opacity);
+
+        if fill > 0.001 {
+            let p_rel = p - dpad_c;
+            // Identificar qué dirección o núcleo corresponde a este punto
+            var el = elems[0];
+            var arm_local = p - vec2<f32>(elems[0].cx, elems[0].cy);
+            if abs(p_rel.y) >= abs(p_rel.x) {
+                if p_rel.y > 0.0 {
+                    el = elems[1]; // Down
+                    arm_local = p - vec2<f32>(elems[1].cx, elems[1].cy);
+                }
+            } else {
+                if p_rel.x < 0.0 {
+                    el = elems[2]; // Left
+                    arm_local = p - vec2<f32>(elems[2].cx, elems[2].cy);
+                } else {
+                    el = elems[3]; // Right
+                    arm_local = p - vec2<f32>(elems[3].cx, elems[3].cy);
+                }
+            }
+
+            let is_center = max(abs(p_rel.x), abs(p_rel.y)) < half_thick * 0.68;
+            let pressed = select(el.pressed, 0.0, is_center);
+
+            // Degradado volumétrico a 145° (#a4a9c5 a #7b819f)
+            let norm_cross = p_rel / max(half_len, 1.0);
+            let t_btn = clamp(dot(norm_cross, vec2<f32>(0.57, 0.82)) * 0.5 + 0.5, 0.0, 1.0);
+            let col_light = vec3<f32>(el.r * 1.18, el.g * 1.18, el.b * 1.12);
+            let col_dark  = vec3<f32>(el.r * 0.80, el.g * 0.80, el.b * 0.82);
+            var base = mix(col_light, col_dark, t_btn);
+
+            let is_landscape = globals.shell < 0.5;
+
+            if is_center {
+                if !is_landscape {
+                    base = base * 0.90; // Núcleo central ligeramente hundido (solo en portrait)
+                    let d_pivot = length(p_rel) - half_thick * 0.40;
+                    if d_pivot < 0.0 {
+                        base = mix(base, base * 0.84, 1.0 - smoothstep(-1.5, 0.0, d_pivot));
+                    }
+                }
+            }
+
+            // Brillo especular interior / bisel superior
+            let inset_spec = clamp(-norm_cross.y, 0.0, 1.0) * (1.0 - smoothstep(-half_thick * 0.45, 0.0, d_cross));
+            let spec_mult = select(0.28, 0.16, is_landscape);
+            base = mix(base, vec3<f32>(1.0, 1.0, 1.0), inset_spec * spec_mult);
+
+            // Feedback de pulsado (Paso 7: teñir brazo activo con azul eléctrico #5b8def)
+            let dpad_blue = mix(vec3<f32>(0.42, 0.62, 0.98), vec3<f32>(0.32, 0.50, 0.90), t_btn);
+            base = mix(base, dpad_blue, pressed);
+
+            // Borde exterior biselado (borde blanco tenue de cristal en landscape)
+            let ring_d = abs(d_cross) - 1.5;
+            let ring_a = (1.0 - smoothstep(0.0, aa + 1.5, ring_d)) * el.ring;
+            let ring_base = select(
+                mix(vec3<f32>(0.50, 0.52, 0.58), vec3<f32>(0.95, 0.96, 1.0), clamp(-norm_cross.y * 0.5 + 0.5, 0.0, 1.0)),
+                vec3<f32>(0.85, 0.88, 0.95),
+                is_landscape
+            );
+            let ring_light = mix(ring_base, vec3<f32>(0.75, 0.88, 1.0), pressed);
+
+            var cross_rgba = vec4<f32>(base, fill * globals.opacity);
+
+            // Glifo de flecha en cada brazo si no es el núcleo central
+            if !is_center {
+                let lum = dot(base, vec3<f32>(0.299, 0.587, 0.114));
+                var ink = select(vec3<f32>(0.12, 0.13, 0.15), vec3<f32>(0.95, 0.95, 0.97), lum < 0.5);
+                if pressed > 0.5 {
+                    ink = vec3<f32>(1.0, 1.0, 1.0); // flecha blanca pura sobre el fondo azul #5b8def
+                }
+                let u = el.radius * el.glyph_scale;
+                let g = glyph_color(el.glyph, arm_local, u, ink);
+                let glyph_a = g.a * fill;
+                cross_rgba = vec4<f32>(
+                    mix(cross_rgba.rgb, g.rgb, glyph_a),
+                    max(cross_rgba.a, glyph_a * globals.opacity)
+                );
+            }
+
+            cross_rgba = vec4<f32>(
+                mix(cross_rgba.rgb, ring_light, ring_a * globals.opacity),
+                max(cross_rgba.a, ring_a * globals.opacity)
+            );
+
+            let a = cross_rgba.a;
+            color = mix(color, cross_rgba.rgb, a);
+            total_a = max(total_a, a);
+        }
+    }
+
+    // 3. Resto de elementos táctiles (B, A, L, R, Select, Start: índices 4..11)
+    for (var e = 4; e < 12; e = e + 1) {
         let el = elems[e];
         if el.radius <= 0.0 {
             continue;
         }
         let c = vec2<f32>(el.cx, el.cy);
         let local = p - c;
+        let cos_a = cos(el.angle);
+        let sin_a = sin(el.angle);
+        let rot_l = vec2<f32>(
+            local.x * cos_a + local.y * sin_a,
+           -local.x * sin_a + local.y * cos_a
+        );
+
+        // Paso 7: Escala visual al 92% al estar presionado (el.pressed > 0.5)
+        let scale_press = select(1.0, 0.92, el.pressed > 0.5);
+        let vis_rad = el.radius * scale_press;
+        let vis_extent_y = el.extent_y * scale_press;
+        let vis_round = el.round * scale_press;
+
         let d = select(
-            sd_circle(p, c, el.radius),
-            sd_round_rect(p, c, vec2<f32>(el.radius, el.radius * 0.62), el.round),
+            sd_circle(p, c, vis_rad),
+            sd_round_rect(rot_l, vec2<f32>(0.0, 0.0), vec2<f32>(vis_rad, vis_extent_y), vis_round),
             el.kind > 0.5,
         );
         // Antialias de ~1.25 px.
         let aa = 1.25;
         let fill = 1.0 - smoothstep(-aa, aa, d);
 
-        // Color: base vs pulsado (más claro y con anillo).
-        var base = vec3<f32>(el.r, el.g, el.b);
+        // 2a. Sombra proyectada exterior inferior (0 5px 12px rgba(0,0,0,0.45)), comprimida al pulsar
+        let shadow_off = vec2<f32>(0.0, max(vis_extent_y * 0.12, 2.5) * scale_press);
+        let p_sh = p - shadow_off;
+        let sh_local = p_sh - c;
+        let rot_sh = vec2<f32>(
+            sh_local.x * cos_a + sh_local.y * sin_a,
+           -sh_local.x * sin_a + sh_local.y * cos_a
+        );
+        let d_sh = select(
+            sd_circle(p_sh, c, vis_rad),
+            sd_round_rect(rot_sh, vec2<f32>(0.0, 0.0), vec2<f32>(vis_rad, vis_extent_y), vis_round),
+            el.kind > 0.5,
+        );
+        let btn_shadow = (1.0 - smoothstep(-2.0, vis_extent_y * 0.35 + 8.0, d_sh)) * 0.42 * (1.0 - fill);
+        color = mix(color, vec3<f32>(0.06, 0.07, 0.10), btn_shadow * globals.opacity);
+        total_a = max(total_a, btn_shadow * globals.opacity);
+
+        // 2b. Degradado volumétrico a 145° (#a4a9c5 a #7b819f)
+        let norm_l = local / max(vis_rad, 1.0);
+        let t_btn = clamp(dot(norm_l, vec2<f32>(0.57, 0.82)) * 0.5 + 0.5, 0.0, 1.0);
+        let col_light = vec3<f32>(el.r * 1.18, el.g * 1.18, el.b * 1.12);
+        let col_dark  = vec3<f32>(el.r * 0.80, el.g * 0.80, el.b * 0.82);
+        var base = mix(col_light, col_dark, t_btn);
+
+        // 2c. Brillo especular interior / bisel superior (inset 0 2px 4px)
+        let inset_spec = clamp(-norm_l.y, 0.0, 1.0) * (1.0 - smoothstep(-vis_rad * 0.45, 0.0, d));
+        let spec_mult = select(0.28, 0.16, globals.shell < 0.5);
+        base = mix(base, vec3<f32>(1.0, 1.0, 1.0), inset_spec * spec_mult);
+
+        // Feedback pulsado (brillo / realce)
         let glow = mix(base, vec3<f32>(1.0, 1.0, 1.0), 0.35);
         base = mix(base, glow, el.pressed);
 
-        // Anillo exterior sutil siempre visible (definición del botón).
+        // 2d. Borde exterior biselado (border: 2px solid rgba(255,255,255,0.35) portrait; 1.5px rgba(255,255,255,0.28) landscape)
         let ring_d = abs(d) - 1.5;
         let ring_a = (1.0 - smoothstep(0.0, aa + 1.5, ring_d)) * el.ring;
-
-        var elem_rgba = vec4<f32>(base, fill * globals.opacity);
-        // Glifo encima (contraste automático con el fondo del botón, confinado por fill).
-        let lum = dot(base, vec3<f32>(0.299, 0.587, 0.114));
-        let ink = select(vec3<f32>(0.12, 0.13, 0.15), vec3<f32>(0.95, 0.95, 0.97), lum < 0.5);
-        let u = el.radius * el.glyph_scale;
-        let g = glyph_color(el.glyph, local, u, ink);
-        let glyph_a = g.a * fill;
-        elem_rgba = vec4<f32>(
-            mix(elem_rgba.rgb, g.rgb, glyph_a),
-            max(elem_rgba.a, glyph_a * globals.opacity)
+        let ring_light = select(
+            mix(vec3<f32>(0.50, 0.52, 0.58), vec3<f32>(0.95, 0.96, 1.0), clamp(-norm_l.y * 0.5 + 0.5, 0.0, 1.0)),
+            vec3<f32>(0.85, 0.88, 0.95),
+            globals.shell < 0.5
         );
 
-        let ring_col = vec3<f32>(0.95, 0.96, 1.0);
+        var elem_rgba = vec4<f32>(base, fill * globals.opacity);
+        if el.glyph > 8.5 {
+            // Etiqueta SELECT / START en JetBrains Mono situada arriba de la pastilla
+            let label_c = vec2<f32>(el.cx, el.cy - el.extent_y - max(el.extent_y * 0.70, 14.0));
+            let label_local = p - label_c;
+            let label_ink = select(vec3<f32>(0.29, 0.31, 0.41), vec3<f32>(0.92, 0.94, 0.98), globals.shell < 0.5);
+            let g_lbl = glyph_color(el.glyph, label_local, el.radius * 0.35, label_ink);
+            if g_lbl.a > 0.001 {
+                let la = g_lbl.a * globals.opacity;
+                color = mix(color, g_lbl.rgb, la);
+                total_a = max(total_a, la);
+            }
+        } else {
+            // Glifos de acción 'A', 'B', 'L', 'R' dentro del cuerpo del botón (escalados con vis_rad)
+            let lum = dot(base, vec3<f32>(0.299, 0.587, 0.114));
+            let ink = select(vec3<f32>(0.12, 0.13, 0.15), vec3<f32>(0.95, 0.95, 0.97), lum < 0.5);
+            let u = vis_rad * el.glyph_scale;
+            let g = glyph_color(el.glyph, local, u, ink);
+            let glyph_a = g.a * fill;
+            elem_rgba = vec4<f32>(
+                mix(elem_rgba.rgb, g.rgb, glyph_a),
+                max(elem_rgba.a, glyph_a * globals.opacity)
+            );
+        }
+
         elem_rgba = vec4<f32>(
-            mix(elem_rgba.rgb, ring_col, ring_a * globals.opacity),
+            mix(elem_rgba.rgb, ring_light, ring_a * globals.opacity),
             max(elem_rgba.a, ring_a * globals.opacity)
         );
 

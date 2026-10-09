@@ -25,6 +25,7 @@
 pub mod input;
 pub mod overlay;
 pub mod overlay_shader;
+pub mod error_screen;
 
 #[cfg(test)]
 mod packaging_tests;

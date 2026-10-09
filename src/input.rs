@@ -102,11 +102,11 @@ pub fn layout(w: u32, h: u32, orientation: Orientation) -> Vec<TouchArea> {
     let (dpad_radius, dpad_cx, dpad_cy, right_cx, cluster_cy, ss_y) = if portrait {
         let r_dpad = wf * 0.215;
         let cy = hf * 0.72;
-        (r_dpad, wf * 0.25, cy, wf * 0.75, cy, hf * 0.91)
+        (r_dpad, wf * 0.23, cy, wf * 0.77, cy, hf * 0.91)
     } else {
         let r_dpad = hf * 0.20;
         let cy = hf * 0.72;
-        (r_dpad, hf * 0.32, cy, wf - hf * 0.32, cy, hf * 0.90)
+        (r_dpad, hf * 0.20, cy, wf - hf * 0.20, cy, hf * 0.90)
     };
 
     // Unidad base para clúster y botones
@@ -114,8 +114,8 @@ pub fn layout(w: u32, h: u32, orientation: Orientation) -> Vec<TouchArea> {
 
     // Radio de hitbox para botones B y A (~0.38 * unit, > 60 px en 1080p y landscape 1080p)
     let r = unit * 0.38;
-    // Separación de centros del clúster diagonal
-    let step = unit * 0.86;
+    // Separación de centros del clúster diagonal (aumentada para mayor holgura entre B y A)
+    let step = unit * 1.00;
 
     // Inclinación del eje B->A: 16° por encima de la horizontal, hacia
     // arriba a la derecha (prototipo: --ab-tilt: -16deg). En píxeles de
@@ -123,15 +123,18 @@ pub fn layout(w: u32, h: u32, orientation: Orientation) -> Vec<TouchArea> {
     let tilt = 16.0f32.to_radians();
     let (dx, dy) = (tilt.cos(), -tilt.sin());
 
+    // Vector ortogonal hacia arriba en el sistema del pozo rotado:
+    let (ox, oy) = (dy, -dx);
+
     // Centro del par B/A; B en un extremo, A en el otro.
     let half = step * 0.5;
     let b = (right_cx - half * dx, cluster_cy - half * dy);
     let a = (right_cx + half * dx, cluster_cy + half * dy);
 
-    // L sobre B y R sobre A, en el mismo eje paralelo
-    let shoulder_dy = -step * 0.85;
-    let l = (b.0, b.1 + shoulder_dy);
-    let rr = (a.0, a.1 + shoulder_dy);
+    // L sobre B y R sobre A, perfectamente alineados en el eje ortogonal del pozo inclinado
+    let shoulder_dist = step * 0.80;
+    let l = (b.0 + ox * shoulder_dist, b.1 + oy * shoulder_dist);
+    let rr = (a.0 + ox * shoulder_dist, a.1 + oy * shoulder_dist);
 
     // Cruceta: 4 centros direccionales sobre anillo a distancia arm
     let arm = dpad_radius * 0.55;
@@ -154,6 +157,8 @@ pub fn layout(w: u32, h: u32, orientation: Orientation) -> Vec<TouchArea> {
         radius: rad,
     };
 
+    let r_shoulder = r * 1.02;
+
     vec![
         area(Button::Up, up, dpad_btn_r),
         area(Button::Down, down, dpad_btn_r),
@@ -161,8 +166,8 @@ pub fn layout(w: u32, h: u32, orientation: Orientation) -> Vec<TouchArea> {
         area(Button::Right, right, dpad_btn_r),
         area(Button::B, b, r),
         area(Button::A, a, r),
-        area(Button::L, l, r * 0.85),
-        area(Button::R, rr, r * 0.85),
+        area(Button::L, l, r_shoulder),
+        area(Button::R, rr, r_shoulder),
         area(Button::Select, select, ss_r),
         area(Button::Start, start, ss_r),
     ]
@@ -331,6 +336,47 @@ mod tests {
         assert_eq!(tc.key_mask(), 0x03FF, "sin nada pulsado = 0x3FF");
     }
 
+    /// Criterio de regresión (Paso 6): verificación estricta de que el mapeo de
+    /// hitboxes y KEYINPUT permanezca 100% inalterado tras los rediseños estéticos.
+    #[test]
+    fn test_touch_hitbox_mapping_untouched() {
+        test_touch_hitbox_mapping();
+    }
+
+    /// Criterio de aceptación: separación adecuada entre botones B y A
+    /// (distancia >= 95% de la unidad base) y botones L/R de tamaño igual o superior a B/A.
+    #[test]
+    fn test_action_buttons_separation_and_shoulder_size() {
+        let areas = layout(1080, 2400, Orientation::Portrait);
+        let b = areas.iter().find(|a| a.button == Button::B).unwrap();
+        let a = areas.iter().find(|a| a.button == Button::A).unwrap();
+        let l = areas.iter().find(|a| a.button == Button::L).unwrap();
+        let r = areas.iter().find(|a| a.button == Button::R).unwrap();
+        let up = areas.iter().find(|a| a.button == Button::Up).unwrap();
+        let down = areas.iter().find(|a| a.button == Button::Down).unwrap();
+
+        let dpad_r = (down.cy - up.cy) * 0.5 / 0.55;
+        let dist_ba = ((a.cx - b.cx).powi(2) + (a.cy - b.cy).powi(2)).sqrt();
+        assert!(
+            dist_ba >= dpad_r * 0.95,
+            "distancia entre B y A debe ser >= 95% de dpad_r (actual: {}, dpad_r: {})",
+            dist_ba,
+            dpad_r
+        );
+        assert!(
+            l.radius >= b.radius,
+            "radio de L ({}) debe ser >= radio de B ({})",
+            l.radius,
+            b.radius
+        );
+        assert!(
+            r.radius >= a.radius,
+            "radio de R ({}) debe ser >= radio de A ({})",
+            r.radius,
+            a.radius
+        );
+    }
+
     /// Criterio 2 (límite): portrait reubica el clúster en la mitad
     /// inferior, y con touch_enabled=false ningún toque altera teclas.
     #[test]
@@ -363,7 +409,7 @@ mod tests {
         };
         assert!(a.0 > b.0 && a.1 < b.1, "A arriba-derecha de B (16°)");
 
-        // L sobre B en el mismo eje (nunca esquinas superiores).
+        // L sobre B en el eje ortogonal del clúster (nunca esquinas superiores).
         let l = {
             let l = tc
                 .areas()
@@ -373,8 +419,14 @@ mod tests {
             (l.cx, l.cy)
         };
         assert!(
-            (l.0 - b.0).abs() < 1.0 && l.1 < b.1,
-            "L directamente encima de B"
+            l.1 < b.1 && l.0 <= b.0,
+            "L por encima de B alineado al eje del clúster"
+        );
+        let dot = (a.0 - b.0) * (l.0 - b.0) + (a.1 - b.1) * (l.1 - b.1);
+        assert!(
+            dot.abs() < 1.0,
+            "L y B deben ser ortogonales a la inclinación B->A (dot = {})",
+            dot
         );
 
         // (b) touch_enabled = false: ningún toque altera las teclas.
@@ -498,5 +550,66 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Criterio de aceptación: En Portrait, la cuenca de la cruceta y la cápsula
+    /// de los botones de acción deben tener una separación neta clara (> 60 px).
+    #[test]
+    fn test_portrait_well_separation() {
+        let areas = layout(1080, 2400, Orientation::Portrait);
+        let up = areas.iter().find(|x| x.button == Button::Up).unwrap();
+        let down = areas.iter().find(|x| x.button == Button::Down).unwrap();
+        let b = areas.iter().find(|x| x.button == Button::B).unwrap();
+        let a = areas.iter().find(|x| x.button == Button::A).unwrap();
+        let l = areas.iter().find(|x| x.button == Button::L).unwrap();
+        let r = areas.iter().find(|x| x.button == Button::R).unwrap();
+
+        let dpad_cx = up.cx;
+        let arm_len = (down.cy - up.cy).abs() * 0.5;
+        let dpad_r = arm_len + up.radius * 1.15;
+        let dpad_right_x = dpad_cx + dpad_r;
+
+        let ba_mid_x = (b.cx + a.cx) * 0.5;
+        let lr_mid_x = (l.cx + r.cx) * 0.5;
+        let cluster_center_x = (ba_mid_x + lr_mid_x) * 0.5;
+
+        let ba_len = ((a.cx - b.cx).powi(2) + (a.cy - b.cy).powi(2)).sqrt();
+        let half_w = ba_len * 0.5 + b.radius * 1.30;
+        let tilt = 16.0f32.to_radians();
+        let capsule_left_x = cluster_center_x - half_w * tilt.cos();
+
+        let gap = capsule_left_x - dpad_right_x;
+        assert!(
+            gap > 60.0,
+            "debe haber separación clara entre las cuencas (gap actual: {} px, dpad_right={}, capsule_left={})",
+            gap,
+            dpad_right_x,
+            capsule_left_x
+        );
+    }
+
+    /// Criterio de aceptación: En Landscape, los controles deben acercarse
+    /// a sus respectivos bordes laterales para mayor ergonomía de los pulgares.
+    #[test]
+    fn test_landscape_controls_near_edges() {
+        let areas = layout(2400, 1080, Orientation::Landscape);
+        let up = areas.iter().find(|x| x.button == Button::Up).unwrap();
+        let a = areas.iter().find(|x| x.button == Button::A).unwrap();
+
+        // Cruceta cerca del lateral izquierdo (<= 0.23 * hf)
+        assert!(
+            up.cx <= 1080.0 * 0.23,
+            "cruceta debe estar cerca del borde izquierdo (cx={}, umbral={})",
+            up.cx,
+            1080.0 * 0.23
+        );
+
+        // Botón A cerca del lateral derecho (>= wf - 0.23 * hf)
+        assert!(
+            a.cx >= 2400.0 - 1080.0 * 0.23,
+            "botón A debe estar cerca del borde derecho (cx={}, umbral={})",
+            a.cx,
+            2400.0 - 1080.0 * 0.23
+        );
     }
 }

@@ -244,29 +244,55 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-# 8. Incorporar libblazing_recomp.so en lib/arm64-v8a/ SIN COMPRESIÓN (STORED, metodo 0)
+# 8. Incorporar bibliotecas nativas (.so) en lib/<abi>/ SIN COMPRESIÓN (STORED, metodo 0)
 # Esto es imprescindible para carga directa por mmap (extractNativeLibs=false)
 # y alineacion exacta de paginas de 16 KB requerida en Android 15.
-Write-Host "==> Inyectando biblioteca nativa sin compresion en lib/$TargetAbi/libblazing_recomp.so..."
+Write-Host "==> Preparando bibliotecas nativas sin compresion..."
 
 $stagingDir = Join-Path $targetDir "apk-staging"
 if (Test-Path $stagingDir) { Remove-Item -Recurse -Force $stagingDir }
+New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
+
+# Mapeo de arquitecturas de Rust a ABIs de Android
+$abiMap = @{
+    "aarch64-linux-android"    = "arm64-v8a"
+    "x86_64-linux-android"     = "x86_64"
+    "armv7-linux-androideabi"  = "armeabi-v7a"
+    "i686-linux-android"       = "x86"
+}
+
+# Siempre incluir el target principal solicitado
 $abiStagingDir = Join-Path $stagingDir "lib\$TargetAbi"
 New-Item -ItemType Directory -Path $abiStagingDir -Force | Out-Null
 Copy-Item $soFile (Join-Path $abiStagingDir "libblazing_recomp.so") -Force
+Write-Host "   + Incluyendo $TargetAbi ($soFile)"
+
+# Si existen otros ABIs ya compilados en target, incorporarlos (Fat APK multi-arquitectura)
+foreach ($arch in $abiMap.Keys) {
+    $abi = $abiMap[$arch]
+    if ($abi -ne $TargetAbi) {
+        $otherSo = Join-Path $RepoRoot "target\$arch\debug\libblazing_recomp.so"
+        if (Test-Path $otherSo) {
+            $otherStaging = Join-Path $stagingDir "lib\$abi"
+            New-Item -ItemType Directory -Path $otherStaging -Force | Out-Null
+            Copy-Item $otherSo (Join-Path $otherStaging "libblazing_recomp.so") -Force
+            Write-Host "   + Incluyendo soporte multi-ABI: $abi ($otherSo)"
+        }
+    }
+}
 
 try {
     if ($jar) {
-        Write-Host "--> Usando jar (--no-compress) para empaquetado STORED..."
-        & $jar -u -0 -M -f $unalignedApk -C $stagingDir "lib/$TargetAbi/libblazing_recomp.so"
+        Write-Host "--> Usando jar (--no-compress) para empaquetado STORED de lib/..."
+        & $jar -u -0 -M -f $unalignedApk -C $stagingDir "lib"
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Fallo jar al inyectar la biblioteca nativa."
             exit $LASTEXITCODE
         }
     } elseif ($python) {
-        Write-Host "--> Usando python (zipfile.ZIP_STORED) para empaquetado STORED..."
-        $pyScript = 'import zipfile, sys; z = zipfile.ZipFile(sys.argv[1], mode=sys.argv[4]); z.write(sys.argv[2], arcname=sys.argv[3], compress_type=zipfile.ZIP_STORED); z.close()'
-        & $python -c $pyScript $unalignedApk $soFile "lib/$TargetAbi/libblazing_recomp.so" "a"
+        Write-Host "--> Usando python (zipfile.ZIP_STORED) para empaquetado STORED de lib/..."
+        $pyScript = 'import zipfile, sys, os; z = zipfile.ZipFile(sys.argv[1], mode="a"); staging = sys.argv[2]; [z.write(os.path.join(r, f), arcname=os.path.relpath(os.path.join(r, f), staging).replace(chr(92), "/"), compress_type=zipfile.ZIP_STORED) for r, _, fs in os.walk(staging) for f in fs]; z.close()'
+        & $python -c $pyScript $unalignedApk $stagingDir
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Fallo python al inyectar la biblioteca nativa."
             exit $LASTEXITCODE

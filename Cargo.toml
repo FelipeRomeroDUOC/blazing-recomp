@@ -1,6 +1,6 @@
 [package]
 name = "blazing-recomp"
-version = "0.1.0"
+version = "0.0.2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Native Android port of Fire Emblem: The Blazing Blade built on gba-recomp"
@@ -17,6 +17,7 @@ jni = "0.22"
 wgpu = "26"
 bytemuck = "1"
 pollster = "0.4"
+fontdue = "0.9"
 
 [dev-dependencies]
 naga = { version = "26", features = ["wgsl-in"] }
