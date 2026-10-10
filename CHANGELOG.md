@@ -59,12 +59,15 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 ## [Sin publicar] (Hacia v0.1.0 - MVP Jugable)
 
 ### Añadido
+* **Módulo puro de almacenamiento y validación criptográfica (`src/storage.rs`):** Búsqueda automática y amigable en `Downloads/` (`/sdcard/Download`, `/storage/emulated/0/Download`) y validación estricta por SHA-256 de la ROM europea de *Fire Emblem* (16 MB) y la BIOS oficial (16 KB) usando el crate `sha2`.
+* **Topología satélite de pruebas de almacenamiento (`src/storage_tests.rs`):** Suite unitaria en host que valida vectores NIST, rechazo ante alteraciones y escaneo en directorios de prueba.
+* **Permisos de almacenamiento en Android (`android/AndroidManifest.xml`):** Inclusión de `READ_EXTERNAL_STORAGE` y `requestLegacyExternalStorage="true"` para lectura directa sin fricción de la carpeta Downloads en emuladores y dispositivos móviles.
+* **Pantalla de guía de instalación por software (`src/platform.rs`):** Presentación visual de instrucciones en pantalla si la ROM oficial aún no ha sido colocada en la carpeta `Download/`, evitando cierres silenciosos.
 * **Módulo puro de ejecución y pipeline de vídeo (`src/runner.rs`):** Abstracción desacoplada `GameRunner` que encapsula `gba_core::Machine`, `screen::Temporal` y `screen::ColorLut`. Ejecuta 280,896 ciclos por frame, compone el framebuffer PPU a RGBA de 38,400 píxeles e inyecta la máscara de botones `KEYINPUT`.
 * **Topología de pruebas satélite para ejecución (`src/runner_tests.rs`):** Suite unitaria en host que valida geometría de búfer, inyección de teclas en hardware, avance determinista de reloj y perfiles de panel LCD.
 * **Game loop activo a 60 FPS con suspensión pasiva (`src/platform.rs`):** Bucle de presentación a 60 Hz gobernado por `std::time::Instant` y esperas cooperativas para alimentar el `Compositor` GPU en primer plano, con transición a espera bloqueante (`poll_events(None)`) durante `Pause` para garantizar 0% de consumo de batería en segundo plano.
 
 ### Planificado
-* Carga de ROM oficial (`Fire Emblem (Europe)`) y BIOS desde el almacenamiento del dispositivo con verificación de hashes SHA-256.
 * Integración del bucle de ejecución de bloques recompilados C11 a 60 FPS coordinado con el hardware emulado.
 * Salida de audio nativa mediante AAudio / Oboe de baja latencia.
 * Soporte para mandos físicos Bluetooth / USB-C y persistencia de partidas guardadas SRAM.

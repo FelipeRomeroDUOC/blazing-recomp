@@ -88,8 +88,6 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 
 ### Fase 7: Almacenamiento, Partidas y Distribución
 - [ ] ⬜ Sistema de guardado y persistencia de partidas (`.sav`) en el almacenamiento privado de la app (`Scoped Storage`).
-- [ ] ⬜ Flujo de primera ejecución:
-  - Selector de archivos para que el usuario elija su ROM y BIOS.
-  - Validación de hashes SHA-256 antes de permitir iniciar el juego.
+- [x] 🟩 Detección automática amigable en carpeta `Downloads/` y validación criptográfica de hashes SHA-256 de ROM y BIOS ([`docs/propuestas/2026-10-10_ingestion-rom-bios-downloads.md`](propuestas/2026-10-10_ingestion-rom-bios-downloads.md)).
 - [ ] ⬜ Menú en juego (pausa, configuración de controles, audio y filtros visuales).
 - [x] 🟩 Arnés de empaquetado y generación de APK firmado para instalación directa en dispositivos Android ([`docs/propuestas/2026-10-09_arnes-empaquetado-apk.md`](propuestas/2026-10-09_arnes-empaquetado-apk.md)).

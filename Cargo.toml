@@ -18,6 +18,7 @@ wgpu = "26"
 bytemuck = "1"
 pollster = "0.4"
 fontdue = "0.9"
+sha2 = { version = "0.10", default-features = false }
 
 [dev-dependencies]
 naga = { version = "26", features = ["wgsl-in"] }

@@ -44,6 +44,7 @@ Este registro documenta de manera exhaustiva y transparente cada decisión de di
 19. [Topología de Pruebas: Crate Híbrido cdylib+rlib, Integración en tests/ y Tests Satélite *_tests.rs](#19-topología-de-pruebas-crate-híbrido-cdylibrlib-integración-en-tests-y-tests-satélite-_testsrs)
 20. [Blindaje de Suite por Mutation Testing (Mutation Score 100% sobre Lógica Pura)](#20-blindaje-de-suite-por-mutation-testing-mutation-score-100-sobre-lógica-pura)
 21. [Desacoplamiento de GameRunner y Pacing de Fotogramas a 60 FPS con Suspensión Pasiva](#21-desacoplamiento-de-gamerunner-y-pacing-de-fotogramas-a-60-fps-con-suspensión-pasiva)
+22. [Ingestión y Verificación de ROM/BIOS con Resolución Amigable en Downloads y Hash Criptográfico SHA-256](#22-ingestión-y-verificación-de-rombios-con-resolución-amigable-en-downloads-y-hash-criptográfico-sha-256)
 
 ---
 
@@ -394,6 +395,30 @@ En Android, una aplicación de juego no puede ejecutar bucles de espera activa (
 * **Alternativa descartada:** Acoplar la instancia de `Machine` directamente dentro de `Compositor` o en callbacks JNI. Descartada porque impediría escribir tests unitarios en host y mezclaría responsabilidades gráficas con lógica de hardware.
 * **Alternativa descartada:** Mantener `app.poll_events(Some(Duration::ZERO))` indefinidamente en segundo plano. Descartada porque causaría un drenaje severo de batería al mantener la CPU despierta.
 * **Compromiso asumido:** Requiere coordinar el temporizador de fotogramas del host/NDK con el modo VSync de `wgpu` para evitar tearing visual.
+
+---
+
+### 22. Ingestión y Verificación de ROM/BIOS con Resolución Amigable en Downloads y Hash Criptográfico SHA-256
+
+#### Contexto
+Para respetar la política de sala limpia (*clean-room*) del proyecto (`AGENTS.md §3`), el repositorio no distribuye ningún archivo propietario de *Fire Emblem: The Blazing Blade* ni de la BIOS oficial de Game Boy Advance. Sin embargo, en Android 11+ el acceso al almacenamiento privado de aplicaciones (`/sdcard/Android/data/...`) está fuertemente restringido para el usuario común mediante Scoped Storage, requiriendo herramientas complejas o permisos de administrador. Era indispensable brindar una experiencia de usuario amigable y libre de fricción: permitir que el usuario simplemente descargue su copia legal a la carpeta habitual de descargas (`Downloads/`) y que la aplicación detecte, verifique y cargue el juego automáticamente.
+
+#### Decisión e implementación
+1. **Módulo puro de almacenamiento ([`src/storage.rs`](../../src/storage.rs)):** Se diseñó una abstracción desacoplada de la plataforma que encapsula el cálculo de hashes criptográficos con el crate `sha2` y valida las firmas oficiales pinneadas:
+   - ROM oficial: `Fire Emblem (Europe)` (16 MB) — SHA-256 `6f2c30823ab0237310b138739ccfad879f1a07c4a782a9cbb92317d60d03cee9`.
+   - BIOS oficial: `gba_bios.bin` (16 KB) — SHA-256 `fd2547724b505f487e6dcb29ec2ecff3af35a841a77ab2e85fd87350abd36570`.
+2. **Resolución amigable de directorios:** La función `resolve_search_directories` establece un orden estricto de búsqueda:
+   - Prioridad 1 y 2: `/sdcard/Download` y `/storage/emulated/0/Download`.
+   - Prioridad 3 y 4: `Download` y `roms` (relativas locales para pruebas en emuladores de PC y host).
+   - Prioridad 5: Directorio privado interno de la app provisto por `AndroidApp`.
+3. **Escaneo inteligente por firma digital:** `scan_and_load_game` inspecciona archivos `.gba` candidatos en `Downloads/` comprobando su tamaño y hash SHA-256. Esto permite que el usuario nombre el archivo con cualquier convención común (`fe7.gba`, `Fire Emblem.gba` o el nombre completo del volcado legal) sin fallos. Si la BIOS oficial está presente en la misma carpeta, la inyecta; si no, recurre de forma transparente a la BIOS HLE de `gba-core`.
+4. **Pantalla de guía ante ausencia de ROM:** Si la ROM no se encuentra en `Downloads/`, la aplicación no crashea ni entra en pánico; en su lugar, `src/platform.rs` activa un aviso informativo visual por software explicando la ruta exacta donde colocar el archivo legal para comenzar a jugar.
+5. **Permisos en el manifiesto:** Se añadieron `<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />` y `android:requestLegacyExternalStorage="true"` en [`android/AndroidManifest.xml`](../../android/AndroidManifest.xml).
+
+#### Alternativas y compromisos
+* **Alternativa descartada:** Integrar un selector de archivos visual Storage Access Framework (SAF) con `ACTION_OPEN_DOCUMENT`. Descartada en esta etapa por involucrar llamadas complejas a través de la capa JNI de Android sin aportar ventajas prácticas frente a la detección directa en `Downloads/`.
+* **Alternativa descartada:** Distribuir o empaquetar ROMs de prueba dentro del APK. Descartada de raíz por violar la política clean-room y los derechos de autor de Nintendo (`AGENTS.md §3`).
+* **Compromiso asumido:** Requiere que en Android 13+ el usuario conceda permisos si la carpeta no es accesible de forma predeterminada por la NativeActivity sin capa Java.
 
 ---
 

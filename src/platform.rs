@@ -780,6 +780,8 @@ struct AppState {
     haptics: Option<Haptics>,
     /// Error fatal retenido para presentación visual de diagnóstico.
     fatal_error: Option<String>,
+    /// Aviso informativo de estado o instrucciones (título, mensaje).
+    status_notice: Option<(String, String)>,
     /// Renderizador tipográfico por software para la pantalla de error.
     error_renderer: Option<crate::error_screen::ErrorScreenRenderer>,
 }
@@ -796,6 +798,7 @@ impl AppState {
             touch: TouchController::new(),
             haptics: None,
             fatal_error: None,
+            status_notice: None,
             error_renderer: None,
         }
     }
@@ -897,6 +900,11 @@ impl AppState {
                 "[BLAZING RECOMP] ERROR DE INICIALIZACIÓN GPU",
                 &error_msg,
             );
+            return;
+        }
+
+        if let Some((title, notice_msg)) = self.status_notice.clone() {
+            self.render_software_error(&title, &notice_msg);
             return;
         }
 
@@ -1014,6 +1022,41 @@ pub fn android_main(app: android_activity::AndroidApp) {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut state = AppState::new();
         state.haptics = Haptics::connect(app.vm_as_ptr(), app.activity_as_ptr());
+
+        // Búsqueda automática de la ROM oficial y BIOS en Downloads/
+        let internal_dir = app.internal_data_path();
+        let search_dirs = crate::storage::resolve_search_directories(internal_dir.as_deref());
+        log::info!("Iniciando escaneo de ROM oficial en directorios: {:?}", search_dirs);
+        match crate::storage::scan_and_load_game(&search_dirs) {
+            Ok(assets) => {
+                log::info!(
+                    "ROM oficial encontrada en {:?} (BIOS: {:?}). Inicializando motor a 60 FPS.",
+                    assets.rom_path,
+                    assets.bios_path
+                );
+                state.load(assets.rom, assets.bios.as_deref());
+            }
+            Err(crate::storage::StorageError::RomNotFound) => {
+                log::warn!("ROM oficial de Fire Emblem no encontrada en Downloads/.");
+                state.status_notice = Some((
+                    "[BLAZING RECOMP] GUÍA DE INSTALACIÓN".to_string(),
+                    "ROM NO ENCONTRADA EN DOWNLOADS\n\n\
+                    Coloca tu copia legal de 'Fire Emblem (Europe).gba'\n\
+                    en la carpeta Download/ de tu dispositivo.\n\n\
+                    El juego iniciará automáticamente una vez\n\
+                    detectada la firma SHA-256 oficial."
+                        .to_string(),
+                ));
+            }
+            Err(crate::storage::StorageError::IoError(e)) => {
+                log::error!("Error de E/S al leer archivos del juego: {e}");
+                state.status_notice = Some((
+                    "[BLAZING RECOMP] ERROR DE E/S".to_string(),
+                    format!("Error de lectura en archivos de juego:\n\n{e}"),
+                ));
+            }
+        }
+
         let mut finishing = false;
         let mut resumed = false;
         let mut last_frame = std::time::Instant::now();

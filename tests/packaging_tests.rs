@@ -332,3 +332,26 @@ fn test_reference_docs_in_sync_with_code() {
     }
 }
 
+#[test]
+fn test_manifest_declares_storage_permissions() {
+    let manifest_path = repo_root().join("android").join("AndroidManifest.xml");
+    assert!(
+        manifest_path.exists(),
+        "El archivo android/AndroidManifest.xml debe existir"
+    );
+
+    let content = fs::read_to_string(&manifest_path)
+        .expect("Debe poder leerse android/AndroidManifest.xml");
+
+    assert!(
+        content.contains("android.permission.READ_EXTERNAL_STORAGE"),
+        "El manifiesto debe solicitar android.permission.READ_EXTERNAL_STORAGE para acceder a Downloads"
+    );
+
+    assert!(
+        content.contains("android:requestLegacyExternalStorage=\"true\""),
+        "El manifiesto debe declarar requestLegacyExternalStorage=\"true\" para lectura directa en emuladores y dispositivos"
+    );
+}
+
+
