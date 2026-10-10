@@ -215,6 +215,21 @@ pub fn measure_clock_cost_ns() -> u64 {
     (elapsed / iters).max(1)
 }
 
+/// Resuelve la lista ordenada de directorios candidatos para persistir `blazing-perf.txt`,
+/// priorizando la carpeta compartida Descargas sobre el almacenamiento privado de la app.
+pub fn resolve_perf_candidates(search_dirs: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+    let mut priority = vec![
+        std::path::PathBuf::from("/sdcard/Download"),
+        std::path::PathBuf::from("/storage/emulated/0/Download"),
+    ];
+    for dir in search_dirs {
+        if !priority.contains(dir) {
+            priority.push(dir.clone());
+        }
+    }
+    priority
+}
+
 #[cfg(test)]
 #[path = "perf_tests.rs"]
 mod tests;

@@ -12,6 +12,9 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 * **Telemetría de rendimiento por fase del fotograma (`src/perf.rs`):** Cronometraje en milisegundos de ejecución CPU (`ejec`), composición de color (`color`), renderizado GPU (`dibujo`), espera de swapchain (`espera`) y vueltas vacías con persistencia automática en `Download/blazing-perf.txt`.
 * **Guía práctica de medición (`docs/guias/medir-rendimiento.md`):** Instrucciones paso a paso para recopilar y analizar métricas en dispositivos reales.
 
+### Corregido
+* **Prioridad de guardado de telemetría:** `init_perf_file` prioriza `/sdcard/Download/blazing-perf.txt` sobre el almacenamiento privado interno para facilitar el acceso sin exploradores de terceros en Android 11+.
+
 ---
 
 ## [0.0.2] - 2026-10-09

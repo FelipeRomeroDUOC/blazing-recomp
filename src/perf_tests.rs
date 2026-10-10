@@ -71,3 +71,21 @@ fn test_medicion_costo_reloj_retorna_valor_positivo() {
     let cost = measure_clock_cost_ns();
     assert!(cost > 0, "el costo de lectura de reloj debe ser >= 1 ns");
 }
+
+#[test]
+fn test_resolve_perf_candidates_prioritizes_downloads() {
+    let extra = vec![
+        std::path::PathBuf::from("/storage/emulated/0/Android/data/com.blazingrecomp.game/files"),
+        std::path::PathBuf::from("/sdcard/Download"),
+    ];
+    let candidates = resolve_perf_candidates(&extra);
+    assert_eq!(candidates[0], std::path::PathBuf::from("/sdcard/Download"));
+    assert_eq!(candidates[1], std::path::PathBuf::from("/storage/emulated/0/Download"));
+    assert_eq!(
+        candidates[2],
+        std::path::PathBuf::from("/storage/emulated/0/Android/data/com.blazingrecomp.game/files")
+    );
+    // Verificar que no hay duplicados de /sdcard/Download
+    assert_eq!(candidates.iter().filter(|p| **p == std::path::PathBuf::from("/sdcard/Download")).count(), 1);
+}
+

@@ -1167,7 +1167,8 @@ fn init_perf_file(
     is_native: bool,
     clock_cost_ns: u64,
 ) -> Option<std::fs::File> {
-    for dir in search_dirs {
+    let candidate_dirs = crate::perf::resolve_perf_candidates(search_dirs);
+    for dir in &candidate_dirs {
         let candidate = dir.join("blazing-perf.txt");
         if let Ok(mut f) = std::fs::File::create(&candidate) {
             use std::io::Write;
