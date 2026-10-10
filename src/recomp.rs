@@ -178,19 +178,27 @@ pub fn run_frame_native(
 
 #[cfg(target_os = "android")]
 mod dl {
-    use std::ffi::{c_char, c_int, c_void, CString};
+    use std::ffi::{c_char, c_int, c_void, CStr, CString};
 
     const RTLD_NOW: c_int = 2;
 
     extern "C" {
         fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
         fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+        fn dlerror() -> *const c_char;
     }
 
     pub unsafe fn open_library(name: &str) -> Option<*mut c_void> {
         let c_name = CString::new(name).ok()?;
         let handle = dlopen(c_name.as_ptr(), RTLD_NOW);
         if handle.is_null() {
+            let err = dlerror();
+            let err_msg = if !err.is_null() {
+                CStr::from_ptr(err).to_string_lossy().into_owned()
+            } else {
+                "desconocido".to_string()
+            };
+            log::warn!("dlopen('{name}') fallo: {err_msg}");
             None
         } else {
             Some(handle)
@@ -201,6 +209,13 @@ mod dl {
         let c_name = CString::new(name).ok()?;
         let sym = dlsym(handle, c_name.as_ptr());
         if sym.is_null() {
+            let err = dlerror();
+            let err_msg = if !err.is_null() {
+                CStr::from_ptr(err).to_string_lossy().into_owned()
+            } else {
+                "desconocido".to_string()
+            };
+            log::warn!("dlsym('{name}') fallo: {err_msg}");
             None
         } else {
             Some(std::mem::transmute_copy(&sym))
@@ -216,14 +231,17 @@ pub fn load_native_blocks() -> Option<BlockTable> {
     {
         unsafe {
             let handle = dl::open_library("libblazing_recompiled.so")?;
-            let blocks_ptr_ptr: *const *const RcgBlock = dl::get_symbol(handle, "rcg_blocks")?;
+            let blocks_ptr: *const RcgBlock = dl::get_symbol(handle, "rcg_blocks")?;
             let count_ptr: *const u64 = dl::get_symbol(handle, "rcg_block_count")?;
-            if blocks_ptr_ptr.is_null() || count_ptr.is_null() {
-                log::warn!("Símbolos rcg_blocks o rcg_block_count no encontrados en libblazing_recompiled.so");
+            if blocks_ptr.is_null() || count_ptr.is_null() {
+                log::warn!("Símbolos rcg_blocks o rcg_block_count nulos en libblazing_recompiled.so");
                 return None;
             }
-            let blocks_ptr = *blocks_ptr_ptr;
-            let count = *count_ptr as usize;
+            let count = std::ptr::read_unaligned(count_ptr) as usize;
+            if count == 0 || count > 100_000 {
+                log::warn!("rcg_block_count ({count}) inválido en libblazing_recompiled.so");
+                return None;
+            }
             let slice = std::slice::from_raw_parts(blocks_ptr, count);
             log::info!("Recompilación nativa AOT cargada exitosamente: {} bloques C11 activos", count);
             Some(BlockTable::from_blocks(slice))
