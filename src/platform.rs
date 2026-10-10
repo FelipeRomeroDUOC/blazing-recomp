@@ -82,6 +82,13 @@ struct Compositor {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    /// Tamaño físico de la ventana, independiente de la escala de render.
+    physical: (u32, u32),
+    /// Escala de resolución del búfer del swapchain (1.0 = nativa).
+    scale: f32,
+    /// Modos de presentación que ofrece el driver (capacidades del adaptador),
+    /// usados para construir la calibración de arranque.
+    present_modes: Vec<wgpu::PresentMode>,
 
     // Pipeline 1: Game Blit
     game_pipeline: wgpu::RenderPipeline,
@@ -103,6 +110,42 @@ struct Compositor {
     hud_params_buffer: wgpu::Buffer,
     fps_counter: crate::fps::FpsCounter,
 }
+
+/// Desglose temporal (ms) de las fases de una presentación completa.
+///
+/// Permite atribuir el coste de `dibujo` a la subida de datos a la GPU, a la
+/// codificación/envío de comandos o a la espera de presentación (VSync), que es
+/// lo que hoy no distingue el campo agregado `dibujo` de la telemetría.
+#[derive(Clone, Copy, Debug, Default)]
+struct DrawPhases {
+    subida_ms: f64,
+    codificacion_ms: f64,
+    present_ms: f64,
+    espera_ms: f64,
+    dibujo_ms: f64,
+}
+
+/// Backend de renderizado preferente.
+///
+/// `true`: intentar **OpenGL ES** antes que Vulkan. Es un **experimento de
+/// presentación** (2026-10-10): la medición en tablet demostró que el coste de
+/// `present` (~51 ms en retrato a 1200x2000) es ajeno a nuestra carga (~2,5 ms)
+/// y solo baja reduciendo los píxeles presentados, así que queda por saber si
+/// depende del camino de presentación de Vulkan. Es la única palanca que no
+/// sacrifica nitidez. Si con GLES `present` sigue en ~51 ms, el coste es de la
+/// composición de pantalla (ajena al backend) y se restaura a `false`.
+const PREFERIR_OPENGL_ES: bool = true;
+
+/// Calibración de presentación del arranque.
+///
+/// `false` por **decisión** (2026-10-10): el barrido en tablet
+/// (`blazing-perf-5.txt`) midió que solo la reducción de resolución baja el
+/// coste de `present` (51,4 ms → 2,9 ms; 18 → 53-60 FPS en retrato) y se decidió
+/// preservar la nitidez nativa. Con el barrido activo cada arranque gastaba
+/// 12-15 s de mediciones y artefactos (3 s a media resolución) para acabar
+/// eligiendo siempre la referencia. El mecanismo (`src/present.rs`) queda
+/// implementado y probado: poner esto a `true` vuelve a medir y adoptar.
+const CALIBRAR_PRESENTACION: bool = false;
 
 fn request_adapter_fallback(
     instance: &wgpu::Instance,
@@ -143,33 +186,56 @@ fn request_adapter_fallback(
 fn create_gpu_context(
     window: Arc<AndroidWindow>,
 ) -> Result<(wgpu::Surface<'static>, wgpu::Adapter), String> {
-    // 1. Intentar Vulkan primero (bajo overhead de CPU y sincronización directa por hardware)
-    let vk_instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
-        ..Default::default()
-    });
-    if let Ok(vk_surface) = vk_instance.create_surface(window.clone()) {
-        if let Ok(vk_adapter) = request_adapter_fallback(&vk_instance, &vk_surface) {
-            log::info!("Adaptador GPU inicializado exitosamente con Vulkan nativo");
-            return Ok((vk_surface, vk_adapter));
+    // Orden de intentos: Vulkan por defecto (bajo overhead de CPU y
+    // sincronización directa por hardware), pero el experimento de presentación
+    // prueba antes OpenGL ES. El backend no preferente queda siempre como red de
+    // seguridad, así que el orden no puede dejar la app sin GPU.
+    let candidatos: [(wgpu::Backends, &str); 2] = if PREFERIR_OPENGL_ES {
+        [
+            (wgpu::Backends::GL, "OpenGL ES"),
+            (wgpu::Backends::VULKAN, "Vulkan"),
+        ]
+    } else {
+        [
+            (wgpu::Backends::VULKAN, "Vulkan"),
+            (wgpu::Backends::GL, "OpenGL ES"),
+        ]
+    };
+
+    let mut ultimo_error = String::from("sin intentos");
+    for (intento, (backends, nombre)) in candidatos.iter().enumerate() {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            backends: *backends,
+            ..Default::default()
+        });
+        let surface = match instance.create_surface(window.clone()) {
+            Ok(superficie) => superficie,
+            Err(e) => {
+                log::warn!("Backend {nombre} no pudo crear la superficie: {e}");
+                ultimo_error = format!("superficie {nombre}: {e}");
+                continue;
+            }
+        };
+        match request_adapter_fallback(&instance, &surface) {
+            Ok(adapter) => {
+                log::info!(
+                    "Adaptador GPU inicializado con {nombre} (intento {} de {}, {})",
+                    intento + 1,
+                    candidatos.len(),
+                    if intento == 0 { "preferente" } else { "fallback" }
+                );
+                return Ok((surface, adapter));
+            }
+            Err(e) => {
+                log::warn!("Backend {nombre} sin adaptador compatible: {e}");
+                ultimo_error = format!("adaptador {nombre}: {e}");
+            }
         }
     }
 
-    log::warn!("Backend Vulkan no pudo inicializar la superficie o adaptador. Probando OpenGL ES como fallback...");
-
-    // 2. Fallback a OpenGL ES (compatibilidad en emuladores o dispositivos sin Vulkan)
-    let gl_instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::GL,
-        ..Default::default()
-    });
-    let gl_surface = gl_instance
-        .create_surface(window.clone())
-        .map_err(|e| format!("surface OpenGL ES: {e}"))?;
-    let gl_adapter = request_adapter_fallback(&gl_instance, &gl_surface)
-        .map_err(|e| format!("no se encontró adaptador GPU compatible ni en Vulkan ni en GLES: {e}"))?;
-
-    log::info!("Adaptador GPU inicializado exitosamente con OpenGL ES");
-    Ok((gl_surface, gl_adapter))
+    Err(format!(
+        "no se encontró adaptador GPU compatible ni en Vulkan ni en OpenGL ES: {ultimo_error}"
+    ))
 }
 
 impl Compositor {
@@ -184,10 +250,18 @@ impl Compositor {
         .map_err(|e| format!("graphics device: {e}"))?;
 
         let caps = surface.get_capabilities(&adapter);
-        let (format, alpha_mode) = crate::error_screen::select_surface_format_and_alpha(
+        let (format, mut alpha_mode) = crate::error_screen::select_surface_format_and_alpha(
             &caps.formats,
             &caps.alpha_modes,
         );
+        // El compositor cubre SIEMPRE toda la superficie (clear negro + juego +
+        // overlay + HUD), por lo que no hay transparencia hacia lo que hay detrás.
+        // Forzar una superficie opaca evita que SurfaceFlinger componga la salida
+        // con mezcla a pantalla completa (búfer de ~9,6 MB a 1200x2000), que es
+        // justamente lo que domina el tiempo de `present` en la telemetría.
+        if caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
+            alpha_mode = wgpu::CompositeAlphaMode::Opaque;
+        }
 
         let (w, h) = window.size();
         let (w, h) = (w.max(1), h.max(1));
@@ -652,6 +726,9 @@ impl Compositor {
             device,
             queue,
             config,
+            physical: (w, h),
+            scale: 1.0,
+            present_modes: caps.present_modes.clone(),
             game_pipeline,
             game_bind_group,
             game_texture,
@@ -669,18 +746,92 @@ impl Compositor {
         })
     }
 
+    /// Modo de presentación activo del swapchain (diagnóstico de telemetría).
+    fn present_mode(&self) -> wgpu::PresentMode {
+        self.config.present_mode
+    }
+
+    /// Modo alfa de composición de la superficie (diagnóstico de telemetría).
+    fn alpha_mode(&self) -> wgpu::CompositeAlphaMode {
+        self.config.alpha_mode
+    }
+
+    /// Latencia de fotogramas configurada. El driver recibe
+    /// `min_image_count = latencia + 1`; con 1 solo hay 2 imágenes y `Mailbox`
+    /// no puede reemplazar el fotograma pendiente (bloqueo en `present`).
+    fn latency(&self) -> u32 {
+        self.config.desired_maximum_frame_latency
+    }
+
+    /// Escala de resolución de render activa.
+    fn scale(&self) -> f32 {
+        self.scale
+    }
+
+    /// Modos de presentación que ofrece el driver.
+    fn present_modes(&self) -> &[wgpu::PresentMode] {
+        &self.present_modes
+    }
+
+    /// Tamaño del búfer del swapchain: la ventana física escalada. Pedir un
+    /// búfer menor que la ventana es legítimo (el compositor lo reescala a
+    /// pantalla completa vía `ANativeWindow_setBuffersGeometry`) y reduce tanto
+    /// nuestro fillrate como el trabajo de composición.
+    fn render_target(&self) -> (u32, u32) {
+        let sx = (self.physical.0 as f32 * self.scale).round() as u32;
+        let sy = (self.physical.1 as f32 * self.scale).round() as u32;
+        (sx.max(1), sy.max(1))
+    }
+
+    /// Aplica una configuración de presentación (la calibración de arranque).
+    /// No-op si ya está activa; en caso contrario reconfigura el swapchain.
+    fn aplicar_present_config(&mut self, latency: u32, mode: wgpu::PresentMode, scale: f32) {
+        let scale = scale.clamp(0.25, 1.0);
+        if self.config.desired_maximum_frame_latency == latency
+            && self.config.present_mode == mode
+            && (self.scale - scale).abs() < f32::EPSILON
+        {
+            return;
+        }
+        self.config.desired_maximum_frame_latency = latency;
+        self.config.present_mode = mode;
+        self.scale = scale;
+        let (rw, rh) = self.render_target();
+        self.config.width = rw;
+        self.config.height = rh;
+        log::info!(
+            "calibracion: aplicando lat={} present={:?} escala={:.2} (objetivo {}x{})",
+            latency,
+            mode,
+            scale,
+            rw,
+            rh
+        );
+        self.surface.configure(&self.device, &self.config);
+    }
+
     fn render(
         &mut self,
         rgba: &[[u8; 4]],
         window_physical: (u32, u32),
         touch: &TouchController,
         is_native: bool,
-    ) -> Result<(f64, f64), String> {
+    ) -> Result<DrawPhases, String> {
         let t_render_start = std::time::Instant::now();
+        // Dos espacios de coordenadas distintos y no intercambiables:
+        //  - `(w, h)`: píxeles físicos de la ventana; decide orientación y es el
+        //    espacio de la entrada táctil.
+        //  - `(rw, rh)`: píxeles del búfer de swapchain; es el espacio en el que
+        //    dibujan los shaders (su `in.pos.xy`). Coincide con el físico salvo
+        //    que la calibración haya reducido la escala de render.
         let (w, h) = (window_physical.0.max(1), window_physical.1.max(1));
-        if (w, h) != (self.config.width, self.config.height) {
-            self.config.width = w;
-            self.config.height = h;
+        if (w, h) != self.physical {
+            self.physical = (w, h);
+        }
+        let (rw, rh) = self.render_target();
+        if (rw, rh) != (self.config.width, self.config.height) {
+            self.config.width = rw;
+            self.config.height = rh;
             self.surface.configure(&self.device, &self.config);
         }
 
@@ -711,19 +862,19 @@ impl Compositor {
         // Portrait: mitad superior (hasta 0.48 de la altura)
         // Landscape: centrado
         let (origin_x, origin_y, dst_w, dst_h) = if w < h {
-            let available_h = (h as f32) * 0.48;
-            let scale = ((w as f32) / (GBA_W as f32)).min(available_h / (GBA_H as f32));
+            let available_h = (rh as f32) * 0.48;
+            let scale = ((rw as f32) / (GBA_W as f32)).min(available_h / (GBA_H as f32));
             let dw = (GBA_W as f32) * scale;
             let dh = (GBA_H as f32) * scale;
-            let ox = ((w as f32) - dw) * 0.5;
+            let ox = ((rw as f32) - dw) * 0.5;
             let oy = (available_h - dh) * 0.5;
             (ox, oy, dw, dh)
         } else {
-            let scale = ((w as f32) / (GBA_W as f32)).min((h as f32) / (GBA_H as f32));
+            let scale = ((rw as f32) / (GBA_W as f32)).min((rh as f32) / (GBA_H as f32));
             let dw = (GBA_W as f32) * scale;
             let dh = (GBA_H as f32) * scale;
-            let ox = ((w as f32) - dw) * 0.5;
-            let oy = ((h as f32) - dh) * 0.5;
+            let ox = ((rw as f32) - dw) * 0.5;
+            let oy = ((rh as f32) - dh) * 0.5;
             (ox, oy, dw, dh)
         };
 
@@ -732,8 +883,8 @@ impl Compositor {
             origin_y,
             dst_w,
             dst_h,
-            w as f32,
-            h as f32,
+            rw as f32,
+            rh as f32,
             0.0,
             0.0,
         ];
@@ -744,8 +895,10 @@ impl Compositor {
         );
 
         // 3. Parámetros del overlay
-        let mut globals = build_globals(w, h, touch.orientation());
-        globals.shell = if w < h { 1.0 } else { 0.0 };
+        // En el espacio del búfer de render: proporcional al físico, por lo que
+        // la composición final en pantalla no cambia.
+        let mut globals = build_globals(rw, rh, touch.orientation());
+        globals.shell = if rw < rh { 1.0 } else { 0.0 };
         let globals_packed = globals.pack();
         self.queue.write_buffer(
             &self.overlay_globals_buffer,
@@ -753,7 +906,19 @@ impl Compositor {
             bytemuck::cast_slice(&globals_packed),
         );
 
-        let elems = build_elems_with_orientation(touch.areas(), touch.orientation(), |b| touch.is_pressed(b));
+        // Las hitboxes táctiles viven en píxeles físicos; el overlay dibuja en el
+        // espacio del búfer, así que con escala reducida hay que escalar la
+        // geometría (centros, radios y extents). Los atributos (color, glifo,
+        // ángulo, estados) y las proporciones no se tocan.
+        let escala_render = self.scale;
+        let elems: Vec<crate::overlay::ElemParams> = build_elems_with_orientation(
+            touch.areas(),
+            touch.orientation(),
+            |b| touch.is_pressed(b),
+        )
+        .into_iter()
+        .map(|e| e.scaled(escala_render))
+        .collect();
         let mut elems_packed = [0.0f32; 12 * 16];
         for (i, elem) in elems.iter().take(12).enumerate() {
             let p = elem.pack();
@@ -799,18 +964,21 @@ impl Compositor {
 
         // Posición del badge de FPS: márgenes seguros de Safe Area contra esquinas redondeadas y notch
         let (hud_w, hud_h) = self.fps_counter.dimensions();
-        let margin_x = if w > h { 96.0f32 } else { 24.0f32 };
-        let margin_y = if w > h { 24.0f32 } else { 44.0f32 };
-        let hud_ox = (w as f32) - (hud_w as f32) - margin_x;
+        // Márgenes y tamaño del badge en píxeles físicos: se escalan al espacio
+        // del búfer para conservar su sitio en pantalla si la escala es < 1.0.
+        let escala_hud = self.scale;
+        let margin_x = (if w > h { 96.0f32 } else { 24.0f32 }) * escala_hud;
+        let margin_y = (if w > h { 24.0f32 } else { 44.0f32 }) * escala_hud;
+        let hud_ox = (rw as f32) - (hud_w as f32) * escala_hud - margin_x;
         let hud_oy = margin_y;
 
         let hud_params: [f32; 8] = [
             hud_ox.max(0.0),
             hud_oy.max(0.0),
-            hud_w as f32,
-            hud_h as f32,
-            w as f32,
-            h as f32,
+            hud_w as f32 * escala_hud,
+            hud_h as f32 * escala_hud,
+            rw as f32,
+            rh as f32,
             0.0,
             0.0,
         ];
@@ -820,7 +988,11 @@ impl Compositor {
             bytemuck::cast_slice(&hud_params),
         );
 
-        // 5. Render pass en el swapchain
+        // Fase 1: subida (upload) de la textura de juego y los búferes uniformes.
+        let subida_ms = t_render_start.elapsed().as_secs_f64() * 1000.0;
+
+        // Fase 2: codificación (adquisición de búfer, grabado de pases y submit).
+        let t_codificacion_start = std::time::Instant::now();
         let t_wait_start = std::time::Instant::now();
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
@@ -876,9 +1048,21 @@ impl Compositor {
         }
 
         self.queue.submit([encoder.finish()]);
+        let codificacion_ms = t_codificacion_start.elapsed().as_secs_f64() * 1000.0;
+
+        // Fase 3: presentación (puede bloquear hasta el VSync del compositor).
+        let t_present_start = std::time::Instant::now();
         frame.present();
+        let present_ms = t_present_start.elapsed().as_secs_f64() * 1000.0;
+
         let dibujo_ms = t_render_start.elapsed().as_secs_f64() * 1000.0;
-        Ok((dibujo_ms, espera_ms))
+        Ok(DrawPhases {
+            subida_ms,
+            codificacion_ms,
+            present_ms,
+            espera_ms,
+            dibujo_ms,
+        })
     }
 }
 
@@ -1165,6 +1349,8 @@ fn init_perf_file(
     search_dirs: &[std::path::PathBuf],
     backend: &str,
     is_native: bool,
+    present_mode: &str,
+    alpha_mode: &str,
     clock_cost_ns: u64,
 ) -> Option<std::fs::File> {
     let candidate_dirs = crate::perf::resolve_perf_candidates(search_dirs);
@@ -1173,9 +1359,11 @@ fn init_perf_file(
         if let Ok(mut f) = std::fs::File::create(&candidate) {
             use std::io::Write;
             let header = format!(
-                "# backend={} modo={} reloj={}ns\n",
+                "# backend={} modo={} present={} alpha={} reloj={}ns\n",
                 backend,
                 if is_native { "AOT" } else { "INT" },
+                present_mode,
+                alpha_mode,
                 clock_cost_ns
             );
             if f.write_all(header.as_bytes()).is_ok() && f.flush().is_ok() {
@@ -1225,6 +1413,8 @@ struct AppState {
     clock_cost_ns: u64,
     /// Directorios candidatos para escribir `blazing-perf.txt`.
     search_dirs: Vec<std::path::PathBuf>,
+    /// Calibración de presentación del swapchain mientras está en curso.
+    calibracion: Option<crate::present::PresentCalibration>,
 }
 
 impl AppState {
@@ -1247,6 +1437,7 @@ impl AppState {
             perf_write_warned: false,
             clock_cost_ns: crate::perf::measure_clock_cost_ns(),
             search_dirs: Vec::new(),
+            calibracion: None,
         }
     }
 
@@ -1296,6 +1487,7 @@ impl AppState {
             log::debug!("EmulationWorker pausado en segundo plano (suspend)");
         }
         if self.compositor.take().is_some() || self.window.take().is_some() {
+            self.calibracion = None;
             log::debug!("recursos GPU liberados (suspend)");
         }
     }
@@ -1304,6 +1496,8 @@ impl AppState {
     fn remove_compositor(&mut self) {
         self.compositor = None;
         self.window = None;
+        // La calibración de presentación depende del swapchain destruido.
+        self.calibracion = None;
     }
 
     /// Crea el compositor GPU sobre `window`. Solo con ventana viva:
@@ -1327,6 +1521,21 @@ impl AppState {
         ) {
             Ok(c) => {
                 self.window = Some(window);
+                // Calibración de presentación: recorre configuraciones al
+                // arrancar y adopta la mejor. Desactivada por decisión (ver
+                // `CALIBRAR_PRESENTACION`): con nitidez nativa el barrido no
+                // tenía nada que adoptar y costaba 12-15 s por arranque.
+                self.calibracion = if CALIBRAR_PRESENTACION {
+                    Some(crate::present::PresentCalibration::new(
+                        c.present_mode(),
+                        c.present_modes(),
+                    ))
+                } else {
+                    log::info!(
+                        "calibración de presentación desactivada (nitidez nativa por decisión)"
+                    );
+                    None
+                };
                 self.compositor = Some(c);
                 self.fatal_error = None;
                 log::info!("compositor GPU listo (juego + overlay)");
@@ -1344,7 +1553,7 @@ impl AppState {
 
     /// Compone el fotograma visible y el overlay táctil. No-op si no hay
     /// ventana viva. Ante fallos de GPU, presenta la pantalla de error por software.
-    fn redraw(&mut self) -> Option<(f64, f64)> {
+    fn redraw(&mut self) -> Option<DrawPhases> {
         // Solo recurrir a renderizado por software en CPU si wgpu falló al crear el compositor.
         // Si el compositor GPU está vivo, ANativeWindow_lock causaría conflicto con el swapchain.
         if self.compositor.is_none() {
@@ -1377,27 +1586,113 @@ impl AppState {
         }
     }
 
+    /// Añade una línea de comentario (`# ...`) al archivo de telemetría con su
+    /// salto de línea. Silenciosa si la escritura falla.
+    fn append_perf_line(&mut self, linea: &str) {
+        use std::io::Write;
+        self.ensure_perf_file();
+        if let Some(ref mut f) = self.perf_file {
+            if writeln!(f, "{}", linea).is_ok() {
+                let _ = f.flush();
+            }
+        }
+    }
+
+    /// Avanza la calibración de presentación con la ventana de telemetría recién
+    /// cerrada: aplica la configuración pendiente, registra la medición, adopta
+    /// la elegida al terminar y escribe las líneas `#` en `blazing-perf.txt`.
+    fn calibrar_presentacion(&mut self, report: &crate::perf::PerfReport, tamano: (u32, u32)) {
+        let Some(mut cal) = self.calibracion.take() else {
+            return;
+        };
+        let mut lineas: Vec<String> = Vec::new();
+
+        // 1. Aplicar lo pendiente antes de medir la siguiente ventana.
+        if let Some(c) = cal.tomar_pendiente() {
+            self.aplicar_candidato(c);
+        }
+
+        // 2. Un cambio de orientación invalida la comparación entre tramos.
+        lineas.extend(cal.notificar_tamano(tamano));
+
+        // 3. Registrar la ventana (solo si dibujó fotogramas).
+        if !cal.finalizada() && report.fps > 0.0 {
+            lineas.extend(cal.registrar_segundo(report.present_avg_ms, report.fps));
+        }
+
+        // 4. Aplicar la configuración que la calibración acaba de decidir.
+        if let Some(c) = cal.tomar_pendiente() {
+            self.aplicar_candidato(c);
+        }
+
+        for linea in &lineas {
+            log::info!("PERF: {}", linea);
+            self.append_perf_line(linea);
+        }
+        self.calibracion = Some(cal);
+    }
+
+    /// Aplica una configuración de presentación al compositor y registra en
+    /// Logcat el estado **realmente activo** del swapchain (latencia, modo y
+    /// escala), para poder correlacionarlo con la telemetría.
+    fn aplicar_candidato(&mut self, candidato: crate::present::Candidato) {
+        if let Some(comp) = self.compositor.as_mut() {
+            comp.aplicar_present_config(
+                candidato.latency,
+                candidato.present_mode,
+                candidato.scale,
+            );
+        }
+        if let Some(comp) = self.compositor.as_ref() {
+            log::info!(
+                "calibracion: activa lat={} present={:?} escala={:.2}",
+                comp.latency(),
+                comp.present_mode(),
+                comp.scale()
+            );
+        }
+    }
+
+    /// Crea `blazing-perf.txt` con su encabezado si aún no existe. Idempotente:
+    /// solo la primera llamada toca el disco (o marca el aviso de fallo).
+    fn ensure_perf_file(&mut self) {
+        if self.perf_file.is_some() || self.perf_write_warned {
+            return;
+        }
+        let is_native = self.latest_frame.as_ref().map_or(false, |p| p.is_native);
+        let backend = self
+            .compositor
+            .as_ref()
+            .map(|c| c.fps_counter.renderer())
+            .unwrap_or("Vulkan");
+        let (present_mode, alpha_mode) = self
+            .compositor
+            .as_ref()
+            .map(|c| {
+                (
+                    format!("{:?}", c.present_mode()),
+                    format!("{:?}", c.alpha_mode()),
+                )
+            })
+            .unwrap_or_else(|| ("desconocido".to_string(), "desconocido".to_string()));
+        self.perf_file = init_perf_file(
+            &self.search_dirs,
+            backend,
+            is_native,
+            &present_mode,
+            &alpha_mode,
+            self.clock_cost_ns,
+        );
+        if self.perf_file.is_none() {
+            self.perf_write_warned = true;
+        }
+    }
+
     /// Escribe una línea del informe de rendimiento en blazing-perf.txt y en Logcat.
     fn write_perf_report(&mut self, report: &crate::perf::PerfReport) {
         let line = report.to_line();
         log::info!("PERF: {}", line);
-        if self.perf_file.is_none() && !self.perf_write_warned {
-            let is_native = self.latest_frame.as_ref().map_or(false, |p| p.is_native);
-            let backend = self
-                .compositor
-                .as_ref()
-                .map(|c| c.fps_counter.renderer())
-                .unwrap_or("Vulkan");
-            self.perf_file = init_perf_file(
-                &self.search_dirs,
-                backend,
-                is_native,
-                self.clock_cost_ns,
-            );
-            if self.perf_file.is_none() {
-                self.perf_write_warned = true;
-            }
-        }
+        self.ensure_perf_file();
         if let Some(ref mut f) = self.perf_file {
             use std::io::Write;
             if let Err(e) = writeln!(f, "{}", line) {
@@ -1746,12 +2041,15 @@ pub fn android_main(app: android_activity::AndroidApp) {
                         state.on_sim_frames(1);
                         let gpu_timing = state.redraw();
 
-                        let (dibujo_ms, espera_ms) = gpu_timing.unwrap_or((0.0, 0.0));
+                        let phases = gpu_timing.unwrap_or_default();
                         state.perf.record_frame(crate::perf::FrameTiming {
                             ejec_ms: last_step_timing.ejec_ms,
                             color_ms: last_step_timing.color_ms,
-                            dibujo_ms,
-                            espera_ms,
+                            dibujo_ms: phases.dibujo_ms,
+                            espera_ms: phases.espera_ms,
+                            subida_ms: phases.subida_ms,
+                            codificacion_ms: phases.codificacion_ms,
+                            present_ms: phases.present_ms,
                             nativos: last_step_timing.native_blocks,
                             interprete: last_step_timing.interpreter_steps,
                         });
@@ -1763,6 +2061,9 @@ pub fn android_main(app: android_activity::AndroidApp) {
 
                     let (win_w, win_h) = state.window.as_ref().map(|w| w.size()).unwrap_or((0, 0));
                     if let Some(report) = state.perf.tick_at(now, (win_w, win_h)) {
+                        // La calibración va primero: así sus líneas `#` preceden a
+                        // la ventana `t=` a la que describen.
+                        state.calibrar_presentacion(&report, (win_w, win_h));
                         state.write_perf_report(&report);
                     }
                 } else {

@@ -190,6 +190,26 @@ pub enum ElemKind {
 }
 
 impl ElemParams {
+    /// Reescala la **geometría** del elemento al espacio del búfer de render.
+    ///
+    /// Las hitboxes táctiles viven en píxeles físicos de la ventana, pero el
+    /// shader dibuja en píxeles del búfer del swapchain: cuando la calibración
+    /// reduce la resolución de render hay que escalar longitudes (centro,
+    /// radio, radio de esquina y extent vertical) para que la composición
+    /// final en pantalla coincida. Los atributos no geométricos (color, estado
+    /// pulsado, primitiva, glifo, ángulo) y las proporciones adimensionales
+    /// (`glyph_scale`, `ring`) se conservan intactos.
+    pub fn scaled(&self, factor: f32) -> ElemParams {
+        ElemParams {
+            cx: self.cx * factor,
+            cy: self.cy * factor,
+            radius: self.radius * factor,
+            extent_y: self.extent_y * factor,
+            round: self.round * factor,
+            ..*self
+        }
+    }
+
     /// Empaqueta en el orden del `struct Elem` del shader (16 floats / 64 bytes).
     pub fn pack(&self) -> [f32; 16] {
         [

@@ -18,6 +18,12 @@ pub struct FrameTiming {
     pub dibujo_ms: f64,
     /// Tiempo en milisegundos bloqueado esperando un búfer de presentación (`get_current_texture`).
     pub espera_ms: f64,
+    /// Fase de subida: `write_texture`/`write_buffer` a la GPU (ms).
+    pub subida_ms: f64,
+    /// Fase de codificación: `get_current_texture` + grabado y `queue.submit` (ms).
+    pub codificacion_ms: f64,
+    /// Fase de presentación: `frame.present()` (ms).
+    pub present_ms: f64,
     /// Bloques nativos recompilados ejecutados en este fotograma.
     pub nativos: u64,
     /// Pasos de intérprete de respaldo ejecutados en este fotograma.
@@ -47,6 +53,12 @@ pub struct PerfReport {
     pub espera_avg_ms: f64,
     /// Peor caso (máximo) de milisegundos de espera de swapchain/VSync.
     pub espera_max_ms: f64,
+    /// Promedio de milisegundos de la fase de subida a GPU.
+    pub subida_avg_ms: f64,
+    /// Promedio de milisegundos de la fase de codificación y `submit`.
+    pub codificacion_avg_ms: f64,
+    /// Promedio de milisegundos de la fase de presentación (`present`).
+    pub present_avg_ms: f64,
     /// Promedio de bloques nativos por fotograma.
     pub nativos_avg: u64,
     /// Promedio de pasos de intérprete por fotograma.
@@ -61,7 +73,7 @@ impl PerfReport {
     /// Formatea el informe en una única línea de texto estandarizada.
     pub fn to_line(&self) -> String {
         format!(
-            "t={}s fps={:.1} ejec={:.1}/{:.1} color={:.1}/{:.1} dibujo={:.1}/{:.1} espera={:.1}/{:.1} nativos={} interprete={} vacias={} ventana={}x{}",
+            "t={}s fps={:.1} ejec={:.1}/{:.1} color={:.1}/{:.1} dibujo={:.1}/{:.1} espera={:.1}/{:.1} subida={:.1} codificacion={:.1} present={:.1} nativos={} interprete={} vacias={} ventana={}x{}",
             self.second_index,
             self.fps,
             self.ejec_avg_ms,
@@ -72,6 +84,9 @@ impl PerfReport {
             self.dibujo_max_ms,
             self.espera_avg_ms,
             self.espera_max_ms,
+            self.subida_avg_ms,
+            self.codificacion_avg_ms,
+            self.present_avg_ms,
             self.nativos_avg,
             self.interprete_avg,
             self.vacias,
@@ -132,6 +147,9 @@ impl FramePerf {
                 dibujo_max_ms: 0.0,
                 espera_avg_ms: 0.0,
                 espera_max_ms: 0.0,
+                subida_avg_ms: 0.0,
+                codificacion_avg_ms: 0.0,
+                present_avg_ms: 0.0,
                 nativos_avg: 0,
                 interprete_avg: 0,
                 vacias: self.vacias,
@@ -146,6 +164,9 @@ impl FramePerf {
             let mut max_dibujo = 0.0f64;
             let mut sum_espera = 0.0;
             let mut max_espera = 0.0f64;
+            let mut sum_subida = 0.0;
+            let mut sum_codificacion = 0.0;
+            let mut sum_present = 0.0;
             let mut sum_nativos = 0u64;
             let mut sum_interprete = 0u64;
 
@@ -158,6 +179,9 @@ impl FramePerf {
                 max_dibujo = max_dibujo.max(f.dibujo_ms);
                 sum_espera += f.espera_ms;
                 max_espera = max_espera.max(f.espera_ms);
+                sum_subida += f.subida_ms;
+                sum_codificacion += f.codificacion_ms;
+                sum_present += f.present_ms;
                 sum_nativos += f.nativos;
                 sum_interprete += f.interprete;
             }
@@ -174,6 +198,9 @@ impl FramePerf {
                 dibujo_max_ms: max_dibujo,
                 espera_avg_ms: sum_espera / c,
                 espera_max_ms: max_espera,
+                subida_avg_ms: sum_subida / c,
+                codificacion_avg_ms: sum_codificacion / c,
+                present_avg_ms: sum_present / c,
                 nativos_avg: (sum_nativos as f64 / c).round() as u64,
                 interprete_avg: (sum_interprete as f64 / c).round() as u64,
                 vacias: self.vacias,

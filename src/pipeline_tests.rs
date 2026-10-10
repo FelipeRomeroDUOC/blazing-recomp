@@ -21,7 +21,7 @@ fn test_emulation_bridge_single_slot_transfer() {
         is_native: true,
     };
 
-    assert!(bridge.send_frame(packet1).is_ok());
+    bridge.send_frame(packet1);
 
     let received = bridge.try_recv_frame();
     assert!(received.is_some(), "debe recibir el fotograma disponible");
@@ -71,6 +71,67 @@ fn test_emulation_bridge_pause_and_resume_sleep() {
     bridge.set_paused(false);
     let res = handle.join().expect("hilo debe finalizar tras despertar");
     assert_eq!(res, 42);
+}
+
+fn deposit(bridge: &EmulationBridge, frame_number: u64) {
+    let mut rgba = bridge.acquire_buffer();
+    rgba[0] = [10, 20, 30, 255];
+    bridge.send_frame(FramePacket {
+        rgba,
+        frame_number,
+        timing: StepTiming::default(),
+        is_native: false,
+    });
+}
+
+#[test]
+fn test_mailbox_never_blocks_producer() {
+    let bridge = EmulationBridge::new();
+
+    // Buzón con un fotograma ya depositado y sin consumidores activos.
+    deposit(&bridge, 0);
+
+    let start = std::time::Instant::now();
+    for n in 1..=1000u64 {
+        deposit(&bridge, n);
+    }
+    let elapsed = start.elapsed();
+
+    assert!(
+        elapsed < Duration::from_millis(50),
+        "1000 depósitos no deben bloquearse (tomó {elapsed:?})"
+    );
+    let last = bridge
+        .try_recv_frame()
+        .expect("el buzón debe conservar el último fotograma");
+    assert_eq!(last.frame_number, 1000, "el buzón conserva el más reciente");
+    assert!(
+        bridge.allocations() <= 2,
+        "el pool debe reutilizar búferes (asignaciones={})",
+        bridge.allocations()
+    );
+}
+
+#[test]
+fn test_mailbox_keeps_latest_frame() {
+    let bridge = EmulationBridge::new();
+
+    // Productor deposita 5 fotogramas numerados 1..5 sin que el consumidor lea.
+    for n in 1..=5u64 {
+        deposit(&bridge, n);
+    }
+
+    let p = bridge
+        .try_recv_frame()
+        .expect("debe recibir el fotograma más reciente");
+    assert_eq!(p.frame_number, 5, "el consumidor recibe el más reciente");
+    assert_eq!(p.rgba.len(), GBA_PIXELS);
+    assert_eq!(p.rgba[0], [10, 20, 30, 255], "sin pérdida de píxeles ni alfa");
+    assert!(
+        bridge.allocations() <= 2,
+        "el pool reutiliza búferes (asignaciones={})",
+        bridge.allocations()
+    );
 }
 
 fn create_dummy_rom() -> Vec<u8> {

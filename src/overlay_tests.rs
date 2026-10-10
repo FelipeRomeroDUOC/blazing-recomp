@@ -364,8 +364,11 @@ fn test_overlay_bounding_boxes_cover_visual_elements() {
     }
 }
 
-/// Criterio de aceptación: La latencia deseada del swapchain está configurada a 1
-/// para minimizar el retraso de presentación entre entrada y pantalla.
+/// Criterio de aceptación: la latencia del swapchain arranca en 1 (la
+/// configuración de referencia, la que minimiza el retraso de presentación
+/// entre entrada y pantalla). La calibración de arranque puede subirla después
+/// si mide que el bloqueo en `present` lo justifica, y deja constancia en
+/// `blazing-perf.txt` con las líneas `# tramo` / `# elegido`.
 #[test]
 fn test_compositor_frame_latency_is_one() {
     let platform_src = include_str!("platform.rs");
@@ -373,6 +376,92 @@ fn test_compositor_frame_latency_is_one() {
         platform_src.contains("desired_maximum_frame_latency: 1,"),
         "Compositor debe configurar desired_maximum_frame_latency a 1"
     );
+}
+
+/// Criterio de aceptación (palanca 2): el compositor dibuja en el espacio del
+/// búfer del swapchain y escala la geometría del overlay a esa escala, de modo
+/// que un búfer reducido conserve la composición en pantalla; y el bucle aplica
+/// la configuración que decide la calibración.
+#[test]
+fn test_render_escala_bufer_y_wiring_de_calibracion() {
+    let platform_src = include_str!("platform.rs");
+    for fragmento in [
+        "fn render_target(&self)",
+        ".map(|e| e.scaled(escala_render))",
+        "build_globals(rw, rh, touch.orientation())",
+        "fn aplicar_present_config(",
+        "state.calibrar_presentacion(&report, (win_w, win_h));",
+    ] {
+        assert!(
+            platform_src.contains(fragmento),
+            "falta en platform.rs: {fragmento}"
+        );
+    }
+}
+
+/// Decisiones registradas (2026-10-10): el barrido de calibración de
+/// presentación queda desactivado por defecto (nitidez nativa: la medición
+/// mostró que solo la reducción de resolución baja `present`) y el orden de
+/// backends se decide con una constante explícita, para que el experimento de
+/// presentación (OpenGL ES vs Vulkan) no quede enterrado en el cuerpo de la
+/// función.
+#[test]
+fn test_decisiones_de_presentacion_declaradas() {
+    let platform_src = include_str!("platform.rs");
+    assert!(
+        platform_src.contains("const CALIBRAR_PRESENTACION: bool = false;"),
+        "el barrido de calibración debe quedar desactivado por decisión explícita"
+    );
+    assert!(
+        platform_src.contains("const PREFERIR_OPENGL_ES: bool ="),
+        "el backend preferente debe declararse en una constante"
+    );
+    assert!(
+        platform_src.contains("let candidatos: [(wgpu::Backends, &str); 2] = if PREFERIR_OPENGL_ES"),
+        "el orden de backends debe depender de la constante"
+    );
+}
+
+/// La escala de render es una transformación geométrica pura: longitudes
+/// escaladas (centro, radios y extends) y atributos intactos.
+#[test]
+fn test_elem_scaled_escala_geometria_y_conserva_atributos() {
+    let mut tc = TouchController::new();
+    tc.resize(1080, 2400);
+    let elems = build_elems(tc.areas(), |_| false);
+    assert!(
+        elems.iter().any(|e| e.round > 0.0 && e.extent_y > 0.0),
+        "el layout debe incluir pastillas (extents no nulos)"
+    );
+    for original in &elems {
+        let reducido = original.scaled(0.5);
+        assert_eq!(reducido.cx, original.cx * 0.5);
+        assert_eq!(reducido.cy, original.cy * 0.5);
+        assert_eq!(reducido.radius, original.radius * 0.5);
+        assert_eq!(reducido.extent_y, original.extent_y * 0.5);
+        assert_eq!(reducido.round, original.round * 0.5);
+        // Atributos no geométricos: idénticos.
+        assert_eq!(reducido.color, original.color);
+        assert_eq!(reducido.pressed, original.pressed);
+        assert_eq!(reducido.kind, original.kind);
+        assert_eq!(reducido.glyph, original.glyph);
+        assert_eq!(reducido.angle, original.angle);
+        assert_eq!(reducido.glyph_scale, original.glyph_scale);
+        assert_eq!(reducido.ring, original.ring);
+        // Factor potencia de dos: la ida y vuelta es exacta.
+        assert_eq!(reducido.scaled(2.0), *original);
+    }
+}
+
+/// Con escala 1.0 el escalado es la identidad: el camino normal de render no
+/// cambia en absoluto (requisito de no-regresión de la palanca 2).
+#[test]
+fn test_elem_scaled_uno_es_identidad() {
+    let mut tc = TouchController::new();
+    tc.resize(2000, 1200);
+    for original in build_elems(tc.areas(), |_| false) {
+        assert_eq!(original.scaled(1.0), original);
+    }
 }
 
 /// Blindaje de layout de uniformes de GPU: valida que `build_globals` y `Globals::pack`

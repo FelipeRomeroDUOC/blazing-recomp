@@ -55,6 +55,7 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 - [x] 🟩 Implementar escalado de aspecto fijo (3:2) con bandas laterales limpias y escalado de píxeles nítido (*integer scaling*).
 - [x] 🟩 Integrar shaders de simulación LCD y paleta de color (LUT) para GPUs móviles (Adreno / Mali).
 - [x] 🟩 Configurar sincronización vertical (VSync activo con pacing de presentación desacoplado a 60 FPS).
+- [ ] 🟨 Techo de presentación en tablet: medido en 51 ms (retrato) y 33 ms (apaisado) con la carga propia en ~2,5 ms; la reducción de escala lo lleva a 2,9 ms / 60 FPS pero se descartó por nitidez, y queda a la espera del experimento de backend OpenGL ES ([`docs/propuestas/2026-10-10_fix-pipeline-multihilo-mailbox-y-perf-txt.md`](propuestas/2026-10-10_fix-pipeline-multihilo-mailbox-y-perf-txt.md)).
 - [x] 🟩 Conectar pipeline de vídeo de GBA (`Machine` PPU -> `Temporal` -> `ColorLut` -> `Compositor`) mediante módulo puro `GameRunner` y bucle a 60 FPS con suspensión pasiva de batería.
 - [x] 🟩 Probar compilación con `cargo ndk -t arm64-v8a build` (generó `libblazing_recomp.so` ELF ARM64 de 134.3 MB con éxito).
 

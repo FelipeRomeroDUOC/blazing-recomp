@@ -17,7 +17,7 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | :--- | :--- | :--- |
 | [`lib.rs`](#módulo-librs) | 0 | Blazing Recomp — punto de entrada nativo para Android. |
 | [`input.rs`](#módulo-inputrs) | 19 | Entrada táctil ergonómica (Fase 5.1, propuesta |
-| [`overlay.rs`](#módulo-overlayrs) | 11 | Overlay táctil y marco GBA SP (Fase 5.2, propuesta |
+| [`overlay.rs`](#módulo-overlayrs) | 12 | Overlay táctil y marco GBA SP (Fase 5.2, propuesta |
 | [`error_screen.rs`](#módulo-error_screenrs) | 4 | Renderizador de pantalla de error por software y blindaje de GPU. |
 | [`platform.rs`](#módulo-platformrs) | 1 | Plataforma Android (solo compila con `cfg(target_os = "android")`): |
 | [`storage.rs`](#módulo-storagers) | 14 | Módulo interno del port. |
@@ -344,6 +344,23 @@ Primitiva del elemento: círculo o pastilla redondeada orientada.
 **Firma:**
 ```rust
 pub enum ElemKind
+```
+
+### `scaled` (Función)
+
+Reescala la **geometría** del elemento al espacio del búfer de render.
+
+Las hitboxes táctiles viven en píxeles físicos de la ventana, pero el
+shader dibuja en píxeles del búfer del swapchain: cuando la calibración
+reduce la resolución de render hay que escalar longitudes (centro,
+radio, radio de esquina y extent vertical) para que la composición
+final en pantalla coincida. Los atributos no geométricos (color, estado
+pulsado, primitiva, glifo, ángulo) y las proporciones adimensionales
+(`glyph_scale`, `ring`) se conservan intactos.
+
+**Firma:**
+```rust
+pub fn scaled(&self, factor: f32) -> ElemParams
 ```
 
 ### `pack` (Función)

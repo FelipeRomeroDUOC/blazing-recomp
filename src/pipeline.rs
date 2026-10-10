@@ -5,8 +5,7 @@
 //! acotado para que el hilo principal de Android los consuma y presente en la GPU
 //! sin retrasos ni contención de cerrojos.
 
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -37,9 +36,18 @@ pub struct FramePacket {
 }
 
 /// Puente de sincronización y transporte de fotogramas entre el hilo de emulación y el de UI.
+///
+/// Usa un buzón de un solo slot (*single-slot mailbox*) en lugar de un canal acotado
+/// bloqueante: el productor nunca espera a la GPU. Si el consumidor no ha retirado el
+/// fotograma anterior, el buzón lo sobrescribe con el más reciente y devuelve su búfer
+/// al pool, de modo que no se asigna memoria nueva por fotograma.
 pub struct EmulationBridge {
-    tx: SyncSender<FramePacket>,
-    rx: Mutex<Receiver<FramePacket>>,
+    /// Buzón con el fotograma más reciente pendiente de consumir.
+    mailbox: Mutex<Option<FramePacket>>,
+    /// Pool de búferes RGBA reutilizables (evita `Box::new` por fotograma).
+    buffer_pool: Mutex<Vec<Box<[[u8; 4]; GBA_PIXELS]>>>,
+    /// Contador de asignaciones reales de búfer (diagnóstico de reutilización).
+    buffer_allocs: AtomicU64,
     keys: AtomicU16,
     running: AtomicBool,
     paused: AtomicBool,
@@ -47,12 +55,12 @@ pub struct EmulationBridge {
 }
 
 impl EmulationBridge {
-    /// Crea un nuevo puente con canal acotado a 1 fotograma para latencia mínima.
+    /// Crea un nuevo puente con buzón de un solo slot para latencia mínima.
     pub fn new() -> Self {
-        let (tx, rx) = sync_channel(1);
         Self {
-            tx,
-            rx: Mutex::new(rx),
+            mailbox: Mutex::new(None),
+            buffer_pool: Mutex::new(Vec::with_capacity(2)),
+            buffer_allocs: AtomicU64::new(0),
             keys: AtomicU16::new(0x03FF), // Teclas GBA activas en bajo (0x03FF = todas sueltas)
             running: AtomicBool::new(true),
             paused: AtomicBool::new(false),
@@ -60,21 +68,62 @@ impl EmulationBridge {
         }
     }
 
-    /// Envía un fotograma al hilo de renderizado.
+    /// Adquiere un búfer de fotograma reutilizable del pool.
     ///
-    /// Si el canal está ocupado, espera a que el consumidor lo extraiga, garantizando
-    /// un ritmo coordinado de avance de fotogramas.
-    pub fn send_frame(&self, packet: FramePacket) -> Result<(), ()> {
-        self.tx.send(packet).map_err(|_| ())
+    /// Solo asigna memoria nueva (`Box::new`) si el pool está vacío; en régimen
+    /// permanente el pool recicla los búferes que el buzón va liberando.
+    pub fn acquire_buffer(&self) -> Box<[[u8; 4]; GBA_PIXELS]> {
+        if let Ok(mut pool) = self.buffer_pool.lock() {
+            if let Some(buf) = pool.pop() {
+                return buf;
+            }
+        }
+        self.buffer_allocs.fetch_add(1, Ordering::Relaxed);
+        Box::new([[0u8; 4]; GBA_PIXELS])
     }
 
-    /// Intenta recibir el fotograma más reciente de forma no bloqueante en el hilo de GPU.
-    pub fn try_recv_frame(&self) -> Option<FramePacket> {
-        let Ok(rx) = self.rx.lock() else { return None; };
-        match rx.try_recv() {
-            Ok(p) => Some(p),
-            Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
+    /// Devuelve un búfer al pool para su reutilización.
+    ///
+    /// El pool se acota para no retener memoria indefinidamente si un consumidor
+    /// lento dejara de reciclar.
+    pub fn recycle_buffer(&self, buf: Box<[[u8; 4]; GBA_PIXELS]>) {
+        if let Ok(mut pool) = self.buffer_pool.lock() {
+            if pool.len() < 4 {
+                pool.push(buf);
+            }
         }
+    }
+
+    /// Deposita el fotograma más reciente en el buzón **sin bloquearse**.
+    ///
+    /// Si ya había un fotograma pendiente, se descarta y su búfer vuelve al pool:
+    /// el consumidor recibirá siempre el fotograma más nuevo.
+    pub fn send_frame(&self, packet: FramePacket) {
+        let displaced = match self.mailbox.lock() {
+            Ok(mut slot) => slot.replace(packet),
+            Err(_) => return,
+        };
+        if let Some(old) = displaced {
+            self.recycle_buffer(old.rgba);
+        }
+    }
+
+    /// Retira el fotograma más reciente del buzón de forma no bloqueante (hilo de GPU).
+    ///
+    /// Devuelve `None` si no hay ningún fotograma pendiente.
+    pub fn try_recv_frame(&self) -> Option<FramePacket> {
+        match self.mailbox.lock() {
+            Ok(mut slot) => slot.take(),
+            Err(_) => None,
+        }
+    }
+
+    /// Número de asignaciones reales de búfer realizadas desde el arranque.
+    ///
+    /// En régimen permanente debe permanecer constante (pool reciclando); se usa
+    /// para verificar la ausencia de asignaciones por fotograma.
+    pub fn allocations(&self) -> u64 {
+        self.buffer_allocs.load(Ordering::Relaxed)
     }
 
     /// Actualiza la máscara de entrada (llamada desde el hilo de UI/touch).
@@ -186,7 +235,8 @@ impl EmulationWorker {
                     let timing = runner.last_timing();
                     let is_native = runner.is_native();
 
-                    let mut buf = Box::new([[0u8; 4]; GBA_PIXELS]);
+                    // Búfer reciclado del pool: sin asignación dinámica por fotograma.
+                    let mut buf = b_clone.acquire_buffer();
                     buf.copy_from_slice(runner.frame_rgba());
 
                     frame_count += 1;
@@ -197,9 +247,8 @@ impl EmulationWorker {
                         is_native,
                     };
 
-                    if b_clone.send_frame(packet).is_err() {
-                        break;
-                    }
+                    // Depósito no bloqueante: el productor nunca espera a la GPU.
+                    b_clone.send_frame(packet);
 
                     let elapsed = t_start.elapsed();
                     if elapsed < FRAME_DURATION {
