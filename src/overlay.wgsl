@@ -106,7 +106,7 @@ fn glyph_color(idx: f32, local: vec2<f32>, u: f32, ink: vec3<f32>) -> vec4<f32> 
         }
         let cell = glyph_cell_coords(i);
         let uv = vec2<f32>((cell.x + q.x) * 0.25, (cell.y + q.y) * 0.25);
-        let coverage = textureSample(font_texture, font_sampler, uv).r;
+        let coverage = textureSampleLevel(font_texture, font_sampler, uv, 0.0).r;
         return vec4<f32>(ink, coverage);
     }
 
@@ -120,7 +120,7 @@ fn glyph_color(idx: f32, local: vec2<f32>, u: f32, ink: vec3<f32>) -> vec4<f32> 
         }
         let col_off = select(0.50, 0.00, i == 9u);
         let uv = vec2<f32>(col_off + q.x * 0.50, 0.50 + q.y * 0.25);
-        let coverage = textureSample(font_texture, font_sampler, uv).r;
+        let coverage = textureSampleLevel(font_texture, font_sampler, uv, 0.0).r;
         return vec4<f32>(ink, coverage);
     }
 
@@ -133,6 +133,51 @@ fn glyph_color(idx: f32, local: vec2<f32>, u: f32, ink: vec3<f32>) -> vec4<f32> 
 fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     let res = vec2<f32>(globals.res_x, globals.res_y);
     let p = in.pos.xy; // píxeles físicos (y hacia abajo)
+
+    // En Landscape (shell <= 0.5), el fondo es 100% transparente salvo donde hay botones.
+    // Poda temprana global: si el fragmento no cae dentro del margen holgado de ninguno de
+    // los tres grupos de controles (cruceta, clúster B/A/L/R o Select/Start), descartar de inmediato.
+    if globals.shell <= 0.5 {
+        var near_any = false;
+        // 1. Cruceta (elems 0..3)
+        if elems[0].radius > 0.0 && elems[1].radius > 0.0 {
+            let dpad_c = vec2<f32>(elems[0].cx, (elems[0].cy + elems[1].cy) * 0.5);
+            let arm_len = abs(elems[1].cy - elems[0].cy) * 0.5;
+            let dpad_bb = arm_len + elems[0].radius * 0.85 + 28.0;
+            if abs(p.x - dpad_c.x) <= dpad_bb && abs(p.y - dpad_c.y) <= dpad_bb {
+                near_any = true;
+            }
+        }
+        // 2. Clúster de acción (elems 4..7: B, A, L, R)
+        if !near_any && elems[4].radius > 0.0 && elems[5].radius > 0.0 {
+            let b_pos = vec2<f32>(elems[4].cx, elems[4].cy);
+            let a_pos = vec2<f32>(elems[5].cx, elems[5].cy);
+            let cluster_mid = (b_pos + a_pos) * 0.5;
+            let cluster_span = length(a_pos - b_pos) * 0.5 + max(elems[4].radius, elems[6].radius) * 1.8 + 28.0;
+            if abs(p.x - cluster_mid.x) <= cluster_span && abs(p.y - cluster_mid.y) <= cluster_span {
+                near_any = true;
+            }
+        }
+        // 3. Select y Start (elems 8..9)
+        if !near_any && elems[8].radius > 0.0 && elems[9].radius > 0.0 {
+            let ss_mid = vec2<f32>((elems[8].cx + elems[9].cx) * 0.5, elems[8].cy);
+            let ss_span_x = abs(elems[9].cx - elems[8].cx) * 0.5 + elems[8].radius + 28.0;
+            let ss_span_y = elems[8].extent_y * 2.8 + 36.0;
+            if abs(p.x - ss_mid.x) <= ss_span_x && abs(p.y - ss_mid.y) <= ss_span_y {
+                near_any = true;
+            }
+        }
+        if !near_any {
+            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        }
+    } else {
+        // En Portrait (shell > 0.5), la mitad superior es la pantalla del juego.
+        // Poda temprana: por encima de la carcasa no hay ni botones ni fondo.
+        let shell_top = res.y * 0.49;
+        if p.y < (shell_top - 12.0) {
+            return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+        }
+    }
 
     // 1. Fondo: carcasa plateada GBA SP en portrait con esquinas redondeadas
     //    y márgenes laterales (fidelidad al prototipo layout_tactil_v2.html).
@@ -172,28 +217,32 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
             let dpad_c = vec2<f32>(elems[0].cx, (elems[0].cy + elems[1].cy) * 0.5);
             let arm_len = abs(elems[1].cy - elems[0].cy) * 0.5;
             let dpad_r = arm_len + elems[0].radius * 1.15;
-            let d_well = length(p - dpad_c) - dpad_r;
+            let d_well_bb = dpad_r + 6.0;
 
-            // Bisel exterior iluminado (reborde exterior inferior de la hendidura)
-            let outer_lip = (1.0 - smoothstep(0.0, 3.0, abs(d_well))) * clamp((p.y - dpad_c.y) / dpad_r * 0.8 + 0.2, 0.0, 1.0) * 0.55;
-            color = mix(color, vec3<f32>(0.96, 0.97, 1.0), outer_lip * in_shell);
+            if abs(p.x - dpad_c.x) <= d_well_bb && abs(p.y - dpad_c.y) <= d_well_bb {
+                let d_well = length(p - dpad_c) - dpad_r;
 
-            if d_well < 0.0 {
-                let well_mask = 1.0 - smoothstep(-2.5, 0.0, d_well);
-                // Degradado del fondo de la cuenca
-                let well_t = (p.y - (dpad_c.y - dpad_r)) / (2.0 * dpad_r);
-                var well_col = mix(vec3<f32>(0.38, 0.39, 0.45), vec3<f32>(0.60, 0.61, 0.67), well_t);
+                // Bisel exterior iluminado (reborde exterior inferior de la hendidura)
+                let outer_lip = (1.0 - smoothstep(0.0, 3.0, abs(d_well))) * clamp((p.y - dpad_c.y) / dpad_r * 0.8 + 0.2, 0.0, 1.0) * 0.55;
+                color = mix(color, vec3<f32>(0.96, 0.97, 1.0), outer_lip * in_shell);
 
-                // Profundidad 3D: Sombra interior superior (pared superior de la cuenca)
-                let norm_w = (p - dpad_c) / dpad_r;
-                let top_inner_shadow = smoothstep(-dpad_r * 0.45, 0.0, d_well) * clamp(-norm_w.y * 0.80 - norm_w.x * 0.35 + 0.20, 0.0, 1.0);
-                well_col = mix(well_col, vec3<f32>(0.12, 0.13, 0.16), top_inner_shadow * 0.90);
+                if d_well < 0.0 {
+                    let well_mask = 1.0 - smoothstep(-2.5, 0.0, d_well);
+                    // Degradado del fondo de la cuenca
+                    let well_t = (p.y - (dpad_c.y - dpad_r)) / (2.0 * dpad_r);
+                    var well_col = mix(vec3<f32>(0.38, 0.39, 0.45), vec3<f32>(0.60, 0.61, 0.67), well_t);
 
-                // Profundidad 3D: Labio interior inferior iluminado (pared inferior)
-                let bottom_inner_lip = smoothstep(-dpad_r * 0.25, 0.0, d_well) * clamp(norm_w.y * 0.80 + norm_w.x * 0.35, 0.0, 1.0);
-                well_col = mix(well_col, vec3<f32>(0.88, 0.90, 0.96), bottom_inner_lip * 0.50);
+                    // Profundidad 3D: Sombra interior superior (pared superior de la cuenca)
+                    let norm_w = (p - dpad_c) / dpad_r;
+                    let top_inner_shadow = smoothstep(-dpad_r * 0.45, 0.0, d_well) * clamp(-norm_w.y * 0.80 - norm_w.x * 0.35 + 0.20, 0.0, 1.0);
+                    well_col = mix(well_col, vec3<f32>(0.12, 0.13, 0.16), top_inner_shadow * 0.90);
 
-                color = mix(color, well_col, well_mask);
+                    // Profundidad 3D: Labio interior inferior iluminado (pared inferior)
+                    let bottom_inner_lip = smoothstep(-dpad_r * 0.25, 0.0, d_well) * clamp(norm_w.y * 0.80 + norm_w.x * 0.35, 0.0, 1.0);
+                    well_col = mix(well_col, vec3<f32>(0.88, 0.90, 0.96), bottom_inner_lip * 0.50);
+
+                    color = mix(color, well_col, well_mask);
+                }
             }
         }
 
@@ -220,30 +269,34 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
 
             let half_w = ba_len * 0.5 + elems[4].radius * 1.30;
             let p_rel = p - cluster_center;
-            let p_local = vec2<f32>(dot(p_rel, u_axis), dot(p_rel, v_axis));
-            let round_r = min(half_w, half_h) * 0.65;
-            let d_ab_well = sd_round_rect(p_local, vec2<f32>(0.0, 0.0), vec2<f32>(half_w, half_h), round_r);
+            let ab_bb = max(half_w, half_h) * 1.25 + 8.0;
 
-            // Bisel exterior iluminado (reborde exterior inferior de la cápsula)
-            let norm_ab = p_rel / max(half_w, half_h);
-            let ab_outer_lip = (1.0 - smoothstep(0.0, 3.0, abs(d_ab_well))) * clamp(norm_ab.y * 0.80 + norm_ab.x * 0.35 + 0.20, 0.0, 1.0) * 0.55;
-            color = mix(color, vec3<f32>(0.96, 0.97, 1.0), ab_outer_lip * in_shell);
+            if abs(p_rel.x) <= ab_bb && abs(p_rel.y) <= ab_bb {
+                let p_local = vec2<f32>(dot(p_rel, u_axis), dot(p_rel, v_axis));
+                let round_r = min(half_w, half_h) * 0.65;
+                let d_ab_well = sd_round_rect(p_local, vec2<f32>(0.0, 0.0), vec2<f32>(half_w, half_h), round_r);
 
-            if d_ab_well < 0.0 {
-                let ab_mask = 1.0 - smoothstep(-2.5, 0.0, d_ab_well);
-                // Degradado del fondo de la cápsula
-                let t_ab = clamp(norm_ab.y * 0.5 + 0.5, 0.0, 1.0);
-                var ab_col = mix(vec3<f32>(0.38, 0.39, 0.45), vec3<f32>(0.60, 0.61, 0.67), t_ab);
+                // Bisel exterior iluminado (reborde exterior inferior de la cápsula)
+                let norm_ab = p_rel / max(half_w, half_h);
+                let ab_outer_lip = (1.0 - smoothstep(0.0, 3.0, abs(d_ab_well))) * clamp(norm_ab.y * 0.80 + norm_ab.x * 0.35 + 0.20, 0.0, 1.0) * 0.55;
+                color = mix(color, vec3<f32>(0.96, 0.97, 1.0), ab_outer_lip * in_shell);
 
-                // Profundidad 3D: Sombra interior superior (pared superior de la cápsula hundida)
-                let top_inner_shadow = smoothstep(-half_h * 0.45, 0.0, d_ab_well) * clamp(-norm_ab.y * 0.80 - norm_ab.x * 0.35 + 0.20, 0.0, 1.0);
-                ab_col = mix(ab_col, vec3<f32>(0.12, 0.13, 0.16), top_inner_shadow * 0.90);
+                if d_ab_well < 0.0 {
+                    let ab_mask = 1.0 - smoothstep(-2.5, 0.0, d_ab_well);
+                    // Degradado del fondo de la cápsula
+                    let t_ab = clamp(norm_ab.y * 0.5 + 0.5, 0.0, 1.0);
+                    var ab_col = mix(vec3<f32>(0.38, 0.39, 0.45), vec3<f32>(0.60, 0.61, 0.67), t_ab);
 
-                // Profundidad 3D: Labio interior inferior iluminado (pared inferior)
-                let bottom_inner_lip = smoothstep(-half_h * 0.25, 0.0, d_ab_well) * clamp(norm_ab.y * 0.80 + norm_ab.x * 0.35, 0.0, 1.0);
-                ab_col = mix(ab_col, vec3<f32>(0.88, 0.90, 0.96), bottom_inner_lip * 0.50);
+                    // Profundidad 3D: Sombra interior superior (pared superior de la cápsula hundida)
+                    let top_inner_shadow = smoothstep(-half_h * 0.45, 0.0, d_ab_well) * clamp(-norm_ab.y * 0.80 - norm_ab.x * 0.35 + 0.20, 0.0, 1.0);
+                    ab_col = mix(ab_col, vec3<f32>(0.12, 0.13, 0.16), top_inner_shadow * 0.90);
 
-                color = mix(color, ab_col, ab_mask);
+                    // Profundidad 3D: Labio interior inferior iluminado (pared inferior)
+                    let bottom_inner_lip = smoothstep(-half_h * 0.25, 0.0, d_ab_well) * clamp(norm_ab.y * 0.80 + norm_ab.x * 0.35, 0.0, 1.0);
+                    ab_col = mix(ab_col, vec3<f32>(0.88, 0.90, 0.96), bottom_inner_lip * 0.50);
+
+                    color = mix(color, ab_col, ab_mask);
+                }
             }
         }
     }
@@ -257,111 +310,115 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         let half_len = arm_len + r_base * 0.85;
         let half_thick = r_base * 0.82;
         let corner_r = r_base * 0.30;
+        let cross_bb = half_len + 28.0;
 
-        let d_v = sd_round_rect(p, dpad_c, vec2<f32>(half_thick, half_len), corner_r);
-        let d_h = sd_round_rect(p, dpad_c, vec2<f32>(half_len, half_thick), corner_r);
-        let d_cross = min(d_v, d_h);
+        // Poda AABB: solo evaluar si el píxel cae dentro de la caja de la cruz + sombras
+        if abs(p.x - dpad_c.x) <= cross_bb && abs(p.y - dpad_c.y) <= cross_bb {
+            let d_v = sd_round_rect(p, dpad_c, vec2<f32>(half_thick, half_len), corner_r);
+            let d_h = sd_round_rect(p, dpad_c, vec2<f32>(half_len, half_thick), corner_r);
+            let d_cross = min(d_v, d_h);
 
-        let aa = 1.25;
-        let fill = 1.0 - smoothstep(-aa, aa, d_cross);
+            let aa = 1.25;
+            let fill = 1.0 - smoothstep(-aa, aa, d_cross);
 
-        // 2a. Sombra proyectada exterior inferior de la cruz completa
-        let shadow_off = vec2<f32>(0.0, max(half_thick * 0.15, 3.5));
-        let p_sh = p - shadow_off;
-        let d_sh_v = sd_round_rect(p_sh, dpad_c, vec2<f32>(half_thick, half_len), corner_r);
-        let d_sh_h = sd_round_rect(p_sh, dpad_c, vec2<f32>(half_len, half_thick), corner_r);
-        let d_cross_sh = min(d_sh_v, d_sh_h);
-        let btn_shadow = (1.0 - smoothstep(-2.0, half_thick * 0.35 + 8.0, d_cross_sh)) * 0.42 * (1.0 - fill);
-        color = mix(color, vec3<f32>(0.06, 0.07, 0.10), btn_shadow * globals.opacity);
-        total_a = max(total_a, btn_shadow * globals.opacity);
+            // 2a. Sombra proyectada exterior inferior de la cruz completa
+            let shadow_off = vec2<f32>(0.0, max(half_thick * 0.15, 3.5));
+            let p_sh = p - shadow_off;
+            let d_sh_v = sd_round_rect(p_sh, dpad_c, vec2<f32>(half_thick, half_len), corner_r);
+            let d_sh_h = sd_round_rect(p_sh, dpad_c, vec2<f32>(half_len, half_thick), corner_r);
+            let d_cross_sh = min(d_sh_v, d_sh_h);
+            let btn_shadow = (1.0 - smoothstep(-2.0, half_thick * 0.35 + 8.0, d_cross_sh)) * 0.42 * (1.0 - fill);
+            color = mix(color, vec3<f32>(0.06, 0.07, 0.10), btn_shadow * globals.opacity);
+            total_a = max(total_a, btn_shadow * globals.opacity);
 
-        if fill > 0.001 {
-            let p_rel = p - dpad_c;
-            // Identificar qué dirección o núcleo corresponde a este punto
-            var el = elems[0];
-            var arm_local = p - vec2<f32>(elems[0].cx, elems[0].cy);
-            if abs(p_rel.y) >= abs(p_rel.x) {
-                if p_rel.y > 0.0 {
-                    el = elems[1]; // Down
-                    arm_local = p - vec2<f32>(elems[1].cx, elems[1].cy);
-                }
-            } else {
-                if p_rel.x < 0.0 {
-                    el = elems[2]; // Left
-                    arm_local = p - vec2<f32>(elems[2].cx, elems[2].cy);
+            if fill > 0.001 {
+                let p_rel = p - dpad_c;
+                // Identificar qué dirección o núcleo corresponde a este punto
+                var el = elems[0];
+                var arm_local = p - vec2<f32>(elems[0].cx, elems[0].cy);
+                if abs(p_rel.y) >= abs(p_rel.x) {
+                    if p_rel.y > 0.0 {
+                        el = elems[1]; // Down
+                        arm_local = p - vec2<f32>(elems[1].cx, elems[1].cy);
+                    }
                 } else {
-                    el = elems[3]; // Right
-                    arm_local = p - vec2<f32>(elems[3].cx, elems[3].cy);
-                }
-            }
-
-            let is_center = max(abs(p_rel.x), abs(p_rel.y)) < half_thick * 0.68;
-            let pressed = select(el.pressed, 0.0, is_center);
-
-            // Degradado volumétrico a 145° (#a4a9c5 a #7b819f)
-            let norm_cross = p_rel / max(half_len, 1.0);
-            let t_btn = clamp(dot(norm_cross, vec2<f32>(0.57, 0.82)) * 0.5 + 0.5, 0.0, 1.0);
-            let col_light = vec3<f32>(el.r * 1.18, el.g * 1.18, el.b * 1.12);
-            let col_dark  = vec3<f32>(el.r * 0.80, el.g * 0.80, el.b * 0.82);
-            var base = mix(col_light, col_dark, t_btn);
-
-            let is_landscape = globals.shell < 0.5;
-
-            if is_center {
-                if !is_landscape {
-                    base = base * 0.90; // Núcleo central ligeramente hundido (solo en portrait)
-                    let d_pivot = length(p_rel) - half_thick * 0.40;
-                    if d_pivot < 0.0 {
-                        base = mix(base, base * 0.84, 1.0 - smoothstep(-1.5, 0.0, d_pivot));
+                    if p_rel.x < 0.0 {
+                        el = elems[2]; // Left
+                        arm_local = p - vec2<f32>(elems[2].cx, elems[2].cy);
+                    } else {
+                        el = elems[3]; // Right
+                        arm_local = p - vec2<f32>(elems[3].cx, elems[3].cy);
                     }
                 }
-            }
 
-            // Brillo especular interior / bisel superior
-            let inset_spec = clamp(-norm_cross.y, 0.0, 1.0) * (1.0 - smoothstep(-half_thick * 0.45, 0.0, d_cross));
-            let spec_mult = select(0.28, 0.16, is_landscape);
-            base = mix(base, vec3<f32>(1.0, 1.0, 1.0), inset_spec * spec_mult);
+                let is_center = max(abs(p_rel.x), abs(p_rel.y)) < half_thick * 0.68;
+                let pressed = select(el.pressed, 0.0, is_center);
 
-            // Feedback de pulsado (Paso 7: teñir brazo activo con azul eléctrico #5b8def)
-            let dpad_blue = mix(vec3<f32>(0.42, 0.62, 0.98), vec3<f32>(0.32, 0.50, 0.90), t_btn);
-            base = mix(base, dpad_blue, pressed);
+                // Degradado volumétrico a 145° (#a4a9c5 a #7b819f)
+                let norm_cross = p_rel / max(half_len, 1.0);
+                let t_btn = clamp(dot(norm_cross, vec2<f32>(0.57, 0.82)) * 0.5 + 0.5, 0.0, 1.0);
+                let col_light = vec3<f32>(el.r * 1.18, el.g * 1.18, el.b * 1.12);
+                let col_dark  = vec3<f32>(el.r * 0.80, el.g * 0.80, el.b * 0.82);
+                var base = mix(col_light, col_dark, t_btn);
 
-            // Borde exterior biselado (borde blanco tenue de cristal en landscape)
-            let ring_d = abs(d_cross) - 1.5;
-            let ring_a = (1.0 - smoothstep(0.0, aa + 1.5, ring_d)) * el.ring;
-            let ring_base = select(
-                mix(vec3<f32>(0.50, 0.52, 0.58), vec3<f32>(0.95, 0.96, 1.0), clamp(-norm_cross.y * 0.5 + 0.5, 0.0, 1.0)),
-                vec3<f32>(0.85, 0.88, 0.95),
-                is_landscape
-            );
-            let ring_light = mix(ring_base, vec3<f32>(0.75, 0.88, 1.0), pressed);
+                let is_landscape = globals.shell < 0.5;
 
-            var cross_rgba = vec4<f32>(base, fill * globals.opacity);
-
-            // Glifo de flecha en cada brazo si no es el núcleo central
-            if !is_center {
-                let lum = dot(base, vec3<f32>(0.299, 0.587, 0.114));
-                var ink = select(vec3<f32>(0.12, 0.13, 0.15), vec3<f32>(0.95, 0.95, 0.97), lum < 0.5);
-                if pressed > 0.5 {
-                    ink = vec3<f32>(1.0, 1.0, 1.0); // flecha blanca pura sobre el fondo azul #5b8def
+                if is_center {
+                    if !is_landscape {
+                        base = base * 0.90; // Núcleo central ligeramente hundido (solo en portrait)
+                        let d_pivot = length(p_rel) - half_thick * 0.40;
+                        if d_pivot < 0.0 {
+                            base = mix(base, base * 0.84, 1.0 - smoothstep(-1.5, 0.0, d_pivot));
+                        }
+                    }
                 }
-                let u = el.radius * el.glyph_scale;
-                let g = glyph_color(el.glyph, arm_local, u, ink);
-                let glyph_a = g.a * fill;
-                cross_rgba = vec4<f32>(
-                    mix(cross_rgba.rgb, g.rgb, glyph_a),
-                    max(cross_rgba.a, glyph_a * globals.opacity)
+
+                // Brillo especular interior / bisel superior
+                let inset_spec = clamp(-norm_cross.y, 0.0, 1.0) * (1.0 - smoothstep(-half_thick * 0.45, 0.0, d_cross));
+                let spec_mult = select(0.28, 0.16, is_landscape);
+                base = mix(base, vec3<f32>(1.0, 1.0, 1.0), inset_spec * spec_mult);
+
+                // Feedback de pulsado (Paso 7: teñir brazo activo con azul eléctrico #5b8def)
+                let dpad_blue = mix(vec3<f32>(0.42, 0.62, 0.98), vec3<f32>(0.32, 0.50, 0.90), t_btn);
+                base = mix(base, dpad_blue, pressed);
+
+                // Borde exterior biselado (borde blanco tenue de cristal en landscape)
+                let ring_d = abs(d_cross) - 1.5;
+                let ring_a = (1.0 - smoothstep(0.0, aa + 1.5, ring_d)) * el.ring;
+                let ring_base = select(
+                    mix(vec3<f32>(0.50, 0.52, 0.58), vec3<f32>(0.95, 0.96, 1.0), clamp(-norm_cross.y * 0.5 + 0.5, 0.0, 1.0)),
+                    vec3<f32>(0.85, 0.88, 0.95),
+                    is_landscape
                 );
+                let ring_light = mix(ring_base, vec3<f32>(0.75, 0.88, 1.0), pressed);
+
+                var cross_rgba = vec4<f32>(base, fill * globals.opacity);
+
+                // Glifo de flecha en cada brazo si no es el núcleo central
+                if !is_center {
+                    let lum = dot(base, vec3<f32>(0.299, 0.587, 0.114));
+                    var ink = select(vec3<f32>(0.12, 0.13, 0.15), vec3<f32>(0.95, 0.95, 0.97), lum < 0.5);
+                    if pressed > 0.5 {
+                        ink = vec3<f32>(1.0, 1.0, 1.0); // flecha blanca pura sobre el fondo azul #5b8def
+                    }
+                    let u = el.radius * el.glyph_scale;
+                    let g = glyph_color(el.glyph, arm_local, u, ink);
+                    let glyph_a = g.a * fill;
+                    cross_rgba = vec4<f32>(
+                        mix(cross_rgba.rgb, g.rgb, glyph_a),
+                        max(cross_rgba.a, glyph_a * globals.opacity)
+                    );
+                }
+
+                cross_rgba = vec4<f32>(
+                    mix(cross_rgba.rgb, ring_light, ring_a * globals.opacity),
+                    max(cross_rgba.a, ring_a * globals.opacity)
+                );
+
+                let a = cross_rgba.a;
+                color = mix(color, cross_rgba.rgb, a);
+                total_a = max(total_a, a);
             }
-
-            cross_rgba = vec4<f32>(
-                mix(cross_rgba.rgb, ring_light, ring_a * globals.opacity),
-                max(cross_rgba.a, ring_a * globals.opacity)
-            );
-
-            let a = cross_rgba.a;
-            color = mix(color, cross_rgba.rgb, a);
-            total_a = max(total_a, a);
         }
     }
 
@@ -373,6 +430,16 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
         }
         let c = vec2<f32>(el.cx, el.cy);
         let local = p - c;
+        let max_r = max(el.radius, el.extent_y);
+        let bb_x = max_r * 1.40 + 20.0;
+        let bb_y_down = max_r * 1.40 + 20.0;
+        let bb_y_up = select(bb_y_down, max_r * 2.80 + 36.0, el.glyph > 8.5);
+
+        // Poda AABB: descartar píxeles que no tocan este botón ni su sombra/etiqueta
+        if abs(local.x) > bb_x || local.y > bb_y_down || local.y < -bb_y_up {
+            continue;
+        }
+
         let cos_a = cos(el.angle);
         let sin_a = sin(el.angle);
         let rot_l = vec2<f32>(

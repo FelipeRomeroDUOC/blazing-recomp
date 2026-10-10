@@ -235,3 +235,68 @@ fn zip_read_check(mut file: &fs::File) -> Vec<ZipEntryInfo> {
     }
     entries
 }
+
+#[test]
+fn test_manifest_declares_android_tv_compatibility() {
+    let manifest_path = repo_root().join("android").join("AndroidManifest.xml");
+    let content = fs::read_to_string(&manifest_path)
+        .expect("Debe poder leerse android/AndroidManifest.xml");
+
+    // Validar que la pantalla tactil NO es obligatoria para permitir instalacion en Android TV
+    assert!(
+        content.contains("android.hardware.touchscreen") && content.contains("android:required=\"false\""),
+        "El manifiesto debe declarar android.hardware.touchscreen con required=\"false\" para permitir instalacion en televisores"
+    );
+
+    // Validar compatibilidad con Leanback UI
+    assert!(
+        content.contains("android.software.leanback"),
+        "El manifiesto debe declarar android.software.leanback con required=\"false\""
+    );
+
+    // Validar categoria de launcher de Android TV
+    assert!(
+        content.contains("android.intent.category.LEANBACK_LAUNCHER"),
+        "El manifiesto debe declarar la categoria LEANBACK_LAUNCHER para visibilidad en pantalla de inicio de TV"
+    );
+
+    // Validar metadata/atributo de juego
+    assert!(
+        content.contains("android:isGame=\"true\""),
+        "El manifiesto debe declarar android:isGame=\"true\" en el elemento application"
+    );
+}
+
+#[test]
+fn test_packaging_script_enables_v1_v2_v3_signatures() {
+    let script_path = repo_root().join("scripts").join("package_apk.ps1");
+    let content = fs::read_to_string(&script_path)
+        .expect("Debe poder leerse scripts/package_apk.ps1");
+
+    assert!(
+        content.contains("--v1-signing-enabled true"),
+        "El script package_apk.ps1 debe habilitar --v1-signing-enabled true para compatibilidad con instaladores heredados y Android TV"
+    );
+    assert!(
+        content.contains("--v2-signing-enabled true"),
+        "El script package_apk.ps1 debe habilitar --v2-signing-enabled true"
+    );
+    assert!(
+        content.contains("--v3-signing-enabled true"),
+        "El script package_apk.ps1 debe habilitar --v3-signing-enabled true"
+    );
+}
+
+#[test]
+fn test_packaging_script_supports_armeabi_v7a() {
+    let script_path = repo_root().join("scripts").join("package_apk.ps1");
+    let content = fs::read_to_string(&script_path)
+        .expect("Debe poder leerse scripts/package_apk.ps1");
+
+    assert!(
+        content.contains("\"armv7-linux-androideabi\"  = \"armeabi-v7a\"")
+            || content.contains("\"armv7-linux-androideabi\" = \"armeabi-v7a\""),
+        "El script package_apk.ps1 debe mapear armv7-linux-androideabi a armeabi-v7a"
+    );
+}
+

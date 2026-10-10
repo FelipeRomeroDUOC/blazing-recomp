@@ -6,7 +6,9 @@ param (
     [string]$SdkPath = "",
     [string]$TargetAbi = "arm64-v8a",
     [string]$TargetArch = "",
-    [switch]$SkipBuild = $false
+    [switch]$SkipBuild = $false,
+    [switch]$AllAbis = $true,
+    [switch]$NoStrip = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,7 +42,8 @@ if (-not $SdkPath) {
 
 Write-Host "==> Android SDK: $SdkPath"
 
-# 1.1 Detección de Android NDK (para cargo ndk)
+# 1.1 Detección de Android NDK (para cargo ndk y llvm-strip)
+$llvmStrip = $null
 if (-not $env:ANDROID_NDK_HOME -and -not $env:NDK_HOME) {
     $ndkBase = Join-Path $SdkPath "ndk"
     if (Test-Path $ndkBase) {
@@ -51,6 +54,14 @@ if (-not $env:ANDROID_NDK_HOME -and -not $env:NDK_HOME) {
             $env:ANDROID_NDK_HOME = $ndkDirs[0].FullName
             Write-Host "==> Android NDK: $env:ANDROID_NDK_HOME"
         }
+    }
+}
+
+if ($env:ANDROID_NDK_HOME) {
+    $potentialStrip = Join-Path $env:ANDROID_NDK_HOME "toolchains\llvm\prebuilt\windows-x86_64\bin\llvm-strip.exe"
+    if (Test-Path $potentialStrip) {
+        $llvmStrip = $potentialStrip
+        Write-Host "==> LLVM Strip: $llvmStrip"
     }
 }
 
@@ -198,10 +209,15 @@ if (-not (Test-Path $debugKeystore)) {
 
 # 6. Compilar .so con cargo ndk
 if (-not $SkipBuild) {
-    Write-Host "==> Compilando .so nativo para $TargetAbi ($TargetArch) con cargo ndk..."
     Push-Location $RepoRoot
     try {
-        cargo ndk -t $TargetAbi build
+        if ($AllAbis) {
+            Write-Host "==> Compilando .so nativo para todos los ABIs (arm64-v8a, armeabi-v7a, x86_64) con cargo ndk..."
+            cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 build
+        } else {
+            Write-Host "==> Compilando .so nativo para $TargetAbi ($TargetArch) con cargo ndk..."
+            cargo ndk -t $TargetAbi build
+        }
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Fallo cargo ndk build."
             exit $LASTEXITCODE
@@ -261,10 +277,23 @@ $abiMap = @{
     "i686-linux-android"       = "x86"
 }
 
+function Stage-So-File {
+    param([string]$SourcePath, [string]$DestPath)
+    if (-not $NoStrip -and $llvmStrip -and (Test-Path $llvmStrip)) {
+        & $llvmStrip --strip-all $SourcePath -o $DestPath
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "llvm-strip fallo, cayendo en copia directa con simbolos."
+            Copy-Item $SourcePath $DestPath -Force
+        }
+    } else {
+        Copy-Item $SourcePath $DestPath -Force
+    }
+}
+
 # Siempre incluir el target principal solicitado
 $abiStagingDir = Join-Path $stagingDir "lib\$TargetAbi"
 New-Item -ItemType Directory -Path $abiStagingDir -Force | Out-Null
-Copy-Item $soFile (Join-Path $abiStagingDir "libblazing_recomp.so") -Force
+Stage-So-File -SourcePath $soFile -DestPath (Join-Path $abiStagingDir "libblazing_recomp.so")
 Write-Host "   + Incluyendo $TargetAbi ($soFile)"
 
 # Si existen otros ABIs ya compilados en target, incorporarlos (Fat APK multi-arquitectura)
@@ -275,7 +304,7 @@ foreach ($arch in $abiMap.Keys) {
         if (Test-Path $otherSo) {
             $otherStaging = Join-Path $stagingDir "lib\$abi"
             New-Item -ItemType Directory -Path $otherStaging -Force | Out-Null
-            Copy-Item $otherSo (Join-Path $otherStaging "libblazing_recomp.so") -Force
+            Stage-So-File -SourcePath $otherSo -DestPath (Join-Path $otherStaging "libblazing_recomp.so")
             Write-Host "   + Incluyendo soporte multi-ABI: $abi ($otherSo)"
         }
     }
@@ -321,9 +350,9 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-# 10. Firmar con apksigner (v2 / v3)
-Write-Host "==> Firmando APK con apksigner..."
-& $apksigner sign --ks $debugKeystore --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --v2-signing-enabled true --v3-signing-enabled true --out $finalApk $alignedApk
+# 10. Firmar con apksigner (v1 / v2 / v3)
+Write-Host "==> Firmando APK con apksigner (esquemas v1, v2 y v3)..."
+& $apksigner sign --ks $debugKeystore --ks-pass pass:android --key-pass pass:android --ks-key-alias androiddebugkey --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --out $finalApk $alignedApk
 if ($LASTEXITCODE -ne 0) {
     Write-Error "apksigner sign fallo con codigo $LASTEXITCODE."
     exit $LASTEXITCODE

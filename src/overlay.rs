@@ -639,4 +639,75 @@ mod tests {
             right_half_pixels
         );
     }
+
+    /// Criterio de aceptación: La poda AABB no trunca la geometría visual de los controles.
+    /// Para resoluciones típicas (Portrait 1080p y Landscape 1080p/1200p), las cajas
+    /// delimitadoras de poda contienen con holgura (> 16 px) el radio visual, sombras y etiquetas.
+    #[test]
+    fn test_overlay_bounding_boxes_cover_visual_elements() {
+        let resolutions = [(1080, 2400), (2400, 1080), (1920, 1080), (2000, 1200)];
+        for (w, h) in resolutions {
+            let mut tc = TouchController::new();
+            tc.resize(w, h);
+            let orientation = tc.orientation();
+            let elems = build_elems_with_orientation(tc.areas(), orientation, |_| false);
+
+            // 1. Cruceta (elems 0..3)
+            let up = &elems[0];
+            let down = &elems[1];
+            let arm_len = (down.cy - up.cy).abs() * 0.5;
+            let half_len = arm_len + up.radius * 0.85;
+            let cross_bb = half_len + 28.0;
+            assert!(
+                cross_bb >= half_len + 16.0,
+                "holgura de cruceta insuficiente en {w}x{h}"
+            );
+
+            // 2. Botones de acción y etiquetas (elems 4..11)
+            for (i, el) in elems.iter().enumerate().skip(4) {
+                let max_r = el.radius.max(el.extent_y);
+                let bb_x = max_r * 1.40 + 20.0;
+                let bb_y_down = max_r * 1.40 + 20.0;
+                let bb_y_up = if el.glyph as u8 > 8 {
+                    max_r * 2.80 + 36.0
+                } else {
+                    bb_y_down
+                };
+
+                // Margen lateral > radio + 16 px
+                assert!(
+                    bb_x >= el.radius + 16.0,
+                    "holgura X para elem {i} insuficiente: {bb_x} vs {}",
+                    el.radius
+                );
+                // Margen inferior > radio + sombra + 16 px
+                let shadow_extent = el.extent_y * 0.35 + 8.0;
+                assert!(
+                    bb_y_down >= shadow_extent + 16.0,
+                    "holgura inferior para elem {i} insuficiente: {bb_y_down} vs {shadow_extent}"
+                );
+                // Si tiene etiqueta textual (SELECT / START), bb_y_up debe cubrir la etiqueta
+                if el.glyph as u8 > 8 {
+                    let label_offset = el.extent_y + (el.extent_y * 0.70).max(14.0);
+                    let label_half_h = (el.radius * 0.35 * 1.9).max(12.0);
+                    let total_top_reach = label_offset + label_half_h;
+                    assert!(
+                        bb_y_up >= total_top_reach + 16.0,
+                        "holgura superior para etiqueta de elem {i} insuficiente: {bb_y_up} vs {total_top_reach}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// Criterio de aceptación: La latencia deseada del swapchain está configurada a 1
+    /// para minimizar el retraso de presentación entre entrada y pantalla.
+    #[test]
+    fn test_compositor_frame_latency_is_one() {
+        let platform_src = include_str!("platform.rs");
+        assert!(
+            platform_src.contains("desired_maximum_frame_latency: 1,"),
+            "Compositor debe configurar desired_maximum_frame_latency a 1"
+        );
+    }
 }

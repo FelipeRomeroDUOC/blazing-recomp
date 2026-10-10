@@ -23,9 +23,9 @@ const GBA_W: u32 = 240;
 const GBA_H: u32 = 160;
 const GBA_PIXELS: usize = (GBA_W * GBA_H) as usize;
 
-/// Duración de la vibración háptica de pulsación, en ms (~15 ms del
-/// ejemplo de la propuesta).
-const HAPTIC_MS: i64 = 15;
+/// Duración de la vibración háptica de pulsación, en ms (~35 ms permite
+/// vencer la inercia mecánica de motores ERM en tablets sin demorar el feedback).
+const HAPTIC_MS: i64 = 35;
 
 /// Envoltorio seguro de la ventana nativa Android para `wgpu`.
 ///
@@ -174,6 +174,7 @@ impl Compositor {
 
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("blazing-compositor"),
+            required_limits: adapter.limits(),
             ..Default::default()
         }))
         .map_err(|e| format!("graphics device: {e}"))?;
@@ -198,7 +199,7 @@ impl Compositor {
             },
             alpha_mode,
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency: 1,
         };
         surface.configure(&device, &config);
 
@@ -712,18 +713,48 @@ impl Haptics {
             if vibrator.is_null() {
                 return Ok(()); // sin motor de vibración: no-op
             }
-            // `void vibrate(long)`: API 1..26 (26+ lo deprecó en favor de
-            // VibrationEffect; limitación documentada de la suposición 1).
-            env.call_method(
-                &vibrator,
-                jni_str!("vibrate"),
-                jni_sig!("(J)V"),
-                &[jni::objects::JValue::Long(ms)],
-            )?;
+
+            // Intento 1: API 26+ (Android 8.0 a 15+).
+            // `VibrationEffect.createOneShot(ms, DEFAULT_AMPLITUDE)` asegura
+            // que Android 11+ clasifique la vibración como feedback háptico
+            // y no la descarte por falta de atributos.
+            let modern_vibrate = |env: &mut jni::Env| -> Result<(), jni::errors::Error> {
+                let effect_class = env.find_class(jni_str!("android/os/VibrationEffect"))?;
+                let effect = env
+                    .call_static_method(
+                        &effect_class,
+                        jni_str!("createOneShot"),
+                        jni_sig!("(JI)Landroid/os/VibrationEffect;"),
+                        &[jni::objects::JValue::Long(ms), jni::objects::JValue::Int(-1)],
+                    )?
+                    .l()?;
+                env.call_method(
+                    &vibrator,
+                    jni_str!("vibrate"),
+                    jni_sig!("(Landroid/os/VibrationEffect;)V"),
+                    &[jni::objects::JValue::Object(&effect)],
+                )?;
+                Ok(())
+            };
+
+            if let Err(e) = modern_vibrate(env) {
+                // Si la excepción quedó pendiente en Java, la limpiamos antes del fallback
+                env.exception_clear();
+                log::debug!("haptics: VibrationEffect fallback ({e:?})");
+
+                // Intento 2: Fallback API 1..25 `void vibrate(long)`.
+                env.call_method(
+                    &vibrator,
+                    jni_str!("vibrate"),
+                    jni_sig!("(J)V"),
+                    &[jni::objects::JValue::Long(ms)],
+                )?;
+            }
+
             Ok(())
         };
         if let Err(e) = self.vm.attach_current_thread(run) {
-            log::debug!("haptics: vibración no disponible ({e:?})");
+            log::warn!("haptics: vibración no disponible ({e:?})");
         }
     }
 }
@@ -910,9 +941,10 @@ impl AppState {
     }
 
     /// Procesa un evento de movimiento táctil: actualiza el estado del
-    /// controlador, la máscara de teclas, dispara háptica en las
-    /// transiciones de pulsación y redibuja para feedback visual inmediato.
-    fn on_motion(&mut self, event: &MotionEvent<'_>) {
+    /// controlador, la máscara de teclas y dispara háptica en las
+    /// transiciones de pulsación. Devuelve `true` si el estado de los botones
+    /// cambió y requiere redibujar.
+    fn on_motion(&mut self, event: &MotionEvent<'_>) -> bool {
         if let Some(window) = &self.window {
             let (w, h) = window.size();
             if w > 0 && h > 0 && self.touch.size() != (w, h) {
@@ -932,7 +964,7 @@ impl AppState {
                     }
                 }
                 self.publish_keys();
-                self.redraw();
+                true
             }
             MotionAction::Up | MotionAction::PointerUp => {
                 let pointer_id = event.pointer_at_index(event.pointer_index()).pointer_id();
@@ -940,16 +972,14 @@ impl AppState {
                     log::debug!("touch: {button:?} liberado");
                 }
                 self.publish_keys();
-                self.redraw();
+                true
             }
             MotionAction::Cancel => {
                 self.touch.cancel_all();
                 self.publish_keys();
-                self.redraw();
+                true
             }
-            _ => {
-                // Move y Hover* no cambian el estado de botones
-            }
+            _ => false,
         }
     }
 }
@@ -1029,14 +1059,20 @@ pub fn android_main(app: android_activity::AndroidApp) {
                 }
             });
 
+            let mut needs_redraw = false;
             if let Ok(mut input) = app.input_events_iter() {
                 while input.next(|event| match event {
                     InputEvent::MotionEvent(m) => {
-                        state.on_motion(m);
+                        if state.on_motion(m) {
+                            needs_redraw = true;
+                        }
                         InputStatus::Handled
                     }
                     _ => InputStatus::Unhandled,
                 }) {}
+            }
+            if needs_redraw {
+                state.redraw();
             }
         }
     }));
