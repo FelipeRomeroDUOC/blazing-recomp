@@ -240,6 +240,7 @@ def main():
         "storage.rs",
         "runner.rs",
         "recomp.rs",
+        "fps.rs",
     ]
 
     modulos = []

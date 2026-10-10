@@ -23,6 +23,7 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | [`storage.rs`](#módulo-storagers) | 14 | Módulo interno del port. |
 | [`runner.rs`](#módulo-runnerrs) | 14 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
 | [`recomp.rs`](#módulo-recomprs) | 10 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
+| [`fps.rs`](#módulo-fpsrs) | 12 | Contador de FPS y generador de HUD visual en pantalla. |
 
 ---
 
@@ -860,6 +861,126 @@ presente en el paquete APK en Android. Retorna `None` si la biblioteca no está 
 **Firma:**
 ```rust
 pub fn load_native_blocks() -> Option<BlockTable>
+```
+
+---
+
+## Módulo `fps.rs`
+
+Contador de FPS y generador de HUD visual en pantalla.
+
+Calcula la tasa de refresco en tiempo real con amortiguación y rasteriza
+una pastilla (badge) visual estilizada en un búfer RGBA de 80x26 px utilizando
+la tipografía vectorial [`crate::overlay::JETBRAINS_FONT_BYTES`].
+
+Este módulo es puro, sin dependencias de Android, y testeable en host.
+
+### `BADGE_WIDTH` (Constante)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub const BADGE_WIDTH: usize
+```
+
+### `BADGE_HEIGHT` (Constante)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub const BADGE_HEIGHT: usize
+```
+
+### `FpsCounter` (Struct)
+
+Contador de fotogramas y generador del badge visual de FPS.
+
+**Firma:**
+```rust
+pub struct FpsCounter
+```
+
+### `new` (Función)
+
+Inicializa el contador cargando la tipografía JetBrains Mono de assets.
+
+**Firma:**
+```rust
+pub fn new() -> Result<Self, String>
+```
+
+### `dimensions` (Función)
+
+Dimensiones del badge en píxeles `(ancho, alto)`.
+
+**Firma:**
+```rust
+pub fn dimensions(&self) -> (u32, u32)
+```
+
+### `fps` (Función)
+
+Tasa de fotogramas actual estimada.
+
+**Firma:**
+```rust
+pub fn fps(&self) -> f32
+```
+
+### `is_dirty` (Función)
+
+Indica si la textura en GPU necesita actualizarse con nuevos píxeles.
+
+**Firma:**
+```rust
+pub fn is_dirty(&self) -> bool
+```
+
+### `mark_clean` (Función)
+
+Marca la textura como sincronizada tras subirla a la GPU.
+
+**Firma:**
+```rust
+pub fn mark_clean(&mut self)
+```
+
+### `badge_rgba` (Función)
+
+Píxeles RGBA del badge actual (80x26).
+
+**Firma:**
+```rust
+pub fn badge_rgba(&self) -> &[[u8; 4]]
+```
+
+### `on_frame` (Función)
+
+Registra el avance de un fotograma en el instante actual.
+
+**Firma:**
+```rust
+pub fn on_frame(&mut self)
+```
+
+### `on_frame_at` (Función)
+
+Registra el avance de un fotograma con un timestamp explícito (determinista para tests).
+
+**Firma:**
+```rust
+pub fn on_frame_at(&mut self, now: Instant)
+```
+
+### `render_badge` (Función)
+
+Rasteriza el badge con fondo de pastilla translúcida y texto con la tipografía de assets.
+
+**Firma:**
+```rust
+pub fn render_badge(&mut self, fps_val: u32)
 ```
 
 ---

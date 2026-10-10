@@ -8,3 +8,6 @@ pub const WGSL: &str = include_str!("overlay.wgsl");
 /// Fuente WGSL del blit de juego GBA (`src/game_blit.wgsl`).
 pub const GAME_BLIT_WGSL: &str = include_str!("game_blit.wgsl");
 
+/// Fuente WGSL del blit de elementos HUD (`src/hud_blit.wgsl`).
+pub const HUD_BLIT_WGSL: &str = include_str!("hud_blit.wgsl");
+

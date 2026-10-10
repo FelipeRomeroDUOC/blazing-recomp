@@ -29,6 +29,7 @@ pub mod error_screen;
 pub mod runner;
 pub mod storage;
 pub mod recomp;
+pub mod fps;
 
 
 // ---------------------------------------------------------------------------

@@ -95,6 +95,13 @@ struct Compositor {
     overlay_globals_buffer: wgpu::Buffer,
     overlay_elems_buffer: wgpu::Buffer,
     _overlay_font_texture: wgpu::Texture,
+
+    // Pipeline 3: HUD / Contador de FPS
+    hud_pipeline: wgpu::RenderPipeline,
+    hud_bind_group: wgpu::BindGroup,
+    hud_texture: wgpu::Texture,
+    hud_params_buffer: wgpu::Buffer,
+    fps_counter: crate::fps::FpsCounter,
 }
 
 fn request_adapter_fallback(
@@ -489,6 +496,154 @@ impl Compositor {
             ],
         });
 
+        // 3. HUD Pipeline (Contador de FPS)
+        let hud_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("hud-shader"),
+            source: wgpu::ShaderSource::Wgsl(crate::overlay_shader::HUD_BLIT_WGSL.into()),
+        });
+        let hud_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("hud-bgl"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let hud_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("hud-pl"),
+            bind_group_layouts: &[&hud_bgl],
+            push_constant_ranges: &[],
+        });
+        let hud_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("hud-pipeline"),
+            layout: Some(&hud_pl),
+            vertex: wgpu::VertexState {
+                module: &hud_shader,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &hud_shader,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        let mut fps_counter = crate::fps::FpsCounter::new()
+            .map_err(|e| format!("fps counter init: {e}"))?;
+
+        let (hud_w, hud_h) = fps_counter.dimensions();
+        let hud_texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("hud-fps-texture"),
+            size: wgpu::Extent3d {
+                width: hud_w,
+                height: hud_h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        let hud_rgba_bytes = unsafe {
+            std::slice::from_raw_parts(
+                fps_counter.badge_rgba().as_ptr().cast(),
+                hud_w as usize * hud_h as usize * 4,
+            )
+        };
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &hud_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            hud_rgba_bytes,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(hud_w * 4),
+                rows_per_image: Some(hud_h),
+            },
+            wgpu::Extent3d {
+                width: hud_w,
+                height: hud_h,
+                depth_or_array_layers: 1,
+            },
+        );
+        fps_counter.mark_clean();
+
+        let hud_texture_view = hud_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let hud_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("hud-sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        let hud_params_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("hud-params-buffer"),
+            size: 32, // 8 x f32
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let hud_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("hud-bind-group"),
+            layout: &hud_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Sampler(&hud_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&hud_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: hud_params_buffer.as_entire_binding(),
+                },
+            ],
+        });
+
         Ok(Compositor {
             surface,
             device,
@@ -503,6 +658,11 @@ impl Compositor {
             overlay_globals_buffer,
             overlay_elems_buffer,
             _overlay_font_texture: overlay_font_texture,
+            hud_pipeline,
+            hud_bind_group,
+            hud_texture,
+            hud_params_buffer,
+            fps_counter,
         })
     }
 
@@ -600,7 +760,62 @@ impl Compositor {
             bytemuck::cast_slice(&elems_packed),
         );
 
-        // 4. Render pass en el swapchain
+        // 4. Actualizar telemetría y textura del HUD de FPS
+        self.fps_counter.on_frame();
+        if self.fps_counter.is_dirty() {
+            let (hud_w, hud_h) = self.fps_counter.dimensions();
+            let hud_rgba_bytes = unsafe {
+                std::slice::from_raw_parts(
+                    self.fps_counter.badge_rgba().as_ptr().cast(),
+                    hud_w as usize * hud_h as usize * 4,
+                )
+            };
+            self.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.hud_texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                hud_rgba_bytes,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(hud_w * 4),
+                    rows_per_image: Some(hud_h),
+                },
+                wgpu::Extent3d {
+                    width: hud_w,
+                    height: hud_h,
+                    depth_or_array_layers: 1,
+                },
+            );
+            self.fps_counter.mark_clean();
+        }
+
+        // Posición del badge de FPS: esquina superior derecha con margen de 16 px
+        let (hud_w, hud_h) = self.fps_counter.dimensions();
+        let margin_x = 16.0f32;
+        let margin_y = 14.0f32;
+        let hud_ox = (w as f32) - (hud_w as f32) - margin_x;
+        let hud_oy = margin_y;
+
+        let hud_params: [f32; 8] = [
+            hud_ox.max(0.0),
+            hud_oy.max(0.0),
+            hud_w as f32,
+            hud_h as f32,
+            w as f32,
+            h as f32,
+            0.0,
+            0.0,
+        ];
+        self.queue.write_buffer(
+            &self.hud_params_buffer,
+            0,
+            bytemuck::cast_slice(&hud_params),
+        );
+
+        // 5. Render pass en el swapchain
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
             Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost | wgpu::SurfaceError::OutOfMemory) => {
@@ -646,6 +861,11 @@ impl Compositor {
                 pass.set_bind_group(0, &self.overlay_bind_group, &[]);
                 pass.draw(0..3, 0..1);
             }
+
+            // Pase 3: HUD / Contador de FPS (siempre visible con tipografía de assets)
+            pass.set_pipeline(&self.hud_pipeline);
+            pass.set_bind_group(0, &self.hud_bind_group, &[]);
+            pass.draw(0..3, 0..1);
         }
 
         self.queue.submit([encoder.finish()]);
