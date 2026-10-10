@@ -83,7 +83,7 @@ flowchart TD
     Fase0 --> Fase1 --> Fase2 --> Fase3 --> Fase4 --> Fase5
 ```
 
-## Alternativas Consideradas y Compromisos
+## Alternativas y compromisos
 
 - **Comenzar directamente en `1.0.0-beta`:**
   - *Descartada:* En la comunidad de código abierto, usar versiones `1.x` prematuramente comunica que el software ya es apto para usuarios finales cotidianos. Mantenerse en `0.0.x` hasta el MVP y en `0.x` hasta completar el set de funcionalidades previene expectativas falsas de soporte y estabilidad.
@@ -92,5 +92,5 @@ flowchart TD
 
 ## Relacionado
 
-- [Directrices de arquitectura y portabilidad](AGENTS.md)
-- [Backlog priorizado de tareas](docs/BACKLOG.md)
+- [Directrices de arquitectura y portabilidad](../../AGENTS.md)
+- [Backlog priorizado de tareas](../BACKLOG.md)

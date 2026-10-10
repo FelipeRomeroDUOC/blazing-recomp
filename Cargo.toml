@@ -6,11 +6,11 @@ license = "MIT OR Apache-2.0"
 description = "Native Android port of Fire Emblem: The Blazing Blade built on gba-recomp"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-gba-core = { path = "../gba-recomp/crates/gba-core" }
-screen = { path = "../gba-recomp/crates/screen" }
+gba-core = { git = "https://github.com/JRickey/gba-recomp.git", rev = "de4edf59b872d887046d6a3b005e2df551b6d44c" }
+screen = { git = "https://github.com/JRickey/gba-recomp.git", rev = "de4edf59b872d887046d6a3b005e2df551b6d44c" }
 log = "0.4"
 raw-window-handle = "0.6"
 jni = "0.22"

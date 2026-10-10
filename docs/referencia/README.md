@@ -1,13 +1,20 @@
+---
+tipo: referencia
+verificado: si
+---
+
 # Documentación de Referencia Técnica
 
 Este directorio agrupa las especificaciones técnicas puras, formatos de archivo y esquemas de configuración de **`blazing-recomp`**, siguiendo el cuadrante de **Referencia** del estándar **Diátaxis**.
 
 ---
 
-## Índice de Especificaciones
+## Índice de Especificaciones y Referencias
 
 | Documento | Descripción |
 | :--- | :--- |
-| **[`CONFIGURACION_PACK.md`](CONFIGURACION_PACK.md)** | Especificación técnica exhaustiva del archivo de manifiesto [`pack.toml`](../../pack.toml): claves de empaquetado, hashes SHA-256 de ROM/BIOS, flags de runtime y opciones de compilación. |
-| **[`FORMATO_LABELS.md`](FORMATO_LABELS.md)** | Especificación del formato de mapa de funciones y símbolos [`blazing.labels.toml`](../../blazing.labels.toml) (`gba-labels v2`): atributos `address`, `mode`, `name`, reglas de alineación y enriquecimiento de depuración. |
-| **[`../ARQUITECTURA_C.md`](../ARQUITECTURA_C.md)** | Arquitectura y modelo de ejecución de las 17,207 funciones en C11 emitidas por el recompilador: registros `c[0..16]`, interfaz [`RtApi`](../ARQUITECTURA_C.md#5-la-interfaz-con-el-hardware-rtapi) y macros de banderas. |
+| **[`api-modulos-rust.md`](api-modulos-rust.md)** | Referencia viva de structs, enums, funciones y constantes de Rust, extraída directamente desde el código en `src/` por `scripts/extraer_referencias.py`. |
+| **[`CONFIGURACION_PACK.md`](CONFIGURACION_PACK.md)** | Especificación técnica del manifiesto [`pack.toml`](../../pack.toml): empaquetado, hashes SHA-256 de ROM/BIOS, flags de runtime y opciones de compilación. |
+| **[`FORMATO_LABELS.md`](FORMATO_LABELS.md)** | Especificación del mapa de símbolos [`blazing.labels.toml`](../../blazing.labels.toml) (`gba-labels v2`): atributos `address`, `mode`, `name` y alineación. |
+| **[`../explicacion/arquitectura-port-android.md`](../explicacion/arquitectura-port-android.md)** | Explicación de la arquitectura global del port, ciclo de vida Android, renderizado GPU y flujo de eventos. |
+

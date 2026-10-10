@@ -1,0 +1,489 @@
+---
+tipo: referencia
+verificado: si
+---
+
+# Referencia Técnica: Módulos y APIs de Rust
+
+## Descripción general
+
+Este documento describe con exactitud y neutralidad técnica las estructuras, enumeraciones, funciones públicas y constantes del crate nativo `blazing-recomp`. Es generado y auditado automáticamente desde las anotaciones de documentación (`///` y `//!`) del código fuente en `src/` mediante `scripts/extraer_referencias.py`, garantizando sincronización continua con el código.
+
+---
+
+## Índice de Módulos
+
+| Módulo | Elementos Públicos | Descripción |
+| :--- | :--- | :--- |
+| [`lib.rs`](#módulo-librs) | 0 | Blazing Recomp — punto de entrada nativo para Android. |
+| [`input.rs`](#módulo-inputrs) | 18 | Entrada táctil ergonómica (Fase 5.1, propuesta |
+| [`overlay.rs`](#módulo-overlayrs) | 11 | Overlay táctil y marco GBA SP (Fase 5.2, propuesta |
+| [`error_screen.rs`](#módulo-error_screenrs) | 4 | Renderizador de pantalla de error por software y blindaje de GPU. |
+| [`platform.rs`](#módulo-platformrs) | 1 | Plataforma Android (solo compila con `cfg(target_os = "android")`): |
+
+---
+
+## Módulo `lib.rs`
+
+Blazing Recomp — punto de entrada nativo para Android.
+
+Este crate es la biblioteca dinámica (`cdylib`) que Android carga al
+arrancar la NativeActivity. Fases integradas:
+
+- Fase 4 (propuesta `2026-10-08_renderizado-gpu-android`): presentación
+  GPU vía [`screen::present::Presenter`] (wgpu: Vulkan/GLES), LUT de
+  color y temporización temporal del panel.
+- Fase 5.1 (propuesta `2026-10-08_controles-tactiles-haptica`): entrada
+  táctil ergonómica (cruceta con cuenca, clúster diagonal GBA SP con
+  L/B/A/R, Select/Start), auto-rotación de hitboxes, bandera
+  `touch_enabled` y respuesta háptica por vibración vía JNI.
+
+La lógica geométrica de entrada vive en [`crate::input`] (pura,
+testeable en host, sin dependencias de Android). Todo lo que toca
+JNI, NativeActivity o Logcat está tras `cfg(target_os = "android")`.
+
+La emulación aún no produce fotogramas: la presentación muestra el
+estado actual del búfer (negro de panel hasta conectar el bucle del
+motor `gba-core`).
+
+*No expone símbolos públicos directos fuera de declaraciones de submódulos.*
+
+## Módulo `input.rs`
+
+Entrada táctil ergonómica (Fase 5.1, propuesta
+`2026-10-08_controles-tactiles-haptica`).
+
+Lógica pura: geometría de hitboxes, orientaciones y mapeo a los bits
+KEYINPUT de la GBA (activo en bajo, ver `gba-core/src/mem.rs`:
+`keys: u16` con 0x3FF = nada pulsado). Sin dependencias de Android,
+testeable en host con `cargo test`.
+
+Geometría (validada en `docs/prototipos/layout_tactil_v2.html`):
+- **Cruceta** con cuenca circular: 4 zonas direccionales dentro del
+  anillo (arriba/abajo/izquierda/derecha), con zona muerta central.
+- **Clúster diagonal** estilo GBA SP a la derecha: cápsula inclinada
+  con B (abajo-izquierda) y A (arriba-derecha), y las pastillas L y R
+  en el mismo eje por encima (L sobre B, R sobre A). Nunca en esquinas
+  superiores (decisión de contexto de la propuesta).
+- **Select/Start** centrados debajo.
+- Portrait: controles agrandados con colores en la mitad inferior.
+  Landscape: base inferior translúcida, opacidad regulable (la
+  opacidad es presentación; aquí solo cambia la geometría).
+
+Precisión individual sobre multitáctil complejo: hitboxes holgadas,
+descarte de toques ambiguos (primer botón que contiene el punto) y
+cancelación total en `Cancel`.
+
+### `Button` (Enum)
+
+Botón de GBA (nombres estándar de la consola).
+
+**Firma:**
+```rust
+pub enum Button
+```
+
+### `key_bit` (Función)
+
+Bit de KEYINPUT (activo en bajo) que controla cada botón.
+Fuente: `gba-core/src/mem.rs` (`keys: u16`, 0x3FF = nada pulsado)
+y mapa estándar de KEYINPUT de la GBA.
+
+**Firma:**
+```rust
+pub fn key_bit(self) -> u16
+```
+
+### `Orientation` (Enum)
+
+Orientación de la pantalla; determina la geometría de los controles.
+
+**Firma:**
+```rust
+pub enum Orientation
+```
+
+### `TouchArea` (Struct)
+
+Caja táctil circular (hitbox holgada con radio > radio visual).
+
+**Firma:**
+```rust
+pub struct TouchArea
+```
+
+### `contains` (Función)
+
+¿Contiene este área el punto (x, y)?
+
+**Firma:**
+```rust
+pub fn contains(&self, x: f32, y: f32) -> bool
+```
+
+### `layout` (Función)
+
+Calcula las hitboxes para una ventana de `w` x `h` píxeles y una
+orientación. Determinista y sin estado: la misma entrada produce la
+misma salida (regresión `test_touch_layout_orientation_and_toggle`).
+
+Portrait (w < h): controles en la mitad inferior, agrandados y ergonómicos.
+Landscape (w >= h): franja inferior flotante translúcida en esquinas.
+
+**Firma:**
+```rust
+pub fn layout(w: u32, h: u32, orientation: Orientation) -> Vec<TouchArea>
+```
+
+### `TouchController` (Struct)
+
+Controlador táctil: recibe puntos de la pantalla y mantiene el estado
+KEYINPUT de la GBA.
+
+Reglas (contexto de la propuesta):
+- `touch_enabled == false` → ningún toque altera las teclas (uso de
+  mando físico).
+- Precisión individual: un punto se mapea al primer botón que lo
+  contiene; si no contiene ninguno, no cambia nada (descarte de
+  toques ambiguos).
+- `Cancel` libera todos los toques activos.
+
+Extras de la Fase 5.2: `is_pressed`/`pressed_mask` exponen el estado
+vivo para el resaltado visual del overlay.
+
+**Firma:**
+```rust
+pub struct TouchController
+```
+
+### `new` (Función)
+
+Estado inicial: 1080x2400 portrait (típico), controles activos.
+
+**Firma:**
+```rust
+pub fn new() -> TouchController
+```
+
+### `resize` (Función)
+
+Actualiza el tamaño de ventana y la orientación; recalcula
+hitboxes (los toques activos se liberan: la geometría cambió).
+
+**Firma:**
+```rust
+pub fn resize(&mut self, w: u32, h: u32)
+```
+
+### `size` (Función)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub fn size(&self) -> (u32, u32)
+```
+
+### `orientation` (Función)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub fn orientation(&self) -> Orientation
+```
+
+### `areas` (Función)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub fn areas(&self) -> &[TouchArea]
+```
+
+### `is_pressed` (Función)
+
+¿Está este botón pulsado ahora mismo (por algún puntero)?
+Fuente de verdad para el resaltado visual del overlay (Fase 5.2).
+
+**Firma:**
+```rust
+pub fn is_pressed(&self, button: Button) -> bool
+```
+
+### `pressed_mask` (Función)
+
+Máscara de bits de los botones pulsados (bit = `key_bit()` del
+botón). Útil para pasar al overlay en una sola palabra.
+
+**Firma:**
+```rust
+pub fn pressed_mask(&self) -> u16
+```
+
+### `touch_down` (Función)
+
+Procesa un toque hacia abajo. Devuelve el botón si este toque lo
+activó (transición nueva, para háptica).
+
+**Firma:**
+```rust
+pub fn touch_down(&mut self, pointer_id: i32, x: f32, y: f32) -> Option<Button>
+```
+
+### `touch_up` (Función)
+
+Procesa un toque hacia arriba. Devuelve el botón si este toque lo
+liberó (transición, para háptica de liberación).
+
+**Firma:**
+```rust
+pub fn touch_up(&mut self, pointer_id: i32) -> Option<Button>
+```
+
+### `cancel_all` (Función)
+
+Cancela todos los toques (evento `Cancel` de Android).
+
+**Firma:**
+```rust
+pub fn cancel_all(&mut self)
+```
+
+### `key_mask` (Función)
+
+Máscara KEYINPUT completa, lista para `MemMap.keys` (activo en
+bajo: bits de botones no pulsados en 1).
+
+**Firma:**
+```rust
+pub fn key_mask(&self) -> u16
+```
+
+---
+
+## Módulo `overlay.rs`
+
+Overlay táctil y marco GBA SP (Fase 5.2, propuesta
+`2026-10-09_renderizado-overlay-tactil`).
+
+Dibuja los controles virtuales **en las mismas coordenadas** que las
+hitboxes de [`crate::input`]: los parámetros de dibujo se derivan de
+las mismas `TouchArea` que produce `TouchController::resize`, así la
+correspondencia geométrica es por construcción, no por duplicación de
+constantes (criterio `test_overlay_geometry_matches_hitboxes`).
+
+Todo el dibujo es procedural (shader SDF, sin texturas): bordes
+perfectos a cualquier DPI (restricción de la propuesta). Los glifos
+son 3x5 bit-maps evaluados en el shader.
+
+Colores (restricción del prototipo `layout_tactil_v2.html`):
+- Portrait: B rojo, A verde, L/R blancos, D-Pad y Select/Start
+  gris-lavanda de la carcasa.
+- Landscape: mismos botones con opacidad translúcida global.
+
+### `Glyph` (Enum)
+
+Índices de glifo del shader (deben coincidir con la tabla en
+`overlay.wgsl`).
+
+**Firma:**
+```rust
+pub enum Glyph
+```
+
+### `FontAtlas` (Struct)
+
+Atlas de textura de glifos rasterizados en memoria (R8Unorm).
+
+**Firma:**
+```rust
+pub struct FontAtlas
+```
+
+### `build_font_atlas` (Función)
+
+Construye el atlas tipográfico R8 (256x256 px) rasterizando glifos de Outfit Bold
+y JetBrains Mono Bold al arrancar la aplicación.
+
+**Firma:**
+```rust
+pub fn build_font_atlas() -> FontAtlas
+```
+
+### `ElemParams` (Struct)
+
+Un elemento dibujable del overlay, derivado de una `TouchArea`.
+Espejo exacto de `struct Elem` en `overlay.wgsl` (layout
+uniform-compatible: 16 x f32 = 64 B, stride múltiplo de 16).
+
+**Firma:**
+```rust
+pub struct ElemParams
+```
+
+### `ElemKind` (Enum)
+
+Primitiva del elemento: círculo o pastilla redondeada orientada.
+
+**Firma:**
+```rust
+pub enum ElemKind
+```
+
+### `pack` (Función)
+
+Empaqueta en el orden del `struct Elem` del shader (16 floats / 64 bytes).
+
+**Firma:**
+```rust
+pub fn pack(&self) -> [f32; 16]
+```
+
+### `Globals` (Struct)
+
+Parámetros globales de dibujo (espejo de `struct Globals` del shader,
+4 x f32).
+
+**Firma:**
+```rust
+pub struct Globals
+```
+
+### `pack` (Función)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub fn pack(&self) -> [f32; 4]
+```
+
+### `build_elems_with_orientation` (Función)
+
+Construye la lista de parámetros de dibujo a partir de las áreas de
+colisión del controlador táctil, orientación y el estado pulsado actual.
+
+Correspondencia por construcción: cada elemento sale de la misma
+`TouchArea` que usa el mapeo de toques, así el dibujo coincide con la
+zona de pulsación (criterio de aceptación 2). Máximo 12 elementos;
+el layout de `crate::input` produce exactamente 10.
+
+**Firma:**
+```rust
+pub fn build_elems_with_orientation( areas: &[crate::input::TouchArea], orientation: crate::input::Orientation, is_pressed: impl Fn(crate::input::Button) -> bool, ) -> Vec<ElemParams>
+```
+
+### `build_elems` (Función)
+
+Construye la lista de parámetros de dibujo asumiendo orientación Portrait.
+
+**Firma:**
+```rust
+pub fn build_elems( areas: &[crate::input::TouchArea], is_pressed: impl Fn(crate::input::Button) -> bool, ) -> Vec<ElemParams>
+```
+
+### `build_globals` (Función)
+
+Globales de dibujo para una orientación.
+
+**Firma:**
+```rust
+pub fn build_globals(w: u32, h: u32, orientation: crate::input::Orientation) -> Globals
+```
+
+---
+
+## Módulo `error_screen.rs`
+
+Renderizador de pantalla de error por software y blindaje de GPU.
+
+Diseñado para presentar mensajes de diagnóstico legibles directamente en el
+framebuffer de la ventana nativa (`ANativeWindow`) cuando la inicialización
+gráfica acelerada (`wgpu`) falla (por ejemplo, en emuladores como BlueStacks
+que carecen de driver Vulkan funcional o fallan en la negociación EGL) o
+ante cualquier pánico no capturado en el hilo nativo.
+
+Este módulo es puro y compilable/testeable en host.
+
+### `select_surface_format_and_alpha` (Función)
+
+Negocia un formato de textura y un modo alfa seguros a partir de las
+capacidades de la superficie reportadas por el adaptador.
+
+Si la lista de formatos está vacía (comportamiento observado en ciertos
+emuladores y controladores antes de negociar la ventana), devuelve un
+formato estándar seguro (`Rgba8UnormSrgb`) en lugar de entrar en pánico por
+indexación ávida fuera de rango (`caps.formats[0]`).
+
+**Firma:**
+```rust
+pub fn select_surface_format_and_alpha( formats: &[wgpu::TextureFormat], alpha_modes: &[wgpu::CompositeAlphaMode], ) -> (wgpu::TextureFormat, wgpu::CompositeAlphaMode)
+```
+
+### `ErrorScreenRenderer` (Struct)
+
+Renderizador por software para presentar pantallas de error y diagnóstico.
+
+**Firma:**
+```rust
+pub struct ErrorScreenRenderer
+```
+
+### `new` (Función)
+
+Carga el rasterizador de fuentes tipográficas para la pantalla de error.
+
+**Firma:**
+```rust
+pub fn new() -> Result<Self, String>
+```
+
+### `render` (Función)
+
+Renderiza un marco de error con fondo temático, barra de título y
+mensaje multilínea legible directamente en el búfer de píxeles provisto.
+
+- `buffer`: slice mutable con los bytes del framebuffer nativo.
+- `width`, `height`: dimensiones visibles de la ventana en píxeles.
+- `stride`: número de píxeles por fila en la memoria (stride >= width).
+- `bytes_per_pixel`: típicamente 4 para `RGBA_8888` / `RGBX_8888`.
+- `title`: título de la alerta (ej. `[BLAZING RECOMP] ERROR DE INICIALIZACIÓN`).
+- `message`: cuerpo del mensaje de error o volcado de pánico.
+
+**Firma:**
+```rust
+pub fn render( &self, buffer: &mut [u8], width: usize, height: usize, stride: usize, bytes_per_pixel: usize, title: &str, message: &str, )
+```
+
+---
+
+## Módulo `platform.rs`
+
+Plataforma Android (solo compila con `cfg(target_os = "android")`):
+ciclo de vida NativeActivity, presentación GPU, entrada táctil con
+háptica y logging a Logcat.
+
+### `android_main` (Función)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub fn android_main(app: android_activity::AndroidApp)
+```
+
+---
+
+## Sincronización y Mantenimiento
+
+Para regenerar este documento ante cualquier modificación en las firmas o comentarios de `src/`:
+```bash
+python scripts/extraer_referencias.py
+```
+
+Para validar que la documentación se encuentre estrictamente actualizada (usado en tests y CI):
+```bash
+python scripts/extraer_referencias.py --check
+```

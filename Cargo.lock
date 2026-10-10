@@ -71,6 +71,7 @@ dependencies = [
 [[package]]
 name = "armv4t"
 version = "0.2.0"
+source = "git+https://github.com/JRickey/gba-recomp.git?rev=de4edf59b872d887046d6a3b005e2df551b6d44c#de4edf59b872d887046d6a3b005e2df551b6d44c"
 
 [[package]]
 name = "arrayvec"
@@ -405,6 +406,7 @@ dependencies = [
 [[package]]
 name = "gba-core"
 version = "0.2.0"
+source = "git+https://github.com/JRickey/gba-recomp.git?rev=de4edf59b872d887046d6a3b005e2df551b6d44c#de4edf59b872d887046d6a3b005e2df551b6d44c"
 dependencies = [
  "armv4t",
  "libc",
@@ -1172,6 +1174,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 [[package]]
 name = "screen"
 version = "0.2.0"
+source = "git+https://github.com/JRickey/gba-recomp.git?rev=de4edf59b872d887046d6a3b005e2df551b6d44c#de4edf59b872d887046d6a3b005e2df551b6d44c"
 dependencies = [
  "objc2",
  "objc2-core-foundation",

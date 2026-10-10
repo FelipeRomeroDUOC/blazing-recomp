@@ -62,15 +62,15 @@ Directrices, arquitectura y reglas operativas para agentes de IA que trabajen en
    - Preservar comentarios arquitectónicos y decisiones de diseño no obvias.
    - Crear commits atómicos con mensajes descriptivos siguiendo *Conventional Commits* (`feat:`, `fix:`, `refactor:`, `docs:`).
 
-### Topología de Repositorios Hermanos
-Este proyecto depende de los componentes y crates del motor base ubicados en el repositorio hermano:
+### Topología de Repositorios y Motor Upstream
+Este proyecto depende de los componentes y crates del motor base del proyecto oficial `gba-recomp` de Jack Rickey:
 - **Port de Fire Emblem (este repositorio):** `blazing-recomp/`
-- **Toolkit y Motor Upstream:** `../gba-recomp/` (directorio hermano en el mismo entorno de trabajo):
-  - Motor de hardware y bus de GBA: `../gba-recomp/crates/gba-core/`
-  - Decodificador de instrucciones ARMv4T: `../gba-recomp/crates/armv4t/`
-  - Shaders y renderizado GPU: `../gba-recomp/crates/screen/`
-- En `Cargo.toml`, todas las dependencias a componentes del motor base se vinculan exclusivamente mediante rutas relativas:
-  `gba-core = { path = "../gba-recomp/crates/gba-core" }`
+- **Motor Upstream Oficial:** [`JRickey/gba-recomp`](https://github.com/JRickey/gba-recomp)
+  - Motor de hardware y bus de GBA: `crates/gba-core`
+  - Decodificador de instrucciones ARMv4T: `crates/armv4t`
+  - Shaders y renderizado GPU: `crates/screen`
+- En `Cargo.toml`, las dependencias se vinculan directamente al repositorio Git oficial fijadas a un commit SHA inmutable (`rev = "de4edf59b872d887046d6a3b005e2df551b6d44c"`), garantizando que el repositorio sea 100% autónomo, portable y reproducible sin depender de carpetas hermanas locales en el sistema de archivos.
+- Para desarrollo y pruebas locales del motor en paralelo, se puede recurrir temporalmente a la directiva `[patch."https://github.com/JRickey/gba-recomp.git"]` apuntando a `../gba-recomp`.
 
 
 ## 5. Skills del Repositorio (`.agents/skills/`)
@@ -92,8 +92,8 @@ El repositorio cuenta con skills locales en [`.agents/skills/`](.agents/skills/)
 - **Estructura en `docs/`:**
   - **Tutoriales (`docs/tutoriales/`):** Aprendizaje guiado paso a paso para recién llegados.
   - **Guías prácticas (`docs/guias/`):** Pasos directos para tareas concretas (ej. compilación cruzada con NDK, integración JNI, generación del APK).
-  - **Referencia (`docs/referencia/`):** Especificaciones técnicas puras (APIs nativas, flags de `pack.toml`, comandos).
-  - **Explicación (`docs/explicacion/`):** Decisiones de diseño, arquitectura del port Android y compromisos técnicos.
+  - **Referencia ([`docs/referencia/`](docs/referencia/README.md)):** Especificaciones técnicas puras (APIs nativas, flags de `pack.toml`, comandos).
+  - **Explicación ([`docs/explicacion/`](docs/explicacion/DECISIONES.md)):** Decisiones de diseño, arquitectura del port Android y compromisos técnicos.
 - **Activación:** Siempre que se solicite documentar el proyecto, crear guías de instalación o despliegue para Android, documentar interfaces nativas, actualizar docs tras cambios de código o estructurar la carpeta `docs/`.
 
 ### 3. `explicar-codigo-documento`

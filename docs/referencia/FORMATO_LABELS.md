@@ -1,10 +1,15 @@
+---
+tipo: referencia
+verificado: si
+---
+
 # Especificación Técnica: Formato de Etiquetas (`gba-labels v2`)
 
 Esta especificación describe la estructura, atributos y comportamiento del archivo de etiquetas [`blazing.labels.toml`](../../blazing.labels.toml) utilizado por el motor de recompilación estática en `blazing-recomp`.
 
 ---
 
-## 1. Propósito del Archivo de Etiquetas
+## Descripción general
 
 El archivo de etiquetas cumple dos funciones fundamentales en el ciclo de recompilación:
 

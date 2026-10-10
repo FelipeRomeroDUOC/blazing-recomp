@@ -1,10 +1,15 @@
+---
+tipo: referencia
+verificado: si
+---
+
 # Especificación Técnica: Configuración de Empaquetado (`pack.toml`)
 
 Esta especificación documenta todas las secciones, claves y valores admitidos por el archivo de manifiesto [`pack.toml`](../../pack.toml), el cual define cómo se compila, empaqueta y ejecuta la versión nativa de **Fire Emblem: The Blazing Blade** en `blazing-recomp`.
 
 ---
 
-## 1. Visión General
+## Descripción general
 
 `pack.toml` es el manifiesto declarativo del proyecto. Define qué ROM y BIOS se utilizarán (mediante hashes SHA-256 inmutables, sin almacenar archivos binarios propietarios), qué módulos del motor de Rust (`gba-core`) se habilitan en tiempo de ejecución y qué formato de salida se genera.
 

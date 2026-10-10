@@ -357,4 +357,65 @@ mod tests {
         renderer.render(&mut buffer, 0, 0, 0, 4, "T", "M");
         renderer.render(&mut buffer, 100, 100, 100, 4, "T", "M"); // buffer demasiado pequeño para 100x100
     }
+
+    #[test]
+    fn test_error_screen_truncates_extremely_long_messages_safely() {
+        let renderer = ErrorScreenRenderer::new().expect("Debe crear el renderer");
+        let width = 300;
+        let height = 200;
+        let stride = 300;
+        let bpp = 4;
+        let mut buffer = vec![0u8; stride * height * bpp];
+
+        // Mensaje con 80 líneas que sobrepasa con creces la altura de 200 px
+        let mut huge_msg = String::new();
+        for i in 0..80 {
+            huge_msg.push_str(&format!("Volcado línea {i}: 0xDEADBEEF 0xCAFEBABE registro de depuración\n"));
+        }
+
+        // No debe entrar en pánico ni escribir fuera del slice
+        renderer.render(&mut buffer, width, height, stride, bpp, "PÁNICO CRÍTICO", &huge_msg);
+
+        let modified_count = buffer.iter().filter(|&&b| b > 0).count();
+        assert!(modified_count > 0, "Debe haber píxeles dibujados a pesar del truncamiento");
+    }
+
+    #[test]
+    fn test_surface_fallback_all_srgb_formats() {
+        let srgb_formats = [
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            wgpu::TextureFormat::Bgra8UnormSrgb,
+        ];
+        let alphas = [wgpu::CompositeAlphaMode::PreMultiplied];
+
+        // Si solo hay sRGB, debe tomar el primer formato disponible sin fallar
+        let (fmt, alpha) = select_surface_format_and_alpha(&srgb_formats, &alphas);
+        assert_eq!(fmt, wgpu::TextureFormat::Rgba8UnormSrgb);
+        assert_eq!(alpha, wgpu::CompositeAlphaMode::PreMultiplied);
+    }
+
+    #[test]
+    fn test_error_screen_stride_padding_and_memory_alignment() {
+        let renderer = ErrorScreenRenderer::new().expect("Debe crear el renderer");
+        let width = 200;
+        let stride = 260; // 60 píxeles de padding por fila
+        let height = 100;
+        let bpp = 4;
+        let mut buffer = vec![0u8; stride * height * bpp];
+
+        renderer.render(&mut buffer, width, height, stride, bpp, "STRIDE TEST", "Línea con padding");
+
+        // Comprobar que ninguna columna entre width (200) y stride (260) fue tocada
+        for y in 0..height {
+            let row_offset = y * stride * bpp;
+            for x in width..stride {
+                let px = row_offset + x * bpp;
+                assert_eq!(
+                    buffer[px..px + bpp],
+                    [0, 0, 0, 0],
+                    "El padding en fila {y}, columna {x} no debe ser modificado por el renderer"
+                );
+            }
+        }
+    }
 }

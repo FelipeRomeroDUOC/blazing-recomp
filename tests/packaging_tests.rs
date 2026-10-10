@@ -300,3 +300,35 @@ fn test_packaging_script_supports_armeabi_v7a() {
     );
 }
 
+#[test]
+fn test_reference_docs_in_sync_with_code() {
+    let script_path = repo_root().join("scripts").join("extraer_referencias.py");
+    assert!(
+        script_path.exists(),
+        "El script scripts/extraer_referencias.py debe existir"
+    );
+
+    let doc_path = repo_root()
+        .join("docs")
+        .join("referencia")
+        .join("api-modulos-rust.md");
+    assert!(
+        doc_path.exists(),
+        "El archivo docs/referencia/api-modulos-rust.md debe existir"
+    );
+
+    // Si python está disponible en el entorno, ejecutar chequeo estricto
+    let status = std::process::Command::new("python")
+        .arg(&script_path)
+        .arg("--check")
+        .current_dir(repo_root())
+        .status();
+
+    if let Ok(st) = status {
+        assert!(
+            st.success(),
+            "docs/referencia/api-modulos-rust.md está desactualizado respecto a src/. Ejecuta 'python scripts/extraer_referencias.py'."
+        );
+    }
+}
+
