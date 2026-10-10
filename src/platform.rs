@@ -780,8 +780,6 @@ struct AppState {
     haptics: Option<Haptics>,
     /// Error fatal retenido para presentación visual de diagnóstico.
     fatal_error: Option<String>,
-    /// Aviso informativo de estado o instrucciones (título, mensaje).
-    status_notice: Option<(String, String)>,
     /// Renderizador tipográfico por software para la pantalla de error.
     error_renderer: Option<crate::error_screen::ErrorScreenRenderer>,
 }
@@ -798,7 +796,6 @@ impl AppState {
             touch: TouchController::new(),
             haptics: None,
             fatal_error: None,
-            status_notice: None,
             error_renderer: None,
         }
     }
@@ -895,16 +892,15 @@ impl AppState {
     /// Compone el fotograma visible y el overlay táctil. No-op si no hay
     /// ventana viva. Ante fallos de GPU, presenta la pantalla de error por software.
     fn redraw(&mut self) {
-        if let Some(error_msg) = self.fatal_error.clone() {
-            self.render_software_error(
-                "[BLAZING RECOMP] ERROR DE INICIALIZACIÓN GPU",
-                &error_msg,
-            );
-            return;
-        }
-
-        if let Some((title, notice_msg)) = self.status_notice.clone() {
-            self.render_software_error(&title, &notice_msg);
+        // Solo recurrir a renderizado por software en CPU si wgpu falló al crear el compositor.
+        // Si el compositor GPU está vivo, ANativeWindow_lock causaría conflicto con el swapchain.
+        if self.compositor.is_none() {
+            if let Some(error_msg) = self.fatal_error.clone() {
+                self.render_software_error(
+                    "[BLAZING RECOMP] ERROR DE INICIALIZACIÓN GPU",
+                    &error_msg,
+                );
+            }
             return;
         }
 
@@ -1023,9 +1019,16 @@ pub fn android_main(app: android_activity::AndroidApp) {
         let mut state = AppState::new();
         state.haptics = Haptics::connect(app.vm_as_ptr(), app.activity_as_ptr());
 
-        // Búsqueda automática de la ROM oficial y BIOS en Downloads/
+        // Búsqueda automática de la ROM oficial y BIOS en Downloads y almacenamiento propio
         let internal_dir = app.internal_data_path();
-        let search_dirs = crate::storage::resolve_search_directories(internal_dir.as_deref());
+        let external_dir = app.external_data_path();
+        if let Some(ref ed) = external_dir {
+            let _ = std::fs::create_dir_all(ed);
+        }
+        let search_dirs = crate::storage::resolve_search_directories(
+            internal_dir.as_deref(),
+            external_dir.as_deref(),
+        );
         log::info!("Iniciando escaneo de ROM oficial en directorios: {:?}", search_dirs);
         match crate::storage::scan_and_load_game(&search_dirs) {
             Ok(assets) => {
@@ -1036,24 +1039,29 @@ pub fn android_main(app: android_activity::AndroidApp) {
                 );
                 state.load(assets.rom, assets.bios.as_deref());
             }
-            Err(crate::storage::StorageError::RomNotFound) => {
-                log::warn!("ROM oficial de Fire Emblem no encontrada en Downloads/.");
-                state.status_notice = Some((
-                    "[BLAZING RECOMP] GUÍA DE INSTALACIÓN".to_string(),
-                    "ROM NO ENCONTRADA EN DOWNLOADS\n\n\
-                    Coloca tu copia legal de 'Fire Emblem (Europe).gba'\n\
-                    en la carpeta Download/ de tu dispositivo.\n\n\
-                    El juego iniciará automáticamente una vez\n\
-                    detectada la firma SHA-256 oficial."
-                        .to_string(),
-                ));
-            }
-            Err(crate::storage::StorageError::IoError(e)) => {
-                log::error!("Error de E/S al leer archivos del juego: {e}");
-                state.status_notice = Some((
-                    "[BLAZING RECOMP] ERROR DE E/S".to_string(),
-                    format!("Error de lectura en archivos de juego:\n\n{e}"),
-                ));
+            Err(e) => {
+                log::warn!("ROM oficial no encontrada ({e}). Generando pantalla instructiva en GPU.");
+                let ext_path_display = external_dir
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "Android/data/com.blazingrecomp.game/files/".to_string());
+                let lines = [
+                    "ROM NO DETECTADA (SHA-256)",
+                    "",
+                    "Opcion A (Downloads):",
+                    "  Coloca 'fe7.gba' o",
+                    "  'Fire Emblem (Europe).gba'",
+                    "  en la carpeta Download/",
+                    "",
+                    "Opcion B (Sin permisos):",
+                    "  Coloca 'fe7.gba' en:",
+                    &ext_path_display,
+                ];
+                crate::storage::render_guide_screen(
+                    &mut state.placeholder_rgba,
+                    "BLAZING RECOMP - GUIA",
+                    &lines,
+                );
             }
         }
 

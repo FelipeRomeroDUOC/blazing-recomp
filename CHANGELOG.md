@@ -67,6 +67,10 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 * **Topología de pruebas satélite para ejecución (`src/runner_tests.rs`):** Suite unitaria en host que valida geometría de búfer, inyección de teclas en hardware, avance determinista de reloj y perfiles de panel LCD.
 * **Game loop activo a 60 FPS con suspensión pasiva (`src/platform.rs`):** Bucle de presentación a 60 Hz gobernado por `std::time::Instant` y esperas cooperativas para alimentar el `Compositor` GPU en primer plano, con transición a espera bloqueante (`poll_events(None)`) durante `Pause` para garantizar 0% de consumo de batería en segundo plano.
 
+### Corregido
+* **Pantalla negra al iniciar en Android 16:** Resuelto el conflicto de exclusión mutua donde `ANativeWindow_lock` fallaba silenciosamente tras inicializar `wgpu`, bloqueando el swapchain. Ahora el Compositor GPU siempre dibuja la carcasa de la GBA SP y los controles táctiles, mostrando la guía de instalación rasterizada (`render_guide_screen`) en la pantalla virtual si la ROM no está cargada.
+* **Soporte de almacenamiento en Android 16 (Scoped Storage):** Incorporación de sondeo directo de rutas de archivo (`fe7.gba`, `Fire Emblem (Europe).gba`), inclusión de la carpeta propia sin permisos `external_data_path` (`/sdcard/Android/data/com.blazingrecomp.game/files/`) y declaración del permiso `MANAGE_EXTERNAL_STORAGE` en el manifiesto.
+
 ### Planificado
 * Integración del bucle de ejecución de bloques recompilados C11 a 60 FPS coordinado con el hardware emulado.
 * Salida de audio nativa mediante AAudio / Oboe de baja latencia.

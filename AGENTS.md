@@ -192,7 +192,7 @@ Todo agente que vaya a modificar, crear o refactorizar código en este repositor
 
 - **Checklist Obligatorio de Pre-Commit Gatekeeper:**
   Antes de proponer o ejecutar un `git commit` y `git push`, el agente debe verificar sin excepción los siguientes 4 criterios:
-  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (61 tests actuales: 52 en `src/lib.rs` + 9 en `tests/packaging_tests.rs`).
+  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (63 tests actuales: 54 en `src/lib.rs` + 9 en `tests/packaging_tests.rs`).
   2. **Validación Diátaxis sin errores:** `python .agents/skills/diataxis-docs/scripts/validar_docs.py .` devuelve `0 error(es), 0 aviso(s)`.
   3. **Especificaciones de API sincronizadas:** `python scripts/extraer_referencias.py --check` sale con código de éxito 0.
   4. **Auditoría de rutas absolutas limpia:** Ningún archivo agregado o modificado contiene rutas locales del usuario o del sistema.

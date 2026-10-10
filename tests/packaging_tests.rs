@@ -349,6 +349,11 @@ fn test_manifest_declares_storage_permissions() {
     );
 
     assert!(
+        content.contains("android.permission.MANAGE_EXTERNAL_STORAGE"),
+        "El manifiesto debe solicitar android.permission.MANAGE_EXTERNAL_STORAGE para acceso a archivos en Android 11-16"
+    );
+
+    assert!(
         content.contains("android:requestLegacyExternalStorage=\"true\""),
         "El manifiesto debe declarar requestLegacyExternalStorage=\"true\" para lectura directa en emuladores y dispositivos"
     );

@@ -45,6 +45,7 @@ Este registro documenta de manera exhaustiva y transparente cada decisión de di
 20. [Blindaje de Suite por Mutation Testing (Mutation Score 100% sobre Lógica Pura)](#20-blindaje-de-suite-por-mutation-testing-mutation-score-100-sobre-lógica-pura)
 21. [Desacoplamiento de GameRunner y Pacing de Fotogramas a 60 FPS con Suspensión Pasiva](#21-desacoplamiento-de-gamerunner-y-pacing-de-fotogramas-a-60-fps-con-suspensión-pasiva)
 22. [Ingestión y Verificación de ROM/BIOS con Resolución Amigable en Downloads y Hash Criptográfico SHA-256](#22-ingestión-y-verificación-de-rombios-con-resolución-amigable-en-downloads-y-hash-criptográfico-sha-256)
+23. [Prevención de Conflicto de Superficie GPU y Guía Visual en Framebuffer GBA para Android 16](#23-prevención-de-conflicto-de-superficie-gpu-y-guía-visual-en-framebuffer-gba-para-android-16)
 
 ---
 
@@ -419,6 +420,27 @@ Para respetar la política de sala limpia (*clean-room*) del proyecto (`AGENTS.m
 * **Alternativa descartada:** Integrar un selector de archivos visual Storage Access Framework (SAF) con `ACTION_OPEN_DOCUMENT`. Descartada en esta etapa por involucrar llamadas complejas a través de la capa JNI de Android sin aportar ventajas prácticas frente a la detección directa en `Downloads/`.
 * **Alternativa descartada:** Distribuir o empaquetar ROMs de prueba dentro del APK. Descartada de raíz por violar la política clean-room y los derechos de autor de Nintendo (`AGENTS.md §3`).
 * **Compromiso asumido:** Requiere que en Android 13+ el usuario conceda permisos si la carpeta no es accesible de forma predeterminada por la NativeActivity sin capa Java.
+
+---
+
+### 23. Prevención de Conflicto de Superficie GPU y Guía Visual en Framebuffer GBA para Android 16
+
+#### Contexto
+Al probar el APK en un dispositivo con Android 16, la pantalla quedaba completamente negra en el arranque. La investigación de la causa raíz reveló dos fallos concurrentes:
+1. **Conflicto EGL/Vulkan vs. ANativeWindow_lock:** Cuando `Compositor::new` toma control de la ventana física para inicializar `wgpu`, la superficie queda acoplada al buffer queue de hardware. En Android NDK, cualquier intento posterior de invocar `ANativeWindow_lock` (renderizado por software en CPU) es rechazado por el sistema con error. Al activarse un aviso informativo de estado, `redraw()` llamaba a `render_software_error`, que fallaba silenciosamente y abortaba el dibujado con `return;`, impidiendo que el Compositor GPU ejecutara el pase de dibujado y congelando la pantalla en negro.
+2. **Scoped Storage estricto en Android 16:** En Android 13-16, `std::fs::read_dir("/sdcard/Download")` devuelve `EACCES` (Permission denied) si la aplicación no posee permisos especiales o si el usuario no los otorgó manualmente.
+
+#### Decisión e implementación
+1. **Separación de responsabilidades de renderizado ([`src/platform.rs`](../../src/platform.rs)):** Se eliminó la intercepción de `render_software_error` cuando `self.compositor` está activo. `render_software_error` queda reservado estrictamente para caídas críticas donde `Compositor::new` no puede inicializarse (fallo real del adaptador gráfico).
+2. **Guía interactiva en framebuffer virtual ([`src/storage.rs`](../../src/storage.rs)):** Se implementó `render_guide_screen`, que rasteriza tipografía nítida con `fontdue` directamente en el búfer `placeholder_rgba` ($240 \times 160$ píxeles). De esta forma, si la ROM aún no está cargada, el Compositor GPU presenta la carcasa completa de la GBA SP, el marco y los botones táctiles activos, mostrando las instrucciones en la pantalla virtual de la consola con cero pantallas negras.
+3. **Sondeo directo de archivos y carpeta propia de la app:**
+   - Se añadió `app.external_data_path()` (`/sdcard/Android/data/com.blazingrecomp.game/files/`) a la lista de búsqueda; esta ruta **nunca requiere permisos** en Android 11 a 16.
+   - Si `read_dir` devuelve error de permisos, `scan_and_load_game` realiza sondeo directo de rutas fijas (`fe7.gba`, `Fire Emblem (Europe).gba`), permitiendo leer el archivo si el sistema otorga acceso de lectura directa.
+4. **Declaración de permisos en manifiesto ([`android/AndroidManifest.xml`](../../android/AndroidManifest.xml)):** Se añadió `<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />`.
+
+#### Alternativas y compromisos
+* **Alternativa descartada:** Crear una actividad Java previa para solicitar permisos interactivos en diálogo del sistema. Descartada para preservar la arquitectura de NativeActivity pura (`hasCode="false"`) sin sobrecarga del runtime DEX.
+* **Compromiso asumido:** En Android 16, si el usuario prefiere colocar la ROM en `Downloads/` en vez de la carpeta propia de la app, puede requerir activar el interruptor de "Acceso a todos los archivos" en los ajustes de la aplicación si el sistema bloquea el sondeo directo.
 
 ---
 
