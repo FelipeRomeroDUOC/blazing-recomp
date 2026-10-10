@@ -184,9 +184,15 @@ Todo agente que vaya a modificar, crear o refactorizar código en este repositor
   - Todas las referencias y enlaces a archivos dentro del proyecto deben ser **estrictamente relativos al repositorio** (ej. `docs/BACKLOG.md`, `.agents/skills/`, `../src-c/`).
   - Esto garantiza que el repositorio sea 100% portable, funcione idénticamente en cualquier máquina o sistema operativo y no exponga datos de privacidad del entorno local si se publica en GitHub.
 
+- **Comando Oficial de Empaquetado de APK:**
+  - Todo empaquetado, compilación multi-ABI y generación del instalador APK para Android debe ejecutarse obligatoriamente con el comando exacto:
+    `powershell -ExecutionPolicy Bypass -File scripts/package_apk.ps1`
+  - Este script compila automáticamente los tres ABIs soportados (`arm64-v8a`, `armeabi-v7a`, `x86_64`) con `cargo ndk`, procesa recursos con `aapt2`, alinea memoria a 16 KB con `zipalign` y firma el Fat APK con `apksigner` bajo los esquemas v1/v2/v3 sin depender de Gradle.
+  - Para verificar que el APK se genera limpiamente ante cambios en el manifiesto, dependencias nativas o integración de assets, el agente debe invocar siempre esta orden completa.
+
 - **Checklist Obligatorio de Pre-Commit Gatekeeper:**
   Antes de proponer o ejecutar un `git commit` y `git push`, el agente debe verificar sin excepción los siguientes 4 criterios:
-  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (49 tests actuales: 41 en `src/lib.rs` + 8 en `tests/packaging_tests.rs`).
+  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (61 tests actuales: 52 en `src/lib.rs` + 9 en `tests/packaging_tests.rs`).
   2. **Validación Diátaxis sin errores:** `python .agents/skills/diataxis-docs/scripts/validar_docs.py .` devuelve `0 error(es), 0 aviso(s)`.
   3. **Especificaciones de API sincronizadas:** `python scripts/extraer_referencias.py --check` sale con código de éxito 0.
   4. **Auditoría de rutas absolutas limpia:** Ningún archivo agregado o modificado contiene rutas locales del usuario o del sistema.
