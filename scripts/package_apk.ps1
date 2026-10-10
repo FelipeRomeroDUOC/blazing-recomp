@@ -8,7 +8,8 @@ param (
     [string]$TargetArch = "",
     [switch]$SkipBuild = $false,
     [switch]$AllAbis = $true,
-    [switch]$NoStrip = $false
+    [switch]$NoStrip = $false,
+    [switch]$Debug = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -208,15 +209,27 @@ if (-not (Test-Path $debugKeystore)) {
 }
 
 # 6. Compilar .so con cargo ndk
+$targetProfile = if ($Debug) { "debug" } else { "release" }
+
 if (-not $SkipBuild) {
     Push-Location $RepoRoot
     try {
-        if ($AllAbis) {
-            Write-Host "==> Compilando .so nativo para todos los ABIs (arm64-v8a, armeabi-v7a, x86_64) con cargo ndk..."
-            cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 build
+        if ($Debug) {
+            if ($AllAbis) {
+                Write-Host "==> Compilando .so nativo para todos los ABIs (arm64-v8a, armeabi-v7a, x86_64) con cargo ndk en modo debug..."
+                cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 build
+            } else {
+                Write-Host "==> Compilando .so nativo para $TargetAbi ($TargetArch) con cargo ndk en modo debug..."
+                cargo ndk -t $TargetAbi build
+            }
         } else {
-            Write-Host "==> Compilando .so nativo para $TargetAbi ($TargetArch) con cargo ndk..."
-            cargo ndk -t $TargetAbi build
+            if ($AllAbis) {
+                Write-Host "==> Compilando .so nativo para todos los ABIs (arm64-v8a, armeabi-v7a, x86_64) con cargo ndk en modo release..."
+                cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 build --release
+            } else {
+                Write-Host "==> Compilando .so nativo para $TargetAbi ($TargetArch) con cargo ndk en modo release..."
+                cargo ndk -t $TargetAbi build --release
+            }
         }
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Fallo cargo ndk build."
@@ -227,7 +240,7 @@ if (-not $SkipBuild) {
     }
 }
 
-$soFile = Join-Path $RepoRoot "target\$TargetArch\debug\libblazing_recomp.so"
+$soFile = Join-Path $RepoRoot "target\$TargetArch\$targetProfile\libblazing_recomp.so"
 if (-not (Test-Path $soFile)) {
     Write-Error "No se encontro la biblioteca compilada en $soFile."
     exit 1
@@ -300,7 +313,7 @@ Write-Host "   + Incluyendo $TargetAbi ($soFile)"
 foreach ($arch in $abiMap.Keys) {
     $abi = $abiMap[$arch]
     if ($abi -ne $TargetAbi) {
-        $otherSo = Join-Path $RepoRoot "target\$arch\debug\libblazing_recomp.so"
+        $otherSo = Join-Path $RepoRoot "target\$arch\$targetProfile\libblazing_recomp.so"
         if (Test-Path $otherSo) {
             $otherStaging = Join-Path $stagingDir "lib\$abi"
             New-Item -ItemType Directory -Path $otherStaging -Force | Out-Null

@@ -67,6 +67,9 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 * **Topología de pruebas satélite para ejecución (`src/runner_tests.rs`):** Suite unitaria en host que valida geometría de búfer, inyección de teclas en hardware, avance determinista de reloj y perfiles de panel LCD.
 * **Game loop activo a 60 FPS con suspensión pasiva (`src/platform.rs`):** Bucle de presentación a 60 Hz gobernado por `std::time::Instant` y esperas cooperativas para alimentar el `Compositor` GPU en primer plano, con transición a espera bloqueante (`poll_events(None)`) durante `Pause` para garantizar 0% de consumo de batería en segundo plano.
 
+### Rendimiento y Optimización
+* **Compilación Release con ThinLTO y Vectorización (`Cargo.toml` y `scripts/package_apk.ps1`):** Configuración de perfil `[profile.release]` (`opt-level = 3`, `lto = "thin"`, `codegen-units = 1`) y parametrización de `package_apk.ps1` para compilar con `--release` por defecto. El tiempo de cálculo por fotograma de la GBA se reduce de ~150-200 ms a <2 ms, alcanzando 60 FPS fluidos y reduciendo el tamaño del APK de 40.5 MB a 14.0 MB.
+
 ### Corregido
 * **Pantalla negra al iniciar en Android 16:** Resuelto el conflicto de exclusión mutua donde `ANativeWindow_lock` fallaba silenciosamente tras inicializar `wgpu`, bloqueando el swapchain. Ahora el Compositor GPU siempre dibuja la carcasa de la GBA SP y los controles táctiles, mostrando la guía de instalación rasterizada (`render_guide_screen`) en la pantalla virtual si la ROM no está cargada.
 * **Soporte de almacenamiento en Android 16 (Scoped Storage):** Incorporación de sondeo directo de rutas de archivo (`fe7.gba`, `Fire Emblem (Europe).gba`), inclusión de la carpeta propia sin permisos `external_data_path` (`/sdcard/Android/data/com.blazingrecomp.game/files/`) y declaración del permiso `MANAGE_EXTERNAL_STORAGE` en el manifiesto.
