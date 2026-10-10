@@ -55,6 +55,7 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 - [x] 🟩 Implementar escalado de aspecto fijo (3:2) con bandas laterales limpias y escalado de píxeles nítido (*integer scaling*).
 - [x] 🟩 Integrar shaders de simulación LCD y paleta de color (LUT) para GPUs móviles (Adreno / Mali).
 - [x] 🟩 Configurar sincronización vertical (VSync activo con pacing de presentación desacoplado a 60 FPS).
+- [x] 🟩 Conectar pipeline de vídeo de GBA (`Machine` PPU -> `Temporal` -> `ColorLut` -> `Compositor`) mediante módulo puro `GameRunner` y bucle a 60 FPS con suspensión pasiva de batería.
 - [x] 🟩 Probar compilación con `cargo ndk -t arm64-v8a build` (generó `libblazing_recomp.so` ELF ARM64 de 134.3 MB con éxito).
 
 ---

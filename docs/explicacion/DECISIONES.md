@@ -43,6 +43,7 @@ Este registro documenta de manera exhaustiva y transparente cada decisión de di
 18. [Modernización Háptica a `VibrationEffect` y Pulso de 35 ms](#18-modernización-háptica-a-vibrationeffect-y-pulso-de-35-ms)
 19. [Topología de Pruebas: Crate Híbrido cdylib+rlib, Integración en tests/ y Tests Satélite *_tests.rs](#19-topología-de-pruebas-crate-híbrido-cdylibrlib-integración-en-tests-y-tests-satélite-_testsrs)
 20. [Blindaje de Suite por Mutation Testing (Mutation Score 100% sobre Lógica Pura)](#20-blindaje-de-suite-por-mutation-testing-mutation-score-100-sobre-lógica-pura)
+21. [Desacoplamiento de GameRunner y Pacing de Fotogramas a 60 FPS con Suspensión Pasiva](#21-desacoplamiento-de-gamerunner-y-pacing-de-fotogramas-a-60-fps-con-suspensión-pasiva)
 
 ---
 
@@ -375,6 +376,24 @@ Una alta cobertura de código por líneas (*line coverage*) no garantiza la dete
 #### Alternativas y compromisos
 * **Alternativa descartada:** Usar herramientas automatizadas de mutación genéricas para Rust (como `cargo-mutants`). Descartada en esta fase debido a la necesidad de evaluar mutaciones semánticas de hardware y shaders con feedback determinista e instantáneo.
 * **Compromiso asumido:** Mantener actualizado el script de mutantes representativos a medida que se agreguen nuevos subsistemas puros al proyecto.
+
+---
+
+### 21. Desacoplamiento de GameRunner y Pacing de Fotogramas a 60 FPS con Suspensión Pasiva
+
+#### Contexto
+En Android, una aplicación de juego no puede ejecutar bucles de espera activa (*busy-waiting*) ni acoplar el avance de hardware de la consola (`Machine`) directamente al hilo de la interfaz o al ciclo de vida de la actividad sin ocasionar estrangulamiento térmico (*thermal throttling*), drenaje excesivo de batería y pérdida de la capacidad de ejecutar pruebas unitarias automáticas en máquinas de desarrollo host. Además, la PPU de GBA genera un búfer crudo RGB555 de $240 \times 160$ que debe pasar por los filtros temporales del panel LCD (`Temporal`) y transformarse con la tabla de color (`ColorLut`) antes de subirse a la textura GPU del `Compositor`.
+
+#### Decisión e implementación
+1. **Módulo puro desacoplado (`src/runner.rs`):** Se creó la abstracción [`GameRunner`](../../src/runner.rs), encapsulando `gba_core::Machine`, `screen::Temporal` y `screen::ColorLut` con cero dependencias del NDK de Android o de `wgpu`. El método `step_frame()` avanza exactamente 280,896 ciclos de reloj (un fotograma GBA completo), procesa el búfer temporal y genera el búfer RGBA final de 38,400 píxeles listo para presentación.
+2. **Topología de pruebas satélite (`src/runner_tests.rs`):** Cumpliendo la directriz modular de `AGENTS.md`, la suite de pruebas unitarias de `GameRunner` reside en el archivo satélite adyacente [`src/runner_tests.rs`](../../src/runner_tests.rs) vinculado mediante `#[cfg(test)] #[path = "runner_tests.rs"] mod tests;`. Esto permite verificar en host (`cargo test`) la integridad geométrica, canal alfa (255), inyección de teclas `KEYINPUT`, avance de ciclos y perfiles de panel LCD.
+3. **Pacing a 60 FPS en el ciclo de vida Android (`src/platform.rs`):** Se transformó `android_main` en un game loop activo a 60 Hz gobernado por `std::time::Instant` y pausas cooperativas (`thread::sleep`) cuando la aplicación está en primer plano (`Resume`).
+4. **Suspensión pasiva a 0% de batería (`Pause`):** Cuando la aplicación pasa a segundo plano o se apaga la pantalla, el bucle activo de fotogramas se suspende y el hilo entra en espera bloqueante mediante `app.poll_events(None, ...)`, liberando por completo la CPU y GPU del dispositivo.
+
+#### Alternativas y compromisos
+* **Alternativa descartada:** Acoplar la instancia de `Machine` directamente dentro de `Compositor` o en callbacks JNI. Descartada porque impediría escribir tests unitarios en host y mezclaría responsabilidades gráficas con lógica de hardware.
+* **Alternativa descartada:** Mantener `app.poll_events(Some(Duration::ZERO))` indefinidamente en segundo plano. Descartada porque causaría un drenaje severo de batería al mantener la CPU despierta.
+* **Compromiso asumido:** Requiere coordinar el temporizador de fotogramas del host/NDK con el modo VSync de `wgpu` para evitar tearing visual.
 
 ---
 

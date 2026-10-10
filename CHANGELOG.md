@@ -58,6 +58,11 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 
 ## [Sin publicar] (Hacia v0.1.0 - MVP Jugable)
 
+### Añadido
+* **Módulo puro de ejecución y pipeline de vídeo (`src/runner.rs`):** Abstracción desacoplada `GameRunner` que encapsula `gba_core::Machine`, `screen::Temporal` y `screen::ColorLut`. Ejecuta 280,896 ciclos por frame, compone el framebuffer PPU a RGBA de 38,400 píxeles e inyecta la máscara de botones `KEYINPUT`.
+* **Topología de pruebas satélite para ejecución (`src/runner_tests.rs`):** Suite unitaria en host que valida geometría de búfer, inyección de teclas en hardware, avance determinista de reloj y perfiles de panel LCD.
+* **Game loop activo a 60 FPS con suspensión pasiva (`src/platform.rs`):** Bucle de presentación a 60 Hz gobernado por `std::time::Instant` y esperas cooperativas para alimentar el `Compositor` GPU en primer plano, con transición a espera bloqueante (`poll_events(None)`) durante `Pause` para garantizar 0% de consumo de batería en segundo plano.
+
 ### Planificado
 * Carga de ROM oficial (`Fire Emblem (Europe)`) y BIOS desde el almacenamiento del dispositivo con verificación de hashes SHA-256.
 * Integración del bucle de ejecución de bloques recompilados C11 a 60 FPS coordinado con el hardware emulado.

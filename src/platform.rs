@@ -6,13 +6,12 @@ use std::sync::Arc;
 
 use android_activity::input::{InputEvent, MotionEvent, MotionAction};
 use android_activity::{InputStatus, MainEvent, PollEvent};
-use gba_core::Machine;
+use crate::runner::GameRunner;
 use raw_window_handle::{
     AndroidDisplayHandle, DisplayHandle, HandleError, HasDisplayHandle,
     HasWindowHandle, RawDisplayHandle,
 };
-use screen::blend::default_rho;
-use screen::{ColorLut, ColorSettings, ResponseMode, ScreenKind, Temporal};
+use screen::ScreenKind;
 use jni::{jni_sig, jni_str};
 
 use crate::input::TouchController;
@@ -762,24 +761,19 @@ impl Haptics {
 /// Estado de la aplicación: lo que persiste entre pausas y reanudaciones
 /// del sistema Android.
 struct AppState {
-    /// Modelo de hardware de la consola. `None` hasta que se carguen la
-    /// ROM y el BIOS del usuario con hashes verificados (AGENTS.md §3).
-    machine: Option<Machine>,
+    /// Ejecutor del juego y modelo de consola. `None` hasta que se carguen
+    /// la ROM y el BIOS del usuario con hashes verificados (AGENTS.md §3).
+    runner: Option<GameRunner>,
     /// Compositor GPU unificado (`wgpu`) sobre la ventana Android. `None`
     /// cuando no hay ventana viva (`TerminateWindow`, `Pause`, `Destroy`).
     compositor: Option<Compositor>,
     /// Ventana propiedad del compositor, para consultar su tamaño físico.
     window: Option<Arc<AndroidWindow>>,
-    /// Panel físico que se simula (perfil de `screen`). Se usará para
-    /// reconstruir la LUT cuando el usuario cambie de perfil (Fase 5+).
+    /// Panel físico que se simula (perfil de `screen`).
     #[allow(dead_code)]
     screen_kind: ScreenKind,
-    /// BGR555 → RGBA8 precalibrado para el panel y destino elegidos.
-    lut: ColorLut,
-    /// Resolución temporal del panel LCD (respuesta entre fotogramas).
-    temporal: Temporal,
-    /// Búfer RGBA de presentación (salida de `temporal.compose`).
-    rgba: Vec<[u8; 4]>,
+    /// Búfer de respaldo para presentación cuando no hay juego activo.
+    placeholder_rgba: Vec<[u8; 4]>,
     /// Controlador táctil (hitboxes, estado KEYINPUT, `touch_enabled`).
     touch: TouchController,
     /// Háptica; `None` si no hay JNI disponible (no-op).
@@ -792,25 +786,13 @@ struct AppState {
 
 impl AppState {
     fn new() -> AppState {
-        // Perfil por defecto de la biblioteca: panel original con
-        // frontlight (la vista "diseñada" del juego), destino sRGB.
         let screen_kind = ScreenKind::Frontlit;
-        let lut = ColorLut::build(&ColorSettings::default());
-        let temporal = Temporal::new(
-            GBA_PIXELS,
-            // `Smart` es el modo documentado como default en `blend.rs`.
-            ResponseMode::Smart,
-            1,
-            default_rho(screen_kind),
-        );
         AppState {
-            machine: None,
+            runner: None,
             compositor: None,
             window: None,
             screen_kind,
-            lut,
-            temporal,
-            rgba: vec![[0, 0, 0, 255]; GBA_PIXELS],
+            placeholder_rgba: vec![[0, 0, 0, 255]; GBA_PIXELS],
             touch: TouchController::new(),
             haptics: None,
             fatal_error: None,
@@ -848,8 +830,8 @@ impl AppState {
     /// Carga ROM y BIOS en el modelo de hardware de la consola (perfiles de
     /// AGENTS.md §3). Se invoca una vez verificados los hashes SHA-256.
     #[allow(dead_code)]
-    fn load(&mut self, rom: Vec<u8>, bios: &[u8]) {
-        self.machine = Some(Machine::new_with_bios(rom, bios));
+    fn load(&mut self, rom: Vec<u8>, bios: Option<&[u8]>) {
+        self.runner = Some(GameRunner::new(rom, bios, self.screen_kind));
     }
 
     /// Libera los recursos GPU y de emulación al pausar; Android puede
@@ -859,9 +841,9 @@ impl AppState {
         if self.compositor.take().is_some() || self.window.take().is_some() {
             log::debug!("recursos GPU liberados (suspend)");
         }
-        if let Some(machine) = self.machine.take() {
-            log::debug!("Machine liberada (suspend)");
-            drop(machine);
+        if let Some(runner) = self.runner.take() {
+            log::debug!("GameRunner liberado (suspend)");
+            drop(runner);
         }
     }
 
@@ -924,19 +906,31 @@ impl AppState {
             self.touch.resize(w, h);
         }
         let Some(compositor) = self.compositor.as_mut() else { return };
-        // Pipeline: temporal compose → render compositor (juego + overlay)
-        self.temporal.compose(&self.lut, &mut self.rgba);
-        if let Err(e) = compositor.render(&self.rgba, (w, h), &self.touch) {
+        let frame = if let Some(runner) = &self.runner {
+            runner.frame_rgba()
+        } else {
+            &self.placeholder_rgba
+        };
+        if let Err(e) = compositor.render(frame, (w, h), &self.touch) {
             log::warn!("compositor: {e}");
         }
     }
 
-    /// Publica la máscara KEYINPUT del controlador táctil en `Machine`.
+    /// Avanza un fotograma del juego si hay un runner activo y redibuja en el compositor.
+    fn step_and_redraw(&mut self) {
+        if let Some(runner) = self.runner.as_mut() {
+            runner.set_keys(self.touch.key_mask());
+            runner.step_frame();
+        }
+        self.redraw();
+    }
+
+    /// Publica la máscara KEYINPUT del controlador táctil en `GameRunner`.
     /// Con `touch_enabled == false` el método del controlador ya devuelve
-    /// la máscara sin cambios; con `Machine == None` no hay nada que hacer.
+    /// la máscara sin cambios; con `runner == None` no hay nada que hacer.
     fn publish_keys(&mut self) {
-        if let Some(machine) = self.machine.as_mut() {
-            machine.bus.keys = self.touch.key_mask();
+        if let Some(runner) = self.runner.as_mut() {
+            runner.set_keys(self.touch.key_mask());
         }
     }
 
@@ -1021,9 +1015,19 @@ pub fn android_main(app: android_activity::AndroidApp) {
         let mut state = AppState::new();
         state.haptics = Haptics::connect(app.vm_as_ptr(), app.activity_as_ptr());
         let mut finishing = false;
+        let mut resumed = false;
+        let mut last_frame = std::time::Instant::now();
+        let target_frame_time = std::time::Duration::from_nanos(16_666_667); // 60 FPS
 
         while !finishing {
-            app.poll_events(None, |event| {
+            // Suspender espera activa cuando la app no está visible en primer plano
+            let timeout = if resumed && state.window.is_some() {
+                Some(std::time::Duration::ZERO)
+            } else {
+                None
+            };
+
+            app.poll_events(timeout, |event| {
                 let PollEvent::Main(main) = event else { return };
                 match main {
                     MainEvent::InitWindow { .. } => {
@@ -1043,12 +1047,14 @@ pub fn android_main(app: android_activity::AndroidApp) {
                     }
                     MainEvent::Resume { .. } => {
                         log::info!("ciclo de vida: Resume");
-                        if state.machine.is_none() {
-                            log::info!("sin Machine cargada: esperando ROM/BIOS del usuario");
+                        resumed = true;
+                        if state.runner.is_none() {
+                            log::info!("sin GameRunner cargado: esperando ROM/BIOS del usuario");
                         }
                     }
                     MainEvent::Pause => {
                         log::info!("ciclo de vida: Pause");
+                        resumed = false;
                         state.suspend();
                     }
                     MainEvent::Destroy => {
@@ -1071,7 +1077,21 @@ pub fn android_main(app: android_activity::AndroidApp) {
                     _ => InputStatus::Unhandled,
                 }) {}
             }
-            if needs_redraw {
+
+            if resumed && state.window.is_some() {
+                let elapsed = last_frame.elapsed();
+                if elapsed >= target_frame_time {
+                    last_frame = std::time::Instant::now();
+                    state.step_and_redraw();
+                } else if needs_redraw {
+                    state.redraw();
+                } else {
+                    let remaining = target_frame_time - elapsed;
+                    if remaining > std::time::Duration::from_millis(1) {
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                }
+            } else if needs_redraw {
                 state.redraw();
             }
         }
