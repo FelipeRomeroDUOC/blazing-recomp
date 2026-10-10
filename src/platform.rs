@@ -758,6 +758,144 @@ impl Haptics {
     }
 }
 
+/// Gestor JNI de permisos de almacenamiento en Android (Scoped Storage).
+struct PermissionsManager {
+    vm: jni::JavaVM,
+    activity: jni::objects::Global<jni::objects::JObject<'static>>,
+}
+
+impl PermissionsManager {
+    fn connect(
+        vm_ptr: *mut std::ffi::c_void,
+        activity_ptr: *mut std::ffi::c_void,
+    ) -> Option<PermissionsManager> {
+        if vm_ptr.is_null() || activity_ptr.is_null() {
+            log::info!("permisos: sin punteros JNI; solicitud desactivada");
+            return None;
+        }
+        let vm = unsafe { jni::JavaVM::from_raw(vm_ptr.cast()) };
+        let activity = vm
+            .attach_current_thread(|env| -> Result<_, jni::errors::Error> {
+                let obj =
+                    unsafe { jni::objects::JObject::from_raw(env, activity_ptr.cast()) };
+                let global = env.new_global_ref(&obj)?;
+                std::mem::forget(obj);
+                Ok(global)
+            })
+            .ok()?;
+        log::info!("permisos: conectado al contexto de la aplicación");
+        Some(PermissionsManager { vm, activity })
+    }
+
+    /// Comprueba el estado de permisos y solicita acceso a almacenamiento si no está concedido.
+    fn request_storage_permissions(&self) {
+        let run = |env: &mut jni::Env| -> Result<(), jni::errors::Error> {
+            let build_version_class = env.find_class(jni_str!("android/os/Build$VERSION"))?;
+            let sdk_int = env
+                .get_static_field(
+                    &build_version_class,
+                    jni_str!("SDK_INT"),
+                    jni_sig!("I"),
+                )?
+                .i()?;
+
+            log::info!("permisos: Android SDK_INT = {sdk_int}");
+
+            // 1. Solicitar permisos de runtime estándar (para visibilidad en Ajustes de la App)
+            let string_class = env.find_class(jni_str!("java/lang/String"))?;
+            let perms = env.new_object_array(2, &string_class, jni::objects::JObject::null())?;
+            let p_read = env.new_string("android.permission.READ_EXTERNAL_STORAGE")?;
+            let p_write = env.new_string("android.permission.WRITE_EXTERNAL_STORAGE")?;
+            perms.set_element(env, 0, &p_read)?;
+            perms.set_element(env, 1, &p_write)?;
+
+            let _ = env.call_method(
+                self.activity.as_obj(),
+                jni_str!("requestPermissions"),
+                jni_sig!("([Ljava/lang/String;I)V"),
+                &[jni::objects::JValue::Object(&perms), jni::objects::JValue::Int(1001)],
+            );
+            if env.exception_check() {
+                env.exception_clear();
+            }
+
+            // 2. En Android 11+ (API 30+), verificar Environment.isExternalStorageManager()
+            if sdk_int >= 30 {
+                let env_class = env.find_class(jni_str!("android/os/Environment"))?;
+                let is_manager = env
+                    .call_static_method(
+                        &env_class,
+                        jni_str!("isExternalStorageManager"),
+                        jni_sig!("()Z"),
+                        &[],
+                    )?
+                    .z()?;
+
+                if !is_manager {
+                    log::info!("permisos: MANAGE_EXTERNAL_STORAGE pendiente; abriendo pantalla del sistema");
+                    let intent_class = env.find_class(jni_str!("android/content/Intent"))?;
+                    let action = env.new_string("android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION")?;
+                    let intent = env.new_object(
+                        &intent_class,
+                        jni_sig!("(Ljava/lang/String;)V"),
+                        &[jni::objects::JValue::Object(&action)],
+                    )?;
+
+                    let uri_str = env.new_string("package:com.blazingrecomp.game")?;
+                    let uri_class = env.find_class(jni_str!("android/net/Uri"))?;
+                    let uri = env.call_static_method(
+                        &uri_class,
+                        jni_str!("parse"),
+                        jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
+                        &[jni::objects::JValue::Object(&uri_str)],
+                    )?.l()?;
+
+                    let _ = env.call_method(
+                        &intent,
+                        jni_str!("setData"),
+                        jni_sig!("(Landroid/net/Uri;)Landroid/content/Intent;"),
+                        &[jni::objects::JValue::Object(&uri)],
+                    )?;
+
+                    let start_res = env.call_method(
+                        self.activity.as_obj(),
+                        jni_str!("startActivity"),
+                        jni_sig!("(Landroid/content/Intent;)V"),
+                        &[jni::objects::JValue::Object(&intent)],
+                    );
+
+                    if start_res.is_err() {
+                        env.exception_clear();
+                        let action_generic = env.new_string("android.settings.MANAGE_ALL_FILES_ACCESS_PERMISSION")?;
+                        let generic_intent = env.new_object(
+                            &intent_class,
+                            jni_sig!("(Ljava/lang/String;)V"),
+                            &[jni::objects::JValue::Object(&action_generic)],
+                        )?;
+                        let _ = env.call_method(
+                            self.activity.as_obj(),
+                            jni_str!("startActivity"),
+                            jni_sig!("(Landroid/content/Intent;)V"),
+                            &[jni::objects::JValue::Object(&generic_intent)],
+                        );
+                        if env.exception_check() {
+                            env.exception_clear();
+                        }
+                    }
+                } else {
+                    log::info!("permisos: MANAGE_EXTERNAL_STORAGE ya concedido");
+                }
+            }
+
+            Ok(())
+        };
+
+        if let Err(e) = self.vm.attach_current_thread(run) {
+            log::warn!("permisos: error comprobando o solicitando permisos JNI ({e:?})");
+        }
+    }
+}
+
 /// Estado de la aplicación: lo que persiste entre pausas y reanudaciones
 /// del sistema Android.
 struct AppState {
@@ -1019,6 +1157,12 @@ pub fn android_main(app: android_activity::AndroidApp) {
         let mut state = AppState::new();
         state.haptics = Haptics::connect(app.vm_as_ptr(), app.activity_as_ptr());
 
+        // Comprobación y solicitud proactiva de permisos de almacenamiento en el arranque
+        let permissions = PermissionsManager::connect(app.vm_as_ptr(), app.activity_as_ptr());
+        if let Some(ref p) = permissions {
+            p.request_storage_permissions();
+        }
+
         // Búsqueda automática de la ROM oficial y BIOS en Downloads y almacenamiento propio
         let internal_dir = app.internal_data_path();
         let external_dir = app.external_data_path();
@@ -1100,7 +1244,14 @@ pub fn android_main(app: android_activity::AndroidApp) {
                         log::info!("ciclo de vida: Resume");
                         resumed = true;
                         if state.runner.is_none() {
-                            log::info!("sin GameRunner cargado: esperando ROM/BIOS del usuario");
+                            log::info!("sin GameRunner cargado: reintentando escaneo de ROM tras Resume");
+                            if let Ok(assets) = crate::storage::scan_and_load_game(&search_dirs) {
+                                log::info!(
+                                    "ROM oficial encontrada en {:?} tras Resume. Inicializando motor a 60 FPS.",
+                                    assets.rom_path
+                                );
+                                state.load(assets.rom, assets.bios.as_deref());
+                            }
                         }
                     }
                     MainEvent::Pause => {

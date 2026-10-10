@@ -72,7 +72,7 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 
 ### Corregido
 * **Pantalla negra al iniciar en Android 16:** Resuelto el conflicto de exclusión mutua donde `ANativeWindow_lock` fallaba silenciosamente tras inicializar `wgpu`, bloqueando el swapchain. Ahora el Compositor GPU siempre dibuja la carcasa de la GBA SP y los controles táctiles, mostrando la guía de instalación rasterizada (`render_guide_screen`) en la pantalla virtual si la ROM no está cargada.
-* **Soporte de almacenamiento en Android 16 (Scoped Storage):** Incorporación de sondeo directo de rutas de archivo (`fe7.gba`, `Fire Emblem (Europe).gba`), inclusión de la carpeta propia sin permisos `external_data_path` (`/sdcard/Android/data/com.blazingrecomp.game/files/`) y declaración del permiso `MANAGE_EXTERNAL_STORAGE` en el manifiesto.
+* **Soporte de almacenamiento en Android 16 (Scoped Storage):** Incorporación de sondeo directo de rutas de archivo (`fe7.gba`, `Fire Emblem (Europe).gba`), inclusión de la carpeta propia sin permisos `external_data_path` (`/sdcard/Android/data/com.blazingrecomp.game/files/`), eliminación del límite `maxSdkVersion="32"` para visibilidad permanente en Ajustes de la App y gestor JNI (`PermissionsManager`) que solicita proactivamente `MANAGE_EXTERNAL_STORAGE` y permisos en el arranque reintentando el escaneo en `Resume`.
 
 ### Planificado
 * Integración del bucle de ejecución de bloques recompilados C11 a 60 FPS coordinado con el hardware emulado.
