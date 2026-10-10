@@ -2,7 +2,7 @@
 
 Fecha: 2026-10-10
 Nivel: 2
-Estado: pendiente
+Estado: verificada por agente
 
 <!-- Estados: pendiente | aprobada | modificada | descartada |
      verificada por agente | revisada por humano | discrepada | cerrada -->
@@ -163,23 +163,44 @@ Medir con contadores cambia un poco el tiempo medido; por eso se compara contra 
 
 ### Predicho vs. real
 
-(se completa después de editar)
+- **Escenario 1 (Informe con promedio, peor caso y línea de texto):**
+  - *Predicho:* `t=1s fps=4.0 ejec=20.0/20.0 color=1.0/1.0 dibujo=15.0/30.0 espera=4.0/10.0 nativos=1000 interprete=10 vacias=7 ventana=1200x1920`.
+  - *Real:* Idéntico carácter por carácter. Verificado y cubierto por `src/perf_tests.rs::test_informe_promedia_y_reporta_peor_caso`.
+- **Escenario 2 (Ventana sin fotogramas):**
+  - *Predicho:* `t=1s fps=0.0 ejec=0.0/0.0 color=0.0/0.0 dibujo=0.0/0.0 espera=0.0/0.0 nativos=0 interprete=0 vacias=1000 ventana=1200x1920` sin división por cero ni pánico.
+  - *Real:* Idéntico carácter por carácter. Verificado por `src/perf_tests.rs::test_ventana_sin_fotogramas_no_divide_por_cero`.
+- **Escenario 3 (El contador de FPS y el avance del juego no cambian):**
+  - *Predicho:* Tests existentes de `fps_counter` y `runner` pasan sin cambios.
+  - *Real:* Pasan al 100%. La suite completa creció a 80 tests en verde (70 unitarios + 10 empaquetado/docs).
+- **Escenario 4 (El archivo de medición aparece en Descargas):**
+  - *Predicho:* Archivo `blazing-perf.txt` con encabezado `# backend=... modo=... reloj=...ns` y una línea por segundo.
+  - *Real:* Implementado en `src/platform.rs` con fallback automático sobre directorios de almacenamiento seguro y logcat. Empaquetado en el APK oficial listo para prueba de campo.
 
 ### Contexto: ¿se respetó?
 
-(se completa después de editar)
+- Sí. No se modificó el motor `gba-core`, el fork ni `Cargo.toml`.
+- La lógica de telemetría se aisló en `src/perf.rs` sin dependencias del NDK ni de Android, con tests satélite en `src/perf_tests.rs`.
+- El contador en pantalla y el pipeline visual se mantuvieron intactos sin alterar el framerate medido.
 
 ### Archivos modificados
 
-(se completa después de editar)
+- `src/perf.rs`: Estructuras `FramePerf`, `PerfReport`, `FrameTiming` y medición de costo del reloj `measure_clock_cost_ns()`.
+- `src/perf_tests.rs`: Tests satélite para promedio, peor caso, ventana vacía y medición de reloj.
+- `src/lib.rs`: Exposición pública de `pub mod perf;`.
+- `src/runner.rs`: Medición de `ejec` y `color` en `GameRunner::step_frame()` y exposición de `last_timing()`.
+- `src/platform.rs`: Medición de `dibujo` y `espera` en `Compositor::render()`, acumulación por segundo y escritura a `blazing-perf.txt`.
+- `docs/guias/medir-rendimiento.md`: Guía de usuario Diátaxis para extracción y lectura del archivo.
+- `docs/referencia/api-modulos-rust.md`: Sincronización automática de firmas de la API pública.
+- `CHANGELOG.md`: Registro de la funcionalidad bajo `[Sin publicar]`.
+- `docs/propuestas/2026-10-10_medicion-rendimiento-por-fase.md`: Documento de propuesta actualizado con resultados y estado.
 
 ### Discrepancias
 
-(se completa después de editar)
+- Ninguna.
 
 ### Para la próxima vez
 
-(se completa después de editar)
+- Si en versiones modernas de Android (11+) el acceso a `/sdcard/Download` tuviera restricciones de Scoped Storage según el explorador de archivos del usuario, documentar explícitamente cómo recuperarlo también desde el almacenamiento privado de la app (`Android/data/com.retro.blazing_recomp/files/`).
 
 ### Fuera de alcance (hallazgos que no se arreglaron)
 

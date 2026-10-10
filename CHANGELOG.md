@@ -6,6 +6,14 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 
 ---
 
+## [Sin publicar]
+
+### Añadido
+* **Telemetría de rendimiento por fase del fotograma (`src/perf.rs`):** Cronometraje en milisegundos de ejecución CPU (`ejec`), composición de color (`color`), renderizado GPU (`dibujo`), espera de swapchain (`espera`) y vueltas vacías con persistencia automática en `Download/blazing-perf.txt`.
+* **Guía práctica de medición (`docs/guias/medir-rendimiento.md`):** Instrucciones paso a paso para recopilar y analizar métricas en dispositivos reales.
+
+---
+
 ## [0.0.2] - 2026-10-09
 
 * `versionName`: `"0.0.2"`

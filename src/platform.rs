@@ -675,7 +675,8 @@ impl Compositor {
         window_physical: (u32, u32),
         touch: &TouchController,
         is_native: bool,
-    ) -> Result<(), String> {
+    ) -> Result<(f64, f64), String> {
+        let t_render_start = std::time::Instant::now();
         let (w, h) = (window_physical.0.max(1), window_physical.1.max(1));
         if (w, h) != (self.config.width, self.config.height) {
             self.config.width = w;
@@ -820,6 +821,7 @@ impl Compositor {
         );
 
         // 5. Render pass en el swapchain
+        let t_wait_start = std::time::Instant::now();
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
             Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost | wgpu::SurfaceError::OutOfMemory) => {
@@ -830,6 +832,7 @@ impl Compositor {
             }
             Err(e) => return Err(e.to_string()),
         };
+        let espera_ms = t_wait_start.elapsed().as_secs_f64() * 1000.0;
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -874,7 +877,8 @@ impl Compositor {
 
         self.queue.submit([encoder.finish()]);
         frame.present();
-        Ok(())
+        let dibujo_ms = t_render_start.elapsed().as_secs_f64() * 1000.0;
+        Ok((dibujo_ms, espera_ms))
     }
 }
 
@@ -1157,6 +1161,32 @@ impl PermissionsManager {
     }
 }
 
+fn init_perf_file(
+    search_dirs: &[std::path::PathBuf],
+    backend: &str,
+    is_native: bool,
+    clock_cost_ns: u64,
+) -> Option<std::fs::File> {
+    for dir in search_dirs {
+        let candidate = dir.join("blazing-perf.txt");
+        if let Ok(mut f) = std::fs::File::create(&candidate) {
+            use std::io::Write;
+            let header = format!(
+                "# backend={} modo={} reloj={}ns\n",
+                backend,
+                if is_native { "AOT" } else { "INT" },
+                clock_cost_ns
+            );
+            if f.write_all(header.as_bytes()).is_ok() && f.flush().is_ok() {
+                log::info!("Telemetría de rendimiento iniciada en {:?}", candidate);
+                return Some(f);
+            }
+        }
+    }
+    log::warn!("No se pudo inicializar blazing-perf.txt en ningún directorio de almacenamiento");
+    None
+}
+
 /// Estado de la aplicación: lo que persiste entre pausas y reanudaciones
 /// del sistema Android.
 struct AppState {
@@ -1183,6 +1213,16 @@ struct AppState {
     fatal_error: Option<String>,
     /// Renderizador tipográfico por software para la pantalla de error.
     error_renderer: Option<crate::error_screen::ErrorScreenRenderer>,
+    /// Acumulador de telemetría de rendimiento por fase de fotograma.
+    perf: crate::perf::FramePerf,
+    /// Archivo para persistir las líneas de telemetría en Descargas / almacenamiento.
+    perf_file: Option<std::fs::File>,
+    /// Bandera para evitar saturar el log si la escritura falla.
+    perf_write_warned: bool,
+    /// Costo medido en nanosegundos de una lectura de reloj `Instant::now()`.
+    clock_cost_ns: u64,
+    /// Directorios candidatos para escribir `blazing-perf.txt`.
+    search_dirs: Vec<std::path::PathBuf>,
 }
 
 impl AppState {
@@ -1199,6 +1239,11 @@ impl AppState {
             haptics: None,
             fatal_error: None,
             error_renderer: None,
+            perf: crate::perf::FramePerf::new(),
+            perf_file: None,
+            perf_write_warned: false,
+            clock_cost_ns: crate::perf::measure_clock_cost_ns(),
+            search_dirs: Vec::new(),
         }
     }
 
@@ -1293,7 +1338,7 @@ impl AppState {
 
     /// Compone el fotograma visible y el overlay táctil. No-op si no hay
     /// ventana viva. Ante fallos de GPU, presenta la pantalla de error por software.
-    fn redraw(&mut self) {
+    fn redraw(&mut self) -> Option<(f64, f64)> {
         // Solo recurrir a renderizado por software en CPU si wgpu falló al crear el compositor.
         // Si el compositor GPU está vivo, ANativeWindow_lock causaría conflicto con el swapchain.
         if self.compositor.is_none() {
@@ -1303,22 +1348,60 @@ impl AppState {
                     &error_msg,
                 );
             }
-            return;
+            return None;
         }
 
-        let Some(window) = &self.window else { return };
+        let Some(window) = &self.window else { return None; };
         let (w, h) = window.size();
         if w > 0 && h > 0 && self.touch.size() != (w, h) {
             self.touch.resize(w, h);
         }
-        let Some(compositor) = self.compositor.as_mut() else { return };
+        let Some(compositor) = self.compositor.as_mut() else { return None; };
         let (frame, is_native) = if let Some(runner) = &self.runner {
             (runner.frame_rgba(), runner.is_native())
         } else {
             (self.placeholder_rgba.as_slice(), false)
         };
-        if let Err(e) = compositor.render(frame, (w, h), &self.touch, is_native) {
-            log::warn!("compositor: {e}");
+        match compositor.render(frame, (w, h), &self.touch, is_native) {
+            Ok(timing) => Some(timing),
+            Err(e) => {
+                log::warn!("compositor: {e}");
+                None
+            }
+        }
+    }
+
+    /// Escribe una línea del informe de rendimiento en blazing-perf.txt y en Logcat.
+    fn write_perf_report(&mut self, report: &crate::perf::PerfReport) {
+        let line = report.to_line();
+        log::info!("PERF: {}", line);
+        if self.perf_file.is_none() && !self.perf_write_warned {
+            let is_native = self.runner.as_ref().map_or(false, |r| r.is_native());
+            let backend = self
+                .compositor
+                .as_ref()
+                .map(|c| c.fps_counter.renderer())
+                .unwrap_or("Vulkan");
+            self.perf_file = init_perf_file(
+                &self.search_dirs,
+                backend,
+                is_native,
+                self.clock_cost_ns,
+            );
+            if self.perf_file.is_none() {
+                self.perf_write_warned = true;
+            }
+        }
+        if let Some(ref mut f) = self.perf_file {
+            use std::io::Write;
+            if let Err(e) = writeln!(f, "{}", line) {
+                if !self.perf_write_warned {
+                    log::warn!("Fallo al escribir en blazing-perf.txt: {e}");
+                    self.perf_write_warned = true;
+                }
+            } else {
+                let _ = f.flush();
+            }
         }
     }
 
@@ -1516,6 +1599,7 @@ pub fn android_main(app: android_activity::AndroidApp) {
             internal_dir.as_deref(),
             external_dir.as_deref(),
         );
+        state.search_dirs = search_dirs.clone();
         log::info!("Iniciando escaneo de ROM oficial en directorios: {:?}", search_dirs);
         match crate::storage::scan_and_load_game(&search_dirs) {
             Ok(assets) => {
@@ -1667,8 +1751,12 @@ pub fn android_main(app: android_activity::AndroidApp) {
 
                 if state.runner.is_some() {
                     let mut steps = 0;
+                    let mut last_step_timing = crate::runner::StepTiming::default();
                     while lag >= FRAME_DURATION && steps < 2 {
                         state.step();
+                        if let Some(runner) = &state.runner {
+                            last_step_timing = runner.last_timing();
+                        }
                         lag -= FRAME_DURATION;
                         steps += 1;
                     }
@@ -1678,13 +1766,37 @@ pub fn android_main(app: android_activity::AndroidApp) {
                     if steps > 0 {
                         state.on_sim_frames(steps);
                     }
-                    if steps > 0 || needs_redraw {
+                    let gpu_timing = if steps > 0 || needs_redraw {
+                        state.redraw()
+                    } else {
+                        None
+                    };
+
+                    if steps > 0 {
+                        let (dibujo_ms, espera_ms) = gpu_timing.unwrap_or((0.0, 0.0));
+                        for _ in 0..steps {
+                            state.perf.record_frame(crate::perf::FrameTiming {
+                                ejec_ms: last_step_timing.ejec_ms,
+                                color_ms: last_step_timing.color_ms,
+                                dibujo_ms: dibujo_ms / (steps as f64),
+                                espera_ms: espera_ms / (steps as f64),
+                                nativos: last_step_timing.native_blocks,
+                                interprete: last_step_timing.interpreter_steps,
+                            });
+                        }
+                    } else if !needs_redraw {
+                        state.perf.record_empty_turn();
+                    }
+
+                    let (win_w, win_h) = state.window.as_ref().map(|w| w.size()).unwrap_or((0, 0));
+                    if let Some(report) = state.perf.tick_at(now, (win_w, win_h)) {
+                        state.write_perf_report(&report);
+                    }
+                } else {
+                    state.perf.record_empty_turn();
+                    if needs_redraw {
                         state.redraw();
                     }
-                    // El swapchain de wgpu con VSync y FIFO/Mailbox sincroniza a 60 Hz exactos
-                    // sin recurrir a sleep impreciso del sistema operativo.
-                } else if needs_redraw {
-                    state.redraw();
                 }
             } else if needs_redraw {
                 state.redraw();

@@ -20,6 +20,19 @@ pub const GBA_PIXELS: usize = (GBA_W * GBA_H) as usize;
 /// Ciclos de reloj maestro por fotograma estándar (~16.78 MHz / 59.73 Hz).
 pub const CYCLES_PER_FRAME: u64 = 280_896;
 
+/// Métricas temporales registradas en el último avance de fotograma (`step_frame`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct StepTiming {
+    /// Milisegundos empleados en la ejecución de la lógica del juego.
+    pub ejec_ms: f64,
+    /// Milisegundos empleados en la conversión de color y composición LCD.
+    pub color_ms: f64,
+    /// Cantidad de bloques nativos AOT ejecutados.
+    pub native_blocks: u64,
+    /// Cantidad de pasos en intérprete de respaldo ejecutados.
+    pub interpreter_steps: u64,
+}
+
 /// Ejecutor del juego que conecta el hardware emulado con la generación del framebuffer RGBA.
 pub struct GameRunner {
     pub machine: gba_core::Machine,
@@ -29,6 +42,7 @@ pub struct GameRunner {
     pub screen_kind: ScreenKind,
     rgba: Vec<[u8; 4]>,
     frames_elapsed: u64,
+    last_timing: StepTiming,
 }
 
 impl GameRunner {
@@ -59,6 +73,7 @@ impl GameRunner {
             screen_kind,
             rgba,
             frames_elapsed: 0,
+            last_timing: StepTiming::default(),
         }
     }
 
@@ -92,20 +107,48 @@ impl GameRunner {
     /// Retorna `true` si se completó un fotograma (inicio de VBlank) y el búfer
     /// RGBA contiene los nuevos píxeles listos para presentar en GPU.
     pub fn step_frame(&mut self) -> bool {
-        if let Some(ref table) = self.block_table {
-            crate::recomp::run_frame_native(&mut self.machine, table, 2_000_000);
+        let t0 = std::time::Instant::now();
+        let (native, fallback) = if let Some(ref table) = self.block_table {
+            crate::recomp::run_frame_native(&mut self.machine, table, 2_000_000)
         } else {
             self.machine.run_frame(CYCLES_PER_FRAME);
-        }
+            (0, 0)
+        };
+        let t1 = std::time::Instant::now();
+        let ejec_ms = t1.duration_since(t0).as_secs_f64() * 1000.0;
+
         if self.machine.bus.frame_ready {
+            let t2 = std::time::Instant::now();
             self.temporal.push(&self.machine.bus.framebuffer, &self.lut);
             self.temporal.compose(&self.lut, &mut self.rgba);
+            let t3 = std::time::Instant::now();
+            let color_ms = t3.duration_since(t2).as_secs_f64() * 1000.0;
+
+            self.last_timing = StepTiming {
+                ejec_ms,
+                color_ms,
+                native_blocks: native,
+                interpreter_steps: fallback,
+            };
+
             self.frames_elapsed += 1;
             self.machine.bus.frame_ready = false;
             true
         } else {
+            self.last_timing = StepTiming {
+                ejec_ms,
+                color_ms: 0.0,
+                native_blocks: native,
+                interpreter_steps: fallback,
+            };
             false
         }
+    }
+
+    /// Retorna las métricas temporales del último avance de fotograma.
+    #[inline]
+    pub fn last_timing(&self) -> StepTiming {
+        self.last_timing
     }
 
     /// Referencia de solo lectura al búfer de píxeles RGBA (240x160) compuesto.

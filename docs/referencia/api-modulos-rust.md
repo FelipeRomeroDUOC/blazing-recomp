@@ -21,7 +21,7 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | [`error_screen.rs`](#módulo-error_screenrs) | 4 | Renderizador de pantalla de error por software y blindaje de GPU. |
 | [`platform.rs`](#módulo-platformrs) | 1 | Plataforma Android (solo compila con `cfg(target_os = "android")`): |
 | [`storage.rs`](#módulo-storagers) | 14 | Módulo interno del port. |
-| [`runner.rs`](#módulo-runnerrs) | 15 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
+| [`runner.rs`](#módulo-runnerrs) | 17 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
 | [`recomp.rs`](#módulo-recomprs) | 10 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
 | [`fps.rs`](#módulo-fpsrs) | 18 | Contador de FPS y generador de HUD visual en pantalla. |
 
@@ -673,6 +673,15 @@ Ciclos de reloj maestro por fotograma estándar (~16.78 MHz / 59.73 Hz).
 pub const CYCLES_PER_FRAME: u64
 ```
 
+### `StepTiming` (Struct)
+
+Métricas temporales registradas en el último avance de fotograma (`step_frame`).
+
+**Firma:**
+```rust
+pub struct StepTiming
+```
+
 ### `GameRunner` (Struct)
 
 Ejecutor del juego que conecta el hardware emulado con la generación del framebuffer RGBA.
@@ -740,6 +749,15 @@ RGBA contiene los nuevos píxeles listos para presentar en GPU.
 **Firma:**
 ```rust
 pub fn step_frame(&mut self) -> bool
+```
+
+### `last_timing` (Función)
+
+Retorna las métricas temporales del último avance de fotograma.
+
+**Firma:**
+```rust
+pub fn last_timing(&self) -> StepTiming
 ```
 
 ### `frame_rgba` (Función)
