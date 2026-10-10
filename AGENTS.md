@@ -61,6 +61,15 @@ Directrices, arquitectura y reglas operativas para agentes de IA que trabajen en
    - Código Rust limpio, idiomático y seguro.
    - Preservar comentarios arquitectónicos y decisiones de diseño no obvias.
    - Crear commits atómicos con mensajes descriptivos siguiendo *Conventional Commits* (`feat:`, `fix:`, `refactor:`, `docs:`).
+4. **Topología Modular de Pruebas (`*_tests.rs` y `tests/`):**
+   - **Tests Satélite:** Si un módulo en `src/` supera las 350 líneas de código o su bloque de pruebas unitarias supera las 150 líneas, los tests deben residir en un archivo satélite adyacente (`src/<modulo>_tests.rs`) vinculado con `#[cfg(test)] #[path = "<modulo>_tests.rs"] mod tests;`. Esto previene archivos monolíticos y preserva el acceso a structs y funciones privadas sin violar la encapsulación.
+   - **Tests de Integración:** Todas las pruebas de empaquetado APK, manifiesto, compatibilidad de TV y sincronización de documentación residen exclusivamente en `tests/` aprovechando la configuración `crate-type = ["cdylib", "rlib"]`.
+5. **Exactitud Matemática e Integridad de Tests:**
+   - En cálculos de colisión y distancia euclidiana en coma flotante ($f32$), utilizar ternas pitagóricas exactas (ej. punto $(30.0, 40.0)$ con radio $50.0$) o deltas $\epsilon$ bien definidos para evitar falsos negativos por redondeo IEEE-754.
+   - **Regla inviolable de mutación:** Nunca debilitar aserciones ni modificar código de producción para forzar el paso de un test o la muerte de un mutante. Si un mutante sobrevive, se debe crear un test de frontera más estricto.
+6. **Restauración en Memoria en Scripts de Prueba y Auditoría:**
+   - Todo script automatizado de mutación o estrés debe respaldar el contenido original de los archivos en memoria RAM y restaurarlo fielmente sobre el disco en un bloque `finally`.
+   - **Prohibido:** Invocar comandos destructivos de Git (`git checkout`, `git restore`, `git reset`) dentro de scripts automatizados para evitar la pérdida silenciosa de trabajo en curso no commiteado.
 
 ### Topología de Repositorios y Motor Upstream
 Este proyecto depende de los componentes y crates del motor base del proyecto oficial `gba-recomp` de Jack Rickey:
@@ -174,3 +183,10 @@ Todo agente que vaya a modificar, crear o refactorizar código en este repositor
   - **NUNCA** escribir ni versionar rutas absolutas locales del dispositivo del usuario (ej. `C:\Users\...`, `file:///C:/...` o rutas que contengan el nombre de usuario o rutas de sistema) dentro de ningún archivo del repositorio (`.md`, `.toml`, código fuente o scripts).
   - Todas las referencias y enlaces a archivos dentro del proyecto deben ser **estrictamente relativos al repositorio** (ej. `docs/BACKLOG.md`, `.agents/skills/`, `../src-c/`).
   - Esto garantiza que el repositorio sea 100% portable, funcione idénticamente en cualquier máquina o sistema operativo y no exponga datos de privacidad del entorno local si se publica en GitHub.
+
+- **Checklist Obligatorio de Pre-Commit Gatekeeper:**
+  Antes de proponer o ejecutar un `git commit` y `git push`, el agente debe verificar sin excepción los siguientes 4 criterios:
+  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (49 tests actuales: 41 en `src/lib.rs` + 8 en `tests/packaging_tests.rs`).
+  2. **Validación Diátaxis sin errores:** `python .agents/skills/diataxis-docs/scripts/validar_docs.py .` devuelve `0 error(es), 0 aviso(s)`.
+  3. **Especificaciones de API sincronizadas:** `python scripts/extraer_referencias.py --check` sale con código de éxito 0.
+  4. **Auditoría de rutas absolutas limpia:** Ningún archivo agregado o modificado contiene rutas locales del usuario o del sistema.
