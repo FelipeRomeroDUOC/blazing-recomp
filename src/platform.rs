@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use android_activity::input::{InputEvent, MotionEvent, MotionAction, KeyEvent, KeyAction, Keycode};
 use android_activity::{InputStatus, MainEvent, PollEvent};
-use crate::runner::GameRunner;
+use crate::pipeline::{EmulationWorker, FramePacket};
 use raw_window_handle::{
     AndroidDisplayHandle, DisplayHandle, HandleError, HasDisplayHandle,
     HasWindowHandle, RawDisplayHandle,
@@ -1191,9 +1191,10 @@ fn init_perf_file(
 /// Estado de la aplicación: lo que persiste entre pausas y reanudaciones
 /// del sistema Android.
 struct AppState {
-    /// Ejecutor del juego y modelo de consola. `None` hasta que se carguen
-    /// la ROM y el BIOS del usuario con hashes verificados (AGENTS.md §3).
-    runner: Option<GameRunner>,
+    /// Hilo de trabajo de emulación dedicado en segundo plano.
+    worker: Option<EmulationWorker>,
+    /// Último paquete de fotograma recibido desde el hilo de emulación.
+    latest_frame: Option<FramePacket>,
     /// Compositor GPU unificado (`wgpu`) sobre la ventana Android. `None`
     /// cuando no hay ventana viva (`TerminateWindow`, `Pause`, `Destroy`).
     compositor: Option<Compositor>,
@@ -1230,7 +1231,8 @@ impl AppState {
     fn new() -> AppState {
         let screen_kind = ScreenKind::Frontlit;
         AppState {
-            runner: None,
+            worker: None,
+            latest_frame: None,
             compositor: None,
             window: None,
             screen_kind,
@@ -1275,23 +1277,26 @@ impl AppState {
         }
     }
 
-    /// Carga ROM y BIOS en el modelo de hardware de la consola (perfiles de
-    /// AGENTS.md §3). Se invoca una vez verificados los hashes SHA-256.
+    /// Inicia el hilo de emulación dedicado con la ROM y BIOS verificadas.
     #[allow(dead_code)]
     fn load(&mut self, rom: Vec<u8>, bios: Option<&[u8]>) {
-        self.runner = Some(GameRunner::new(rom, bios, self.screen_kind));
+        let bios_owned = bios.map(|b| b.to_vec());
+        self.worker = Some(EmulationWorker::start(
+            rom,
+            bios_owned,
+            self.screen_kind,
+            None,
+        ));
     }
 
-    /// Libera los recursos GPU y de emulación al pausar; Android puede
-    /// matar la NativeActivity sin aviso y conviene no sostener RAM del
-    /// juego ni una superficie de una ventana que ya no existe.
+    /// Suspende la emulación (0% CPU) y libera recursos GPU al pausar.
     fn suspend(&mut self) {
+        if let Some(worker) = &self.worker {
+            worker.bridge().set_paused(true);
+            log::debug!("EmulationWorker pausado en segundo plano (suspend)");
+        }
         if self.compositor.take().is_some() || self.window.take().is_some() {
             log::debug!("recursos GPU liberados (suspend)");
-        }
-        if let Some(runner) = self.runner.take() {
-            log::debug!("GameRunner liberado (suspend)");
-            drop(runner);
         }
     }
 
@@ -1358,8 +1363,8 @@ impl AppState {
             self.touch.resize(w, h);
         }
         let Some(compositor) = self.compositor.as_mut() else { return None; };
-        let (frame, is_native) = if let Some(runner) = &self.runner {
-            (runner.frame_rgba(), runner.is_native())
+        let (frame, is_native) = if let Some(packet) = &self.latest_frame {
+            (packet.rgba.as_slice(), packet.is_native)
         } else {
             (self.placeholder_rgba.as_slice(), false)
         };
@@ -1377,7 +1382,7 @@ impl AppState {
         let line = report.to_line();
         log::info!("PERF: {}", line);
         if self.perf_file.is_none() && !self.perf_write_warned {
-            let is_native = self.runner.as_ref().map_or(false, |r| r.is_native());
+            let is_native = self.latest_frame.as_ref().map_or(false, |p| p.is_native);
             let backend = self
                 .compositor
                 .as_ref()
@@ -1431,20 +1436,11 @@ impl AppState {
         }
     }
 
-    /// Avanza un fotograma del juego si hay un runner activo.
-    fn step(&mut self) {
-        let keys = self.combined_keys();
-        if let Some(runner) = self.runner.as_mut() {
-            runner.set_keys(keys);
-            runner.step_frame();
-        }
-    }
-
-    /// Publica la máscara KEYINPUT combinada (táctil + mando físico) en `GameRunner`.
+    /// Publica la máscara KEYINPUT combinada (táctil + mando físico) en el `EmulationBridge`.
     fn publish_keys(&mut self) {
         let keys = self.combined_keys();
-        if let Some(runner) = self.runner.as_mut() {
-            runner.set_keys(keys);
+        if let Some(worker) = &self.worker {
+            worker.bridge().set_keys(keys);
         }
     }
 
@@ -1639,18 +1635,15 @@ pub fn android_main(app: android_activity::AndroidApp) {
 
         let mut finishing = false;
         let mut resumed = false;
-        let mut last_tick = std::time::Instant::now();
-        let mut lag = std::time::Duration::ZERO;
         let mut last_scan_attempt = std::time::Instant::now();
-        const FRAME_DURATION: std::time::Duration = std::time::Duration::from_nanos(16_666_667); // 60 FPS
-        const MAX_ACCUMULATED: std::time::Duration = std::time::Duration::from_millis(50); // Prevenir espiral
 
         while !finishing {
             // Suspender espera activa cuando la app no está en primer plano.
-            // Si no hay runner (esperando permisos/ROM), usar un timeout de 100ms para permitir
-            // reescaneo periódico sin bloquear indefinidamente en Android 9 emulado.
-            let timeout = if resumed && state.window.is_some() && state.runner.is_some() {
-                Some(std::time::Duration::ZERO)
+            // Con el hilo de emulación corriendo en segundo plano a 60 Hz, usamos un timeout breve (1ms)
+            // para responder inmediatamente a eventos táctiles y fotogramas sin busy-wait.
+            // Si no hay worker (esperando permisos/ROM), usar un timeout de 100ms.
+            let timeout = if resumed && state.window.is_some() && state.worker.is_some() {
+                Some(std::time::Duration::from_millis(1))
             } else if resumed && state.window.is_some() {
                 Some(std::time::Duration::from_millis(100))
             } else {
@@ -1678,10 +1671,11 @@ pub fn android_main(app: android_activity::AndroidApp) {
                     MainEvent::Resume { .. } => {
                         log::info!("ciclo de vida: Resume");
                         resumed = true;
-                        last_tick = std::time::Instant::now();
-                        lag = std::time::Duration::ZERO;
-                        if state.runner.is_none() {
-                            log::info!("sin GameRunner cargado: reintentando escaneo de ROM tras Resume");
+                        if let Some(worker) = &state.worker {
+                            worker.bridge().set_paused(false);
+                        }
+                        if state.worker.is_none() {
+                            log::info!("sin EmulationWorker cargado: reintentando escaneo de ROM tras Resume");
                             if let Ok(assets) = crate::storage::scan_and_load_game(&search_dirs) {
                                 log::info!(
                                     "ROM oficial encontrada en {:?} tras Resume. Inicializando motor a 60 FPS.",
@@ -1709,12 +1703,14 @@ pub fn android_main(app: android_activity::AndroidApp) {
                 while input.next(|event| match event {
                     InputEvent::MotionEvent(m) => {
                         if state.on_motion(m) {
+                            state.publish_keys();
                             needs_redraw = true;
                         }
                         InputStatus::Handled
                     }
                     InputEvent::KeyEvent(k) => {
                         if state.on_key(k) {
+                            state.publish_keys();
                             needs_redraw = true;
                         }
                         InputStatus::Handled
@@ -1725,7 +1721,7 @@ pub fn android_main(app: android_activity::AndroidApp) {
 
             // Si aún no se ha cargado el juego (ej. usuario concedió permisos en Android 9 emulado sin onResume),
             // reintentar escaneo al tocar la pantalla o cada 1 segundo automáticamente.
-            if resumed && state.runner.is_none() {
+            if resumed && state.worker.is_none() {
                 if needs_redraw || last_scan_attempt.elapsed() >= std::time::Duration::from_millis(1000) {
                     last_scan_attempt = std::time::Instant::now();
                     if let Ok(assets) = crate::storage::scan_and_load_game(&search_dirs) {
@@ -1734,8 +1730,6 @@ pub fn android_main(app: android_activity::AndroidApp) {
                             assets.rom_path
                         );
                         state.load(assets.rom, assets.bios.as_deref());
-                        last_tick = std::time::Instant::now();
-                        lag = std::time::Duration::ZERO;
                         needs_redraw = true;
                     }
                 }
@@ -1743,49 +1737,27 @@ pub fn android_main(app: android_activity::AndroidApp) {
 
             if resumed && state.window.is_some() {
                 let now = std::time::Instant::now();
-                let mut delta = now.duration_since(last_tick);
-                last_tick = now;
-                if delta > MAX_ACCUMULATED {
-                    delta = MAX_ACCUMULATED;
-                }
-                lag += delta;
 
-                if state.runner.is_some() {
-                    let mut steps = 0;
-                    let mut last_step_timing = crate::runner::StepTiming::default();
-                    while lag >= FRAME_DURATION && steps < 2 {
-                        state.step();
-                        if let Some(runner) = &state.runner {
-                            last_step_timing = runner.last_timing();
-                        }
-                        lag -= FRAME_DURATION;
-                        steps += 1;
-                    }
-                    if lag >= FRAME_DURATION {
-                        lag = std::time::Duration::ZERO;
-                    }
-                    if steps > 0 {
-                        state.on_sim_frames(steps);
-                    }
-                    let gpu_timing = if steps > 0 || needs_redraw {
-                        state.redraw()
-                    } else {
-                        None
-                    };
+                if let Some(worker) = &state.worker {
+                    // Consultar si el hilo de emulación dedicado entregó un nuevo fotograma
+                    if let Some(packet) = worker.bridge().try_recv_frame() {
+                        let last_step_timing = packet.timing;
+                        state.latest_frame = Some(packet);
+                        state.on_sim_frames(1);
+                        let gpu_timing = state.redraw();
 
-                    if steps > 0 {
                         let (dibujo_ms, espera_ms) = gpu_timing.unwrap_or((0.0, 0.0));
-                        for _ in 0..steps {
-                            state.perf.record_frame(crate::perf::FrameTiming {
-                                ejec_ms: last_step_timing.ejec_ms,
-                                color_ms: last_step_timing.color_ms,
-                                dibujo_ms: dibujo_ms / (steps as f64),
-                                espera_ms: espera_ms / (steps as f64),
-                                nativos: last_step_timing.native_blocks,
-                                interprete: last_step_timing.interpreter_steps,
-                            });
-                        }
-                    } else if !needs_redraw {
+                        state.perf.record_frame(crate::perf::FrameTiming {
+                            ejec_ms: last_step_timing.ejec_ms,
+                            color_ms: last_step_timing.color_ms,
+                            dibujo_ms,
+                            espera_ms,
+                            nativos: last_step_timing.native_blocks,
+                            interprete: last_step_timing.interpreter_steps,
+                        });
+                    } else if needs_redraw {
+                        state.redraw();
+                    } else {
                         state.perf.record_empty_turn();
                     }
 

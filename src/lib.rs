@@ -31,6 +31,7 @@ pub mod storage;
 pub mod recomp;
 pub mod fps;
 pub mod perf;
+pub mod pipeline;
 
 
 // ---------------------------------------------------------------------------
