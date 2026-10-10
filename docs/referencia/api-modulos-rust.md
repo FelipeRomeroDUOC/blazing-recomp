@@ -20,6 +20,9 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | [`overlay.rs`](#módulo-overlayrs) | 11 | Overlay táctil y marco GBA SP (Fase 5.2, propuesta |
 | [`error_screen.rs`](#módulo-error_screenrs) | 4 | Renderizador de pantalla de error por software y blindaje de GPU. |
 | [`platform.rs`](#módulo-platformrs) | 1 | Plataforma Android (solo compila con `cfg(target_os = "android")`): |
+| [`storage.rs`](#módulo-storagers) | 14 | Módulo interno del port. |
+| [`runner.rs`](#módulo-runnerrs) | 14 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
+| [`recomp.rs`](#módulo-recomprs) | 10 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
 
 ---
 
@@ -472,6 +475,391 @@ háptica y logging a Logcat.
 **Firma:**
 ```rust
 pub fn android_main(app: android_activity::AndroidApp)
+```
+
+---
+
+## Módulo `storage.rs`
+
+### `OFFICIAL_ROM_SHA256` (Constante)
+
+Firma criptográfica SHA-256 oficial de la ROM europea de Fire Emblem (Europe) (16 MB).
+
+**Firma:**
+```rust
+pub const OFFICIAL_ROM_SHA256: &str
+```
+
+### `OFFICIAL_BIOS_SHA256` (Constante)
+
+Firma criptográfica SHA-256 oficial de la BIOS de Game Boy Advance (16 KB).
+
+**Firma:**
+```rust
+pub const OFFICIAL_BIOS_SHA256: &str
+```
+
+### `OFFICIAL_ROM_SIZE` (Constante)
+
+Tamaño exacto de la ROM oficial de Fire Emblem (16 MB en bytes).
+
+**Firma:**
+```rust
+pub const OFFICIAL_ROM_SIZE: usize
+```
+
+### `OFFICIAL_BIOS_SIZE` (Constante)
+
+Tamaño exacto del binario de BIOS oficial de GBA (16 KB en bytes).
+
+**Firma:**
+```rust
+pub const OFFICIAL_BIOS_SIZE: usize
+```
+
+### `KNOWN_ROM_FILENAMES` (Constante)
+
+Nombres de archivo comunes con los que suele guardarse la ROM de Fire Emblem.
+
+**Firma:**
+```rust
+pub const KNOWN_ROM_FILENAMES: &[&str]
+```
+
+### `KNOWN_BIOS_FILENAMES` (Constante)
+
+Nombres de archivo comunes para la BIOS oficial de GBA.
+
+**Firma:**
+```rust
+pub const KNOWN_BIOS_FILENAMES: &[&str]
+```
+
+### `LoadedAssets` (Struct)
+
+Assets del juego cargados y verificados en memoria listos para la ejecución.
+
+**Firma:**
+```rust
+pub struct LoadedAssets
+```
+
+### `StorageError` (Enum)
+
+Errores posibles al buscar, leer o validar los assets del juego.
+
+**Firma:**
+```rust
+pub enum StorageError
+```
+
+### `compute_sha256` (Función)
+
+Calcula la firma criptográfica SHA-256 de un búfer de bytes y la retorna en formato hexadecimal en minúsculas.
+
+**Firma:**
+```rust
+pub fn compute_sha256(data: &[u8]) -> String
+```
+
+### `verify_rom` (Función)
+
+Verifica si un búfer de datos coincide exactamente en tamaño y firma SHA-256 con la ROM oficial europea.
+
+**Firma:**
+```rust
+pub fn verify_rom(data: &[u8]) -> bool
+```
+
+### `verify_bios` (Función)
+
+Verifica si un búfer de datos coincide exactamente en tamaño y firma SHA-256 con la BIOS oficial de GBA.
+
+**Firma:**
+```rust
+pub fn verify_bios(data: &[u8]) -> bool
+```
+
+### `resolve_search_directories` (Función)
+
+Genera la lista ordenada de directorios candidatos de búsqueda, priorizando la carpeta Downloads
+y el almacenamiento propio de la app en Android 11-16.
+
+**Firma:**
+```rust
+pub fn resolve_search_directories( internal_data_dir: Option<&Path>, external_data_dir: Option<&Path>, ) -> Vec<PathBuf>
+```
+
+### `scan_and_load_game` (Función)
+
+Escanea los directorios especificados en busca de archivos de ROM y BIOS oficiales.
+
+Combina sondeo directo de nombres estándar (`fe7.gba`, `Fire Emblem (Europe).gba`) con
+escaneo general del directorio para máxima compatibilidad con Scoped Storage en Android 16.
+
+**Firma:**
+```rust
+pub fn scan_and_load_game(search_dirs: &[PathBuf]) -> Result<LoadedAssets, StorageError>
+```
+
+### `render_guide_screen` (Función)
+
+Renderiza un mensaje instructivo nítido en el framebuffer de juego de 240x160 px.
+
+Permite que el Compositor GPU presente la carcasa y controles táctiles de la consola
+mostrando la guía de instalación en la pantalla virtual, sin recurrir a bloqueos de CPU.
+
+**Firma:**
+```rust
+pub fn render_guide_screen(buffer: &mut [[u8; 4]], title: &str, lines: &[&str])
+```
+
+---
+
+## Módulo `runner.rs`
+
+Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5).
+
+Encapsula el modelo de hardware (`gba_core::Machine`), el simulador de panel
+LCD con respuesta temporal (`screen::Temporal`) y la tabla de color (`screen::ColorLut`).
+
+Este módulo es puro, sin dependencias de Android ni de ventanas gráficas,
+testeable en host con `cargo test`.
+
+### `GBA_W` (Constante)
+
+Ancho estándar del framebuffer de la Game Boy Advance en píxeles.
+
+**Firma:**
+```rust
+pub const GBA_W: u32
+```
+
+### `GBA_H` (Constante)
+
+Alto estándar del framebuffer de la Game Boy Advance en píxeles.
+
+**Firma:**
+```rust
+pub const GBA_H: u32
+```
+
+### `GBA_PIXELS` (Constante)
+
+Total de píxeles por fotograma de la Game Boy Advance (38,400).
+
+**Firma:**
+```rust
+pub const GBA_PIXELS: usize
+```
+
+### `CYCLES_PER_FRAME` (Constante)
+
+Ciclos de reloj maestro por fotograma estándar (~16.78 MHz / 59.73 Hz).
+
+**Firma:**
+```rust
+pub const CYCLES_PER_FRAME: u64
+```
+
+### `GameRunner` (Struct)
+
+Ejecutor del juego que conecta el hardware emulado con la generación del framebuffer RGBA.
+
+**Firma:**
+```rust
+pub struct GameRunner
+```
+
+### `new` (Función)
+
+Inicializa una nueva sesión de juego a partir de los bytes de la ROM
+y un BIOS opcional (si es `None`, se utiliza el BIOS HLE embebido en `gba-core`).
+
+**Firma:**
+```rust
+pub fn new(rom: Vec<u8>, bios: Option<&[u8]>, screen_kind: ScreenKind) -> Self
+```
+
+### `set_block_table` (Función)
+
+Asigna o reemplaza la tabla de bloques recompilados nativos.
+
+**Firma:**
+```rust
+pub fn set_block_table(&mut self, table: Option<crate::recomp::BlockTable>)
+```
+
+### `set_keys` (Función)
+
+Inyecta la máscara de botones activa en bajo en el bus de hardware (`KEYINPUT`).
+
+Bit = 0 significa botón pulsado; Bit = 1 significa botón liberado.
+
+**Firma:**
+```rust
+pub fn set_keys(&mut self, keys: u16)
+```
+
+### `keys` (Función)
+
+Obtiene la máscara actual de botones configurada en el bus de hardware.
+
+**Firma:**
+```rust
+pub fn keys(&self) -> u16
+```
+
+### `step_frame` (Función)
+
+Avanza la simulación hasta completar el siguiente fotograma visible.
+
+Retorna `true` si se completó un fotograma (inicio de VBlank) y el búfer
+RGBA contiene los nuevos píxeles listos para presentar en GPU.
+
+**Firma:**
+```rust
+pub fn step_frame(&mut self) -> bool
+```
+
+### `frame_rgba` (Función)
+
+Referencia de solo lectura al búfer de píxeles RGBA (240x160) compuesto.
+
+**Firma:**
+```rust
+pub fn frame_rgba(&self) -> &[[u8; 4]]
+```
+
+### `frames_elapsed` (Función)
+
+Total de fotogramas completados desde la inicialización.
+
+**Firma:**
+```rust
+pub fn frames_elapsed(&self) -> u64
+```
+
+### `clock` (Función)
+
+Ciclos de reloj maestro acumulados por la consola.
+
+**Firma:**
+```rust
+pub fn clock(&self) -> u64
+```
+
+### `set_screen_kind` (Función)
+
+Actualiza el perfil de simulación de pantalla (LUT y respuesta temporal).
+
+**Firma:**
+```rust
+pub fn set_screen_kind(&mut self, screen_kind: ScreenKind)
+```
+
+---
+
+## Módulo `recomp.rs`
+
+Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT).
+
+Conecta la tabla maestra de 17,207 funciones nativas (`rcg_blocks`)
+con el runtime de `gba-core`, ejecutando la lógica del juego directamente
+en la CPU física sin emulación de instrucciones por software.
+
+### `BlockTable` (Struct)
+
+Tabla de despacho indexada O(1) para ejecución nativa de bloques.
+
+**Firma:**
+```rust
+pub struct BlockTable
+```
+
+### `empty` (Función)
+
+Crea una tabla vacía (fuerza fallback completo al intérprete).
+
+**Firma:**
+```rust
+pub fn empty() -> Self
+```
+
+### `from_blocks` (Función)
+
+Construye una tabla indexada a partir de un arreglo de bloques `RcgBlock`.
+
+**Firma:**
+```rust
+pub fn from_blocks(blocks: &[RcgBlock]) -> Self
+```
+
+### `len` (Función)
+
+Cantidad total de bloques nativos registrados en la tabla.
+
+**Firma:**
+```rust
+pub fn len(&self) -> usize
+```
+
+### `is_empty` (Función)
+
+Indica si la tabla no contiene ningún bloque nativo.
+
+**Firma:**
+```rust
+pub fn is_empty(&self) -> bool
+```
+
+### `get` (Función)
+
+Resuelve la función nativa para una clave de dirección (con bit 0 = Thumb) en O(1).
+
+**Firma:**
+```rust
+pub fn get(&self, key: u32) -> Option<BlockFn>
+```
+
+### `run_frame_native` (Función)
+
+Ejecuta un fotograma de la consola utilizando bloques C11 nativos con fallback al intérprete.
+
+Retorna la tupla `(bloques_nativos_ejecutados, pasos_interprete_fallback)`.
+
+**Firma:**
+```rust
+pub fn run_frame_native( m: &mut Machine, table: &BlockTable, max_steps: u64, ) -> (u64, u64)
+```
+
+### `open_library` (Función)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub unsafe fn open_library(name: &str) -> Option<*mut c_void>
+```
+
+### `get_symbol` (Función)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub unsafe fn get_symbol<T>(handle: *mut c_void, name: &str) -> Option<T>
+```
+
+### `load_native_blocks` (Función)
+
+Intenta cargar la biblioteca de bloques C11 recompilados (`libblazing_recompiled.so`)
+presente en el paquete APK en Android. Retorna `None` si la biblioteca no está presente
+(en host o entornos de prueba pura), activando el modo intérprete de respaldo.
+
+**Firma:**
+```rust
+pub fn load_native_blocks() -> Option<BlockTable>
 ```
 
 ---

@@ -237,6 +237,9 @@ def main():
         "overlay.rs",
         "error_screen.rs",
         "platform.rs",
+        "storage.rs",
+        "runner.rs",
+        "recomp.rs",
     ]
 
     modulos = []

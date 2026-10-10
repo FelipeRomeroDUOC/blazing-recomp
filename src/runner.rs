@@ -23,6 +23,7 @@ pub const CYCLES_PER_FRAME: u64 = 280_896;
 /// Ejecutor del juego que conecta el hardware emulado con la generación del framebuffer RGBA.
 pub struct GameRunner {
     pub machine: gba_core::Machine,
+    pub block_table: Option<crate::recomp::BlockTable>,
     pub temporal: Temporal,
     pub lut: ColorLut,
     pub screen_kind: ScreenKind,
@@ -38,6 +39,7 @@ impl GameRunner {
             Some(b) => gba_core::Machine::new_with_bios(rom, b),
             None => gba_core::Machine::new(rom),
         };
+        let block_table = crate::recomp::load_native_blocks();
         let mut settings = ColorSettings::default();
         settings.screen = screen_kind;
         let lut = ColorLut::build(&settings);
@@ -51,12 +53,18 @@ impl GameRunner {
 
         Self {
             machine,
+            block_table,
             temporal,
             lut,
             screen_kind,
             rgba,
             frames_elapsed: 0,
         }
+    }
+
+    /// Asigna o reemplaza la tabla de bloques recompilados nativos.
+    pub fn set_block_table(&mut self, table: Option<crate::recomp::BlockTable>) {
+        self.block_table = table;
     }
 
     /// Inyecta la máscara de botones activa en bajo en el bus de hardware (`KEYINPUT`).
@@ -78,7 +86,11 @@ impl GameRunner {
     /// Retorna `true` si se completó un fotograma (inicio de VBlank) y el búfer
     /// RGBA contiene los nuevos píxeles listos para presentar en GPU.
     pub fn step_frame(&mut self) -> bool {
-        self.machine.run_frame(CYCLES_PER_FRAME);
+        if let Some(ref table) = self.block_table {
+            crate::recomp::run_frame_native(&mut self.machine, table, 2_000_000);
+        } else {
+            self.machine.run_frame(CYCLES_PER_FRAME);
+        }
         if self.machine.bus.frame_ready {
             self.temporal.push(&self.machine.bus.framebuffer, &self.lut);
             self.temporal.compose(&self.lut, &mut self.rgba);

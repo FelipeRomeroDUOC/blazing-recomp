@@ -84,3 +84,19 @@ fn test_runner_screen_kind_switch() {
     assert_eq!(runner.screen_kind, ScreenKind::Classic);
     assert_eq!(runner.frame_rgba().len(), GBA_PIXELS);
 }
+
+#[test]
+fn test_runner_supports_block_table_injection() {
+    let rom = create_dummy_rom();
+    let mut runner = GameRunner::new(rom, None, ScreenKind::Frontlit);
+    assert!(runner.block_table.is_none());
+
+    // Inyectar tabla vacía
+    runner.set_block_table(Some(crate::recomp::BlockTable::empty()));
+    assert!(runner.block_table.is_some());
+
+    // Debe avanzar fotograma ejecutando con fallback limpio
+    let initial_frames = runner.frames_elapsed();
+    let _ = runner.step_frame();
+    assert_eq!(runner.frames_elapsed(), initial_frames + 1);
+}

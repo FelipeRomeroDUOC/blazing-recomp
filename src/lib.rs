@@ -28,6 +28,7 @@ pub mod overlay_shader;
 pub mod error_screen;
 pub mod runner;
 pub mod storage;
+pub mod recomp;
 
 
 // ---------------------------------------------------------------------------

@@ -358,5 +358,27 @@ fn test_manifest_declares_storage_permissions() {
         "El manifiesto debe declarar requestLegacyExternalStorage=\"true\" para lectura directa en emuladores y dispositivos"
     );
 }
+#[test]
+fn test_packaging_script_embeds_recompiled_library() {
+    let script_path = repo_root().join("scripts").join("package_apk.ps1");
+    assert!(
+        script_path.exists(),
+        "El script scripts/package_apk.ps1 debe existir"
+    );
 
+    let script_content = fs::read_to_string(&script_path)
+        .expect("Debe poder leerse scripts/package_apk.ps1");
 
+    assert!(
+        script_content.contains("libblazing_recompiled.so"),
+        "El script debe gestionar el empaquetado de libblazing_recompiled.so"
+    );
+    assert!(
+        script_content.contains("src-c"),
+        "El script debe compilar los fuentes C11 ubicados en src-c"
+    );
+    assert!(
+        script_content.contains("Build-Recompiled-C"),
+        "El script debe definir la rutina Build-Recompiled-C"
+    );
+}

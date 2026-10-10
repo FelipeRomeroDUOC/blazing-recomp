@@ -43,8 +43,9 @@ if (-not $SdkPath) {
 
 Write-Host "==> Android SDK: $SdkPath"
 
-# 1.1 Detección de Android NDK (para cargo ndk y llvm-strip)
+# 1.1 Detección de Android NDK (para cargo ndk, llvm-strip y clang AOT)
 $llvmStrip = $null
+$clang = $null
 if (-not $env:ANDROID_NDK_HOME -and -not $env:NDK_HOME) {
     $ndkBase = Join-Path $SdkPath "ndk"
     if (Test-Path $ndkBase) {
@@ -63,6 +64,11 @@ if ($env:ANDROID_NDK_HOME) {
     if (Test-Path $potentialStrip) {
         $llvmStrip = $potentialStrip
         Write-Host "==> LLVM Strip: $llvmStrip"
+    }
+    $potentialClang = Join-Path $env:ANDROID_NDK_HOME "toolchains\llvm\prebuilt\windows-x86_64\bin\clang.exe"
+    if (Test-Path $potentialClang) {
+        $clang = $potentialClang
+        Write-Host "==> Clang NDK: $clang"
     }
 }
 
@@ -208,8 +214,108 @@ if (-not (Test-Path $debugKeystore)) {
     }
 }
 
-# 6. Compilar .so con cargo ndk
+# 6. Compilar .so con cargo ndk y C11 AOT con Clang
 $targetProfile = if ($Debug) { "debug" } else { "release" }
+
+function Build-Recompiled-C {
+    param(
+        [string]$Abi
+    )
+
+    if (-not $clang) {
+        Write-Error "No se encontro clang en NDK para compilar el codigo C recompilado."
+        exit 1
+    }
+
+    $cSrcDir = Join-Path $RepoRoot "src-c"
+    $unit0 = Join-Path $cSrcDir "1575 - Fire Emblem (E)(Independent)-bios.0.c"
+    $unit1 = Join-Path $cSrcDir "1575 - Fire Emblem (E)(Independent)-bios.1.c"
+    $header = Join-Path $cSrcDir "recompiled.h"
+
+    if (-not (Test-Path $unit0) -or -not (Test-Path $unit1)) {
+        Write-Warning "Archivos C en src-c no encontrados. Saltando compilacion AOT de C."
+        return
+    }
+
+    $outDir = Join-Path $RepoRoot "target\recompiled\$Abi"
+    if (-not (Test-Path $outDir)) {
+        New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+    }
+
+    $outSo = Join-Path $outDir "libblazing_recompiled.so"
+    $obj0 = Join-Path $outDir "unit0.o"
+    $obj1 = Join-Path $outDir "unit1.o"
+
+    $triple = switch ($Abi) {
+        "arm64-v8a"   { "aarch64-linux-android29" }
+        "armeabi-v7a" { "armv7a-linux-androideabi29" }
+        "x86_64"      { "x86_64-linux-android29" }
+        "x86"         { "i686-linux-android29" }
+        default       { "aarch64-linux-android29" }
+    }
+
+    $headerTime = if (Test-Path $header) { (Get-Item $header).LastWriteTime } else { [DateTime]::MinValue }
+    $u0Time = (Get-Item $unit0).LastWriteTime
+    $u1Time = (Get-Item $unit1).LastWriteTime
+
+    # Compilar unit0 si no existe o esta desactualizado
+    $needCompile0 = $true
+    if (Test-Path $obj0) {
+        $obj0Time = (Get-Item $obj0).LastWriteTime
+        if ($obj0Time -gt $u0Time -and $obj0Time -gt $headerTime) {
+            $needCompile0 = $false
+        }
+    }
+
+    if ($needCompile0) {
+        Write-Host "   + [Clang $Abi] Compilando unit0 (bios.0.c)..."
+        & $clang --target=$triple -O1 -fPIC -I $cSrcDir -c $unit0 -o $obj0
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Fallo compilacion de unit0 para $Abi"
+            exit $LASTEXITCODE
+        }
+    } else {
+        Write-Host "   + [Clang $Abi] unit0.o en cache (sin cambios)"
+    }
+
+    # Compilar unit1 si no existe o esta desactualizado
+    $needCompile1 = $true
+    if (Test-Path $obj1) {
+        $obj1Time = (Get-Item $obj1).LastWriteTime
+        if ($obj1Time -gt $u1Time -and $obj1Time -gt $headerTime) {
+            $needCompile1 = $false
+        }
+    }
+
+    if ($needCompile1) {
+        Write-Host "   + [Clang $Abi] Compilando unit1 (bios.1.c)..."
+        & $clang --target=$triple -O1 -fPIC -I $cSrcDir -c $unit1 -o $obj1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Fallo compilacion de unit1 para $Abi"
+            exit $LASTEXITCODE
+        }
+    } else {
+        Write-Host "   + [Clang $Abi] unit1.o en cache (sin cambios)"
+    }
+
+    # Enlazar .so si no existe o si se recompilo algun objeto
+    $needLink = $true
+    if ((Test-Path $outSo) -and -not $needCompile0 -and -not $needCompile1) {
+        $needLink = $false
+    }
+
+    if ($needLink) {
+        Write-Host "   + [Clang $Abi] Enlazando libblazing_recompiled.so..."
+        & $clang --target=$triple -shared -O1 $obj0 $obj1 -o $outSo
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Fallo enlazado de libblazing_recompiled.so para $Abi"
+            exit $LASTEXITCODE
+        }
+        Write-Host "   + [Clang $Abi] Generado $outSo"
+    } else {
+        Write-Host "   + [Clang $Abi] libblazing_recompiled.so en cache (sin cambios)"
+    }
+}
 
 if (-not $SkipBuild) {
     Push-Location $RepoRoot
@@ -234,6 +340,16 @@ if (-not $SkipBuild) {
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Fallo cargo ndk build."
             exit $LASTEXITCODE
+        }
+
+        # Compilacion de C11 recompilado AOT
+        Write-Host "==> Compilando codigo C11 recompilado AOT con NDK Clang..."
+        if ($AllAbis) {
+            Build-Recompiled-C -Abi "arm64-v8a"
+            Build-Recompiled-C -Abi "armeabi-v7a"
+            Build-Recompiled-C -Abi "x86_64"
+        } else {
+            Build-Recompiled-C -Abi $TargetAbi
         }
     } finally {
         Pop-Location
@@ -309,6 +425,12 @@ New-Item -ItemType Directory -Path $abiStagingDir -Force | Out-Null
 Stage-So-File -SourcePath $soFile -DestPath (Join-Path $abiStagingDir "libblazing_recomp.so")
 Write-Host "   + Incluyendo $TargetAbi ($soFile)"
 
+$recompSo = Join-Path $RepoRoot "target\recompiled\$TargetAbi\libblazing_recompiled.so"
+if (Test-Path $recompSo) {
+    Stage-So-File -SourcePath $recompSo -DestPath (Join-Path $abiStagingDir "libblazing_recompiled.so")
+    Write-Host "   + Incluyendo AOT recomp: $TargetAbi ($recompSo)"
+}
+
 # Si existen otros ABIs ya compilados en target, incorporarlos (Fat APK multi-arquitectura)
 foreach ($arch in $abiMap.Keys) {
     $abi = $abiMap[$arch]
@@ -319,6 +441,12 @@ foreach ($arch in $abiMap.Keys) {
             New-Item -ItemType Directory -Path $otherStaging -Force | Out-Null
             Stage-So-File -SourcePath $otherSo -DestPath (Join-Path $otherStaging "libblazing_recomp.so")
             Write-Host "   + Incluyendo soporte multi-ABI: $abi ($otherSo)"
+
+            $otherRecomp = Join-Path $RepoRoot "target\recompiled\$abi\libblazing_recompiled.so"
+            if (Test-Path $otherRecomp) {
+                Stage-So-File -SourcePath $otherRecomp -DestPath (Join-Path $otherStaging "libblazing_recompiled.so")
+                Write-Host "   + Incluyendo soporte multi-ABI AOT recomp: $abi ($otherRecomp)"
+            }
         }
     }
 }
