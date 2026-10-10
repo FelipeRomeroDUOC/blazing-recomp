@@ -127,14 +127,12 @@ struct DrawPhases {
 
 /// Backend de renderizado preferente.
 ///
-/// `true`: intentar **OpenGL ES** antes que Vulkan. Es un **experimento de
-/// presentación** (2026-10-10): la medición en tablet demostró que el coste de
-/// `present` (~51 ms en retrato a 1200x2000) es ajeno a nuestra carga (~2,5 ms)
-/// y solo baja reduciendo los píxeles presentados, así que queda por saber si
-/// depende del camino de presentación de Vulkan. Es la única palanca que no
-/// sacrifica nitidez. Si con GLES `present` sigue en ~51 ms, el coste es de la
-/// composición de pantalla (ajena al backend) y se restaura a `false`.
-const PREFERIR_OPENGL_ES: bool = true;
+/// `false`: intentar **Vulkan** primero (bajo overhead de CPU y sincronización
+/// directa por hardware), con **OpenGL ES** como red de seguridad. El experimento
+/// de presentación concluyó (2026-10-10): OpenGL ES no redujo la latencia de
+/// `present` (89-105 ms en retrato) y añadió sobrecarga en CPU, confirmando que
+/// el cuello de botella de presentación es de composición de pantalla y no del API gráfico.
+const PREFERIR_OPENGL_ES: bool = false;
 
 /// Calibración de presentación del arranque.
 ///
@@ -146,6 +144,8 @@ const PREFERIR_OPENGL_ES: bool = true;
 /// eligiendo siempre la referencia. El mecanismo (`src/present.rs`) queda
 /// implementado y probado: poner esto a `true` vuelve a medir y adoptar.
 const CALIBRAR_PRESENTACION: bool = false;
+
+pub use crate::present::calcular_escala_swapchain;
 
 fn request_adapter_fallback(
     instance: &wgpu::Instance,
@@ -265,6 +265,9 @@ impl Compositor {
 
         let (w, h) = window.size();
         let (w, h) = (w.max(1), h.max(1));
+        let scale = calcular_escala_swapchain(w, h);
+        let rw = ((w as f32 * scale).round() as u32).max(1);
+        let rh = ((h as f32 * scale).round() as u32).max(1);
         let present_mode = if vsync {
             if caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
                 log::info!("PresentMode seleccionado: Mailbox (triple buffering libre de bloqueos)");
@@ -283,12 +286,12 @@ impl Compositor {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
-            width: w,
-            height: h,
+            width: rw,
+            height: rh,
             present_mode,
             alpha_mode,
             view_formats: vec![],
-            desired_maximum_frame_latency: 1,
+            desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
 
@@ -727,7 +730,7 @@ impl Compositor {
             queue,
             config,
             physical: (w, h),
-            scale: 1.0,
+            scale,
             present_modes: caps.present_modes.clone(),
             game_pipeline,
             game_bind_group,
@@ -827,6 +830,7 @@ impl Compositor {
         let (w, h) = (window_physical.0.max(1), window_physical.1.max(1));
         if (w, h) != self.physical {
             self.physical = (w, h);
+            self.scale = calcular_escala_swapchain(w, h);
         }
         let (rw, rh) = self.render_target();
         if (rw, rh) != (self.config.width, self.config.height) {
@@ -1659,7 +1663,10 @@ impl AppState {
         if self.perf_file.is_some() || self.perf_write_warned {
             return;
         }
-        let is_native = self.latest_frame.as_ref().map_or(false, |p| p.is_native);
+        let is_native = self.latest_frame.as_ref().map_or_else(
+            || crate::recomp::load_native_blocks().is_some(),
+            |p| p.is_native,
+        );
         let backend = self
             .compositor
             .as_ref()

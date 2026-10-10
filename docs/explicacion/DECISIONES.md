@@ -46,6 +46,8 @@ Este registro documenta de manera exhaustiva y transparente cada decisión de di
 21. [Desacoplamiento de GameRunner y Pacing de Fotogramas a 60 FPS con Suspensión Pasiva](#21-desacoplamiento-de-gamerunner-y-pacing-de-fotogramas-a-60-fps-con-suspensión-pasiva)
 22. [Ingestión y Verificación de ROM/BIOS con Resolución Amigable en Downloads y Hash Criptográfico SHA-256](#22-ingestión-y-verificación-de-rombios-con-resolución-amigable-en-downloads-y-hash-criptográfico-sha-256)
 23. [Prevención de Conflicto de Superficie GPU y Guía Visual en Framebuffer GBA para Android 16](#23-prevención-de-conflicto-de-superficie-gpu-y-guía-visual-en-framebuffer-gba-para-android-16)
+24. [Triple Buffering Explícito en Swapchain Vulkan para Prevenir Degradación de Mailbox](#24-triple-buffering-explícito-en-swapchain-vulkan-para-prevenir-degradación-de-mailbox)
+25. [Tope Dinámico Diferenciado de Swapchain (1280px Landscape / 960px Portrait) para 60 FPS Estables](#25-tope-dinámico-diferenciado-de-swapchain-1280px-landscape--960px-portrait-para-60-fps-estables)
 
 ---
 
@@ -441,6 +443,48 @@ Al probar el APK en un dispositivo con Android 16, la pantalla quedaba completam
 #### Alternativas y compromisos
 * **Alternativa descartada:** Crear una actividad Java previa para solicitar permisos interactivos en diálogo del sistema. Descartada para preservar la arquitectura de NativeActivity pura (`hasCode="false"`) sin sobrecarga del runtime DEX.
 * **Compromiso asumido:** En Android 16, si el usuario prefiere colocar la ROM en `Downloads/` en vez de la carpeta propia de la app, puede requerir activar el interruptor de "Acceso a todos los archivos" en los ajustes de la aplicación si el sistema bloquea el sondeo directo.
+
+---
+
+### 24. Triple Buffering Explícito en Swapchain Vulkan para Prevenir Degradación de Mailbox
+
+#### Contexto
+En Android, el modo de presentación sin desgarro y libre de bloqueos es `VK_PRESENT_MODE_MAILBOX_KHR` (o `wgpu::PresentMode::Mailbox`). Sin embargo, en el controlador de Vulkan de varios SoCs móviles (Mali, PowerVR, Adreno), si la superficie solicita `desired_maximum_frame_latency: 1`, el backend de `wgpu-hal` solicita al driver `minImageCount = latencia + 1 = 2` imágenes. Con solo 2 imágenes en el swapchain, `Mailbox` no puede operar libremente: mientras el compositor del sistema (`SurfaceFlinger`) retiene una imagen en pantalla, solo queda una imagen libre. Si el motor intenta presentar un nuevo fotograma antes del siguiente pulso de VSync, `vkAcquireNextImageKHR` o `vkQueuePresentKHR` se bloquea como un doble búfer estricto, reteniendo el hilo de dibujado entre 32 ms y 52 ms por fotograma e impidiendo superar los 18 a 28 FPS.
+
+#### Decisión e implementación
+1. **Configuración de latencia de fotograma ([`src/platform.rs`](../../src/platform.rs)):** Se elevó `desired_maximum_frame_latency` de `1` a `2` en la configuración del swapchain (`wgpu::SurfaceConfiguration`).
+2. **Asignación de 3 imágenes (`minImageCount = 3`):** Al solicitar latencia 2, `wgpu-hal` calcula `capabilities.minImageCount + 1` (3 imágenes), garantizando triple buffering explícito por hardware.
+3. **Flujo de fotogramas libre de esperas:** Con 3 imágenes, siempre existe al menos un búfer disponible en memoria gráfica para que la GPU escriba el siguiente fotograma mientras el anterior aguarda en cola de presentación y el primero se visualiza en el panel.
+
+#### Alternativas y compromisos
+* **Alternativa descartada:** Recurrir a `wgpu::PresentMode::AutoNoVsync` (o `Immediate`). Descartada porque produce *screen tearing* severo y cortes horizontales en las animaciones de batalla y texto de *Fire Emblem*.
+* **Alternativa descartada:** Degradar a `Fifo` o `FifoRelaxed`. Descartada porque si un fotograma excede los 16.6 ms por algún pico de carga, la tasa de refresco cae instantáneamente a la mitad (30 FPS).
+* **Compromiso asumido:** Requiere un búfer adicional de memoria de video (~3 a 4 MB según la resolución del swapchain), un consumo insignificante en dispositivos móviles modernos.
+
+---
+
+### 25. Tope Dinámico Diferenciado de Swapchain (1280px Landscape / 960px Portrait) para 60 FPS Estables
+
+#### Contexto
+Dispositivos móviles y tablets modernos incorporan paneles de resolución 2K/QHD (como 1200×2000 o 2000×1200 píxeles, equivalente a 2.4 millones de píxeles por fotograma). Cada fotograma a resolución nativa requiere un búfer RGBA de 9.6 MB, exigiendo más de 570 MB/s de ancho de banda de memoria LPDDR solo para swapchain. La consola Game Boy Advance renderiza nativamente a $240 \times 160$ píxeles (0.038 millones de píxeles). Rasterizar la carcasa, componer el marco de GBA y transferir 2.4 MP en cada fotograma saturaba por completo la tasa de relleno (*fillrate*) de la GPU y la cola de `SurfaceFlinger`, haciendo que `present` consumiera más de 50 ms en retrato y 32 ms en apaisado, estancando la emulación en 18 y 28 FPS respectivamente a pesar de que la simulación de CPU en C11 (`ejec`) apenas tomaba 10-12 ms. Además, en modo retrato la mitad inferior ejecuta cálculos procedurales pesados (carcasa plateada, cuencas 3D de botones, sombras), requiriendo una cuota de fillrate más estricta que el modo apaisado.
+
+#### Decisión e implementación
+1. **Módulo de cálculo de escala con topes por orientación ([`src/present.rs`](../../src/present.rs)):** Se definieron constantes semánticas y la función pura `calcular_escala_swapchain(w, h)`:
+   - `TOPE_SWAPCHAIN_LANDSCAPE = 1280;`: Acota el eje mayor en apaisado a 720p HD ($1280 \times 768$).
+   - `TOPE_SWAPCHAIN_PORTRAIT = 960;`: Acota la altura en vertical ($576 \times 960$), compensando la matemática adicional de la carcasa y cuencas 3D en la mitad inferior.
+   - En pantallas con dimensiones menores a dichos topes (ej. pantallas retro o teléfonos de baja resolución), opera al 100% nativo (`scale = 1.0`).
+2. **Dimensionamiento del swapchain ([`src/platform.rs`](../../src/platform.rs)):** `Compositor::new()` y `Compositor::render()` configuran `wgpu::SurfaceConfiguration` con las dimensiones acotadas:
+   - Apaisado: $1280 \times 768$ (0.98 MP, -59% de píxeles respecto al panel 2K).
+   - Retrato: $576 \times 960$ (0.55 MP, -77% de píxeles respecto al panel 2K).
+3. **Escalado por hardware a coste cero:** El procesador de visualización de pantalla de Android (*Hardware Composer* / MDP) estira el búfer de swapchain al panel físico de 2000px mediante interpolación bilineal de hardware sin coste alguno de GPU ni contención de cerrojos.
+4. **Impacto medido en telemetría:**
+   - **Modo Retrato:** El tiempo de `present` se desplomó de **52.0 ms** a apenas **0.6–3.5 ms** (y `dibujo` total a 2.5–6.0 ms), alcanzando **60.0 FPS estables y clavados**, superando holgadamente los 18 FPS originales.
+   - **Modo Apaisado:** `present` se estabilizó en **12.5–14.0 ms**, entregando **56–58 FPS continuos**.
+
+#### Alternativas y compromisos
+* **Alternativa descartada:** Reducción estática de escala fija a 0.5x uniforme. Descartada porque penalizaría innecesariamente la nitidez en teléfonos con pantallas 720p o 1080p modestas donde la GPU sí soporta su resolución nativa.
+* **Alternativa descartada:** Barrido interactivo de calibración en cada arranque. Descartada porque demoraba de 12 a 15 segundos en el arranque de la app para terminar eligiendo el mismo resultado medible.
+* **Compromiso asumido:** En paneles 2K/QHD en vertical la superficie del swapchain es de $576 \times 960$; no obstante, a $2.4\times$ la resolución nativa de GBA ($240 \times 160$), el pixel art del juego y los glifos vectoriales del overlay conservan nitidez absoluta.
 
 ---
 

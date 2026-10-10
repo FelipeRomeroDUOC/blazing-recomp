@@ -9,19 +9,19 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 ## [Sin publicar]
 
 ### Añadido
-* **Telemetría de rendimiento por fase del fotograma (`src/perf.rs`):** Cronometraje en milisegundos de ejecución CPU (`ejec`), composición de color (`color`), renderizado GPU (`dibujo`), espera de swapchain (`espera`) y vueltas vacías con persistencia automática en `Download/blazing-perf.txt`.
-* **Guía práctica de medición (`docs/guias/medir-rendimiento.md`):** Instrucciones paso a paso para recopilar y analizar métricas en dispositivos reales.
-* **Calibración de presentación del swapchain (`src/present.rs`):** Al arrancar, y en tramos de 3 s, la aplicación mide la latencia de fotogramas (`lat=1/2/3`) y el modo de presentación, elige el de menor coste de `present` (con margen del 5 % sobre la referencia) y lo registra en `blazing-perf.txt` con las líneas `# tramo`, `# resultado` y `# elegido`. Incluye dos sondas de diagnóstico que nunca se adoptan: presentar sin VSync y renderizar a media resolución.
-* **Cabecera de telemetría con el estado real del swapchain (`src/platform.rs`):** `blazing-perf.txt` empieza con `# backend=… modo=… present=<modo> alpha=<modo> reloj=…ns`, leyendo los valores realmente configurados en la superficie en vez de suponerlos.
+* **Topes dinámicos de resolución de swapchain diferenciados por orientación (`src/present.rs`):** Límites de resolución independientes para mitigar saturación de fillrate y ancho de banda en paneles 2K/QHD: 1280px para modo apaisado ($1280 \times 768$) y 960px para modo retrato ($576 \times 960$). Esto redujo el coste de `present` de 52 ms a 0.6–3.5 ms, alcanzando 60 FPS estables en vertical y 56–58 FPS en horizontal.
+* **Resolución canónica de biblioteca nativa AOT con `dladdr` (`src/recomp.rs`):** Resuelve la ruta física absoluta de `libblazing_recompiled.so` contigua a `libblazing_recomp.so`, superando las restricciones de los namespaces de Bionic linker en hilos secundarios de `NativeActivity`.
+* **Identificador SONAME en biblioteca C11 recompilada (`scripts/package_apk.ps1`):** Inclusión de flag `-Wl,-soname,libblazing_recompiled.so` en Clang NDK para garantizar vinculación dinámica válida en Android.
 
 ### Cambiado
+* **Triple buffering explícito en swapchain Vulkan (`src/platform.rs`):** Incremento de `desired_maximum_frame_latency` a 2 (`minImageCount = 3`), permitiendo que `VK_PRESENT_MODE_MAILBOX_KHR` opere sin degenerar en doble búfer bloqueante.
+* **Restauración de Vulkan como backend gráfico preferente (`src/platform.rs`):** `PREFERIR_OPENGL_ES = false` tras confirmar que OpenGL ES no reducía la latencia del swapchain y generaba sobrecarga adicional en CPU.
 * **Buzón de fotogramas no bloqueante (`src/pipeline.rs`):** el hilo de emulación deja de bloquearse esperando a la GPU (`sync_channel(1)` → buzón de un solo slot con pool de búferes reutilizables). Elimina la asignación de 153,6 KB por fotograma (~9 MB/s de basura) y desacopla la velocidad de juego del tiempo de dibujado.
 * **Desglose del tiempo de dibujo en la telemetría (`src/perf.rs`, `src/platform.rs`):** cada línea de `blazing-perf.txt` separa ahora `subida`, `codificacion` y `present` además de `dibujo` y `espera`, para atribuir el coste por fotograma.
 * **Escala de resolución de render en el compositor (`src/platform.rs`, `src/overlay.rs`):** el búfer del swapchain puede ser menor que la ventana (`ElemParams::scaled` reescala la geometría del overlay y del HUD) y el compositor lo reescala a pantalla completa. Con escala 1.0 el render es idéntico al anterior.
-* **Barrido de calibración desactivado por decisión (`src/platform.rs`):** la medición en tablet mostró que solo la reducción de resolución baja el coste de `present` (51,4 ms → 2,9 ms; 18 → 53-60 FPS) y se decidió preservar la nitidez nativa; el barrido gastaba 12-15 s por arranque para no adoptar nada. El mecanismo y sus tests se conservan, a una constante de distancia.
-* **Backend preferente conmutable y experimento de presentación (`src/platform.rs`):** el orden de intentos del contexto gráfico pasa a declararse en la constante `PREFERIR_OPENGL_ES` (OpenGL ES primero, Vulkan como red de seguridad) para comprobar si el coste de `present` depende del camino de presentación; la cabecera de telemetría indica el backend realmente activo.
 
 ### Corregido
+* **Fallo silencioso en carga de bloques recompilados:** Solucionado el problema donde `modo=INT` permanecía forzado y `nativos=0` por fallos de enlace relativo en Android.
 * **Prioridad de guardado de telemetría:** `init_perf_file` prioriza `/sdcard/Download/blazing-perf.txt` sobre el almacenamiento privado interno para facilitar el acceso sin exploradores de terceros en Android 11+.
 
 ---

@@ -82,3 +82,31 @@ fn test_run_frame_native_preserves_real_bios_stepping() {
     assert!(fallback > 0, "Debe avanzar en el intérprete paso a paso");
     assert!(!unsafe { BIOS_CALLED }, "El bloque nativo de la BIOS no debe ejecutarse");
 }
+
+#[test]
+fn test_recomp_canonical_path_derivation() {
+    let self_path = "/data/app/~~random/com.blazingrecomp.game/lib/arm64/libblazing_recomp.so";
+    let sibling = resolve_sibling_library_path(self_path, "libblazing_recompiled.so");
+    assert!(sibling.is_some());
+    let path = sibling.unwrap();
+    assert_eq!(
+        path.to_str().unwrap().replace('\\', "/"),
+        "/data/app/~~random/com.blazingrecomp.game/lib/arm64/libblazing_recompiled.so"
+    );
+
+    let apk_path = "/data/app/~~abc/base.apk!/lib/arm64-v8a/libblazing_recomp.so";
+    let apk_sibling = resolve_sibling_library_path(apk_path, "libblazing_recompiled.so");
+    assert!(apk_sibling.is_some());
+    assert_eq!(
+        apk_sibling.unwrap().to_str().unwrap().replace('\\', "/"),
+        "/data/app/~~abc/base.apk!/lib/arm64-v8a/libblazing_recompiled.so"
+    );
+
+    let bare_name = "libblazing_recomp.so";
+    let bare_res = resolve_sibling_library_path(bare_name, "libblazing_recompiled.so");
+    assert!(bare_res.is_some());
+    assert_eq!(
+        bare_res.unwrap().to_str().unwrap().replace('\\', "/"),
+        "libblazing_recompiled.so"
+    );
+}

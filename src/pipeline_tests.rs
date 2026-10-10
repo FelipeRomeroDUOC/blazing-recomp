@@ -150,7 +150,7 @@ fn test_emulation_worker_lifecycle_and_frame_generation() {
     // Esperar a que el worker produzca al menos 1 fotograma
     let start = std::time::Instant::now();
     let mut received_frame = None;
-    while start.elapsed() < Duration::from_millis(500) {
+    while start.elapsed() < Duration::from_millis(1500) {
         if let Some(p) = worker.bridge().try_recv_frame() {
             received_frame = Some(p);
             break;

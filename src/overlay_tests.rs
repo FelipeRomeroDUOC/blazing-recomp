@@ -370,11 +370,11 @@ fn test_overlay_bounding_boxes_cover_visual_elements() {
 /// si mide que el bloqueo en `present` lo justifica, y deja constancia en
 /// `blazing-perf.txt` con las líneas `# tramo` / `# elegido`.
 #[test]
-fn test_compositor_frame_latency_is_one() {
+fn test_compositor_frame_latency_triple_buffering() {
     let platform_src = include_str!("platform.rs");
     assert!(
-        platform_src.contains("desired_maximum_frame_latency: 1,"),
-        "Compositor debe configurar desired_maximum_frame_latency a 1"
+        platform_src.contains("desired_maximum_frame_latency: 2,"),
+        "Compositor debe configurar desired_maximum_frame_latency a 2 para forzar triple buffering real"
     );
 }
 

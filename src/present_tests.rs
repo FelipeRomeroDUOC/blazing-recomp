@@ -220,3 +220,55 @@ fn test_tamano_estable_no_emite_lineas() {
     assert!(cal.notificar_tamano((1200, 2000)).is_empty());
     assert!(!cal.finalizada());
 }
+
+/// Pruebas unitarias para el tope dinámico de resolución del swapchain.
+/// Garantiza que en pantallas de alta densidad (2K/QHD) se reduzca proporcionalmente
+/// el buffer para respetar el tope de 1280px (720p) sin sobrecargar la GPU ni memoria,
+/// y que en pantallas ≤ 1280px opere al 100% nativo.
+#[test]
+fn test_calcular_escala_swapchain_dispositivos() {
+    assert_eq!(TOPE_SWAPCHAIN_LANDSCAPE, 1280);
+    assert_eq!(TOPE_SWAPCHAIN_PORTRAIT, 960);
+    assert_eq!(TOPE_DIMENSION_SWAPCHAIN, 1280);
+
+    // 1. Tablet del usuario: 1200x2000 retrato (tope 960) y 2000x1200 apaisado (tope 1280)
+    let escala_portrait = calcular_escala_swapchain(1200, 2000);
+    assert!((escala_portrait - 0.48).abs() < 1e-5);
+    let rw_portrait = (1200.0f32 * escala_portrait).round() as u32;
+    let rh_portrait = (2000.0f32 * escala_portrait).round() as u32;
+    assert_eq!(rw_portrait, 576);
+    assert_eq!(rh_portrait, 960);
+
+    let escala_landscape = calcular_escala_swapchain(2000, 1200);
+    assert!((escala_landscape - 0.64).abs() < 1e-5);
+    let rw_landscape = (2000.0f32 * escala_landscape).round() as u32;
+    let rh_landscape = (1200.0f32 * escala_landscape).round() as u32;
+    assert_eq!(rw_landscape, 1280);
+    assert_eq!(rh_landscape, 768);
+
+    // 2. Teléfono FHD estándar (1080x1920 retrato -> tope 960; 1920x1080 apaisado -> tope 1280)
+    let escala_fhd_p = calcular_escala_swapchain(1080, 1920);
+    assert!((escala_fhd_p - 0.50).abs() < 1e-5);
+    let rh_fhd_p = (1920.0f32 * escala_fhd_p).round() as u32;
+    let rw_fhd_p = (1080.0f32 * escala_fhd_p).round() as u32;
+    assert_eq!(rw_fhd_p, 540);
+    assert_eq!(rh_fhd_p, 960);
+
+    let escala_fhd_l = calcular_escala_swapchain(1920, 1080);
+    let rw_fhd_l = (1920.0f32 * escala_fhd_l).round() as u32;
+    assert_eq!(rw_fhd_l, 1280);
+
+    // 3. Pantalla HD nativa apaisada (1280x720) -> 1.0 (nativo)
+    let escala_hd_l = calcular_escala_swapchain(1280, 720);
+    assert_eq!(escala_hd_l, 1.0);
+
+    // 4. Pantallas pequeñas o retro (< 960) -> 1.0 (nativo)
+    assert_eq!(calcular_escala_swapchain(800, 600), 1.0);
+    assert_eq!(calcular_escala_swapchain(480, 800), 1.0);
+    assert_eq!(calcular_escala_swapchain(240, 160), 1.0);
+    assert_eq!(calcular_escala_swapchain(0, 0), 1.0);
+
+    // 5. Pantalla extrema (ej. 4K/8K) -> clamp a 0.25 mínimo
+    let escala_extrema = calcular_escala_swapchain(4000, 8000);
+    assert_eq!(escala_extrema, 0.25);
+}

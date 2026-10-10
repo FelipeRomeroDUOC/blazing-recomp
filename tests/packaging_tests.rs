@@ -382,3 +382,20 @@ fn test_packaging_script_embeds_recompiled_library() {
         "El script debe definir la rutina Build-Recompiled-C"
     );
 }
+
+#[test]
+fn test_packaging_script_soname_flag() {
+    let script_path = repo_root().join("scripts").join("package_apk.ps1");
+    assert!(
+        script_path.exists(),
+        "El script scripts/package_apk.ps1 debe existir"
+    );
+
+    let script_content = fs::read_to_string(&script_path)
+        .expect("Debe poder leerse scripts/package_apk.ps1");
+
+    assert!(
+        script_content.contains("-Wl,-soname,libblazing_recompiled.so"),
+        "El script de empaquetado debe incluir el flag de SONAME al enlazar libblazing_recompiled.so"
+    );
+}

@@ -22,7 +22,7 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | [`platform.rs`](#módulo-platformrs) | 1 | Plataforma Android (solo compila con `cfg(target_os = "android")`): |
 | [`storage.rs`](#módulo-storagers) | 14 | Módulo interno del port. |
 | [`runner.rs`](#módulo-runnerrs) | 17 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
-| [`recomp.rs`](#módulo-recomprs) | 10 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
+| [`recomp.rs`](#módulo-recomprs) | 11 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
 | [`fps.rs`](#módulo-fpsrs) | 18 | Contador de FPS y generador de HUD visual en pantalla. |
 
 ---
@@ -886,6 +886,16 @@ Retorna la tupla `(bloques_nativos_ejecutados, pasos_interprete_fallback)`.
 **Firma:**
 ```rust
 pub fn run_frame_native( m: &mut Machine, table: &BlockTable, max_steps: u64, ) -> (u64, u64)
+```
+
+### `resolve_sibling_library_path` (Función)
+
+Resuelve la ruta a una biblioteca hermana contigua a partir de la ruta absoluta
+del módulo o ejecutable actual (usado para resolver `libblazing_recompiled.so` junto a `libblazing_recomp.so`).
+
+**Firma:**
+```rust
+pub(crate) fn resolve_sibling_library_path(self_path: &str, sibling_name: &str) -> Option<std::path::PathBuf>
 ```
 
 ### `open_library` (Función)

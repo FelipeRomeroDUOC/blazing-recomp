@@ -184,19 +184,67 @@ pub fn run_frame_native(
     (native, fallback)
 }
 
+/// Resuelve la ruta a una biblioteca hermana contigua a partir de la ruta absoluta
+/// del módulo o ejecutable actual (usado para resolver `libblazing_recompiled.so` junto a `libblazing_recomp.so`).
+#[allow(dead_code)]
+pub(crate) fn resolve_sibling_library_path(self_path: &str, sibling_name: &str) -> Option<std::path::PathBuf> {
+    let p = std::path::Path::new(self_path);
+    let parent = p.parent()?;
+    Some(parent.join(sibling_name))
+}
+
 #[cfg(target_os = "android")]
 mod dl {
     use std::ffi::{c_char, c_int, c_void, CStr, CString};
 
     const RTLD_NOW: c_int = 2;
 
+    #[repr(C)]
+    struct DlInfo {
+        dli_fname: *const c_char,
+        dli_fbase: *mut c_void,
+        dli_sname: *const c_char,
+        dli_saddr: *mut c_void,
+    }
+
     extern "C" {
         fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
         fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
         fn dlerror() -> *const c_char;
+        fn dladdr(addr: *const c_void, info: *mut DlInfo) -> c_int;
     }
 
     pub unsafe fn open_library(name: &str) -> Option<*mut c_void> {
+        // 1. Intentar resolver la ruta canónica absoluta contigua a libblazing_recomp.so vía dladdr
+        let mut info = std::mem::MaybeUninit::<DlInfo>::zeroed();
+        let res = dladdr(open_library as *const () as *const c_void, info.as_mut_ptr());
+        if res != 0 {
+            let info = info.assume_init();
+            if !info.dli_fname.is_null() {
+                let self_path = CStr::from_ptr(info.dli_fname).to_string_lossy();
+                if let Some(candidate) = super::resolve_sibling_library_path(&self_path, name) {
+                    if let Some(candidate_str) = candidate.to_str() {
+                        if let Ok(c_candidate) = CString::new(candidate_str) {
+                            let handle = dlopen(c_candidate.as_ptr(), RTLD_NOW);
+                            if !handle.is_null() {
+                                log::info!("dlopen: biblioteca cargada desde ruta canónica: {candidate_str}");
+                                return Some(handle);
+                            } else {
+                                let err = dlerror();
+                                let err_msg = if !err.is_null() {
+                                    CStr::from_ptr(err).to_string_lossy().into_owned()
+                                } else {
+                                    "desconocido".to_string()
+                                };
+                                log::debug!("dlopen('{candidate_str}') no pudo abrir: {err_msg}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback: intentar por nombre relativo estándar
         let c_name = CString::new(name).ok()?;
         let handle = dlopen(c_name.as_ptr(), RTLD_NOW);
         if handle.is_null() {
@@ -209,6 +257,7 @@ mod dl {
             log::warn!("dlopen('{name}') fallo: {err_msg}");
             None
         } else {
+            log::info!("dlopen: biblioteca cargada por nombre relativo: {name}");
             Some(handle)
         }
     }

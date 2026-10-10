@@ -305,8 +305,8 @@ function Build-Recompiled-C {
     }
 
     if ($needLink) {
-        Write-Host "   + [Clang $Abi] Enlazando libblazing_recompiled.so (-O2)..."
-        & $clang --target=$triple -shared -O2 -fomit-frame-pointer $obj0 $obj1 -o $outSo
+        Write-Host "   + [Clang $Abi] Enlazando libblazing_recompiled.so (-O2, soname)..."
+        & $clang --target=$triple -shared -O2 -fomit-frame-pointer "-Wl,-soname,libblazing_recompiled.so" $obj0 $obj1 -o $outSo
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Fallo enlazado de libblazing_recompiled.so para $Abi"
             exit $LASTEXITCODE

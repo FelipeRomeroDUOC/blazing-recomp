@@ -40,6 +40,34 @@ pub const MARGEN_MEJORA: f64 = 0.05;
 /// Factor de resolución del tramo de diagnóstico que reduce píxeles a renderizar.
 pub const ESCALA_REDUCIDA: f32 = 0.5;
 
+/// Dimensión máxima para el swapchain en modo apaisado (landscape).
+/// 1280px garantiza 60 FPS estables con escalado HD 720p sin sobrecargar el fillrate.
+pub const TOPE_SWAPCHAIN_LANDSCAPE: u32 = 1280;
+
+/// Dimensión máxima para el swapchain en modo retrato (portrait).
+/// Debido a la carga adicional de fragment shader al componer la carcasa y controles GBA SP
+/// en la mitad inferior, acotar la altura a 960px permite que el frame completo termine
+/// en <16.6 ms, alcanzando los 60 FPS estables en vertical.
+pub const TOPE_SWAPCHAIN_PORTRAIT: u32 = 960;
+
+/// Alias de compatibilidad hacia atrás para el tope general.
+pub const TOPE_DIMENSION_SWAPCHAIN: u32 = TOPE_SWAPCHAIN_LANDSCAPE;
+
+/// Calcula la escala de render del swapchain respetando el tope de dimensión máxima
+/// según la orientación de la pantalla (apaisado vs retrato).
+pub fn calcular_escala_swapchain(w: u32, h: u32) -> f32 {
+    let (max_dim, tope) = if w < h {
+        (h, TOPE_SWAPCHAIN_PORTRAIT)
+    } else {
+        (w.max(h), TOPE_SWAPCHAIN_LANDSCAPE)
+    };
+    if max_dim > tope {
+        (tope as f32 / max_dim as f32).clamp(0.25, 1.0)
+    } else {
+        1.0
+    }
+}
+
 /// Papel de un tramo dentro de la calibración.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Rol {
