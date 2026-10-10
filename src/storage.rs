@@ -120,7 +120,10 @@ pub fn resolve_search_directories(
     dirs.push(PathBuf::from("Download"));
     // 6. Carpeta roms relativa local (para pruebas en host de desarrollo)
     dirs.push(PathBuf::from("roms"));
-    // 7. Directorio interno privado de la aplicación provisto por AndroidApp
+    // 7. Rutas alternativas en emuladores (BlueStacks, Nox, AVD Android 9)
+    dirs.push(PathBuf::from("/mnt/sdcard/Download"));
+    dirs.push(PathBuf::from("/storage/self/primary/Download"));
+    // 8. Directorio interno privado de la aplicación provisto por AndroidApp
     if let Some(dir) = internal_data_dir {
         dirs.push(dir.to_path_buf());
     }

@@ -44,7 +44,7 @@ fn test_resolve_search_directories_includes_external_data() {
     let external = PathBuf::from("/sdcard/Android/data/com.blazingrecomp.game/files");
     let dirs = resolve_search_directories(Some(&internal), Some(&external));
 
-    assert!(dirs.len() >= 6);
+    assert!(dirs.len() >= 8);
     // Prioridad 1 debe ser la carpeta propia de la app (inmune a Scoped Storage)
     assert_eq!(dirs[0], external);
     // Prioridad 2 y 3 deben ser Downloads de Android
@@ -53,8 +53,11 @@ fn test_resolve_search_directories_includes_external_data() {
     // Rutas relativas locales
     assert_eq!(dirs[4], PathBuf::from("Download"));
     assert_eq!(dirs[5], PathBuf::from("roms"));
+    // Rutas de emuladores (Android 9 / BlueStacks / Nox)
+    assert_eq!(dirs[6], PathBuf::from("/mnt/sdcard/Download"));
+    assert_eq!(dirs[7], PathBuf::from("/storage/self/primary/Download"));
     // Directorio interno al final
-    assert_eq!(dirs[6], internal);
+    assert_eq!(dirs[8], internal);
 }
 
 #[test]

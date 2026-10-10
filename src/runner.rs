@@ -43,7 +43,7 @@ impl GameRunner {
         let lut = ColorLut::build(&settings);
         let temporal = Temporal::new(
             GBA_PIXELS,
-            ResponseMode::Smart,
+            ResponseMode::Simple,
             1,
             screen::blend::default_rho(screen_kind),
         );
@@ -116,7 +116,7 @@ impl GameRunner {
         self.lut = ColorLut::build(&settings);
         self.temporal = Temporal::new(
             GBA_PIXELS,
-            ResponseMode::Smart,
+            ResponseMode::Simple,
             1,
             screen::blend::default_rho(screen_kind),
         );

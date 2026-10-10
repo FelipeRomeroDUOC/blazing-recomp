@@ -186,16 +186,27 @@ impl Compositor {
 
         let (w, h) = window.size();
         let (w, h) = (w.max(1), h.max(1));
+        let present_mode = if vsync {
+            if caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+                log::info!("PresentMode seleccionado: Mailbox (triple buffering libre de bloqueos)");
+                wgpu::PresentMode::Mailbox
+            } else if caps.present_modes.contains(&wgpu::PresentMode::FifoRelaxed) {
+                log::info!("PresentMode seleccionado: FifoRelaxed (VSync adaptable sin caídas)");
+                wgpu::PresentMode::FifoRelaxed
+            } else {
+                log::info!("PresentMode seleccionado: AutoVsync (FIFO estándar)");
+                wgpu::PresentMode::AutoVsync
+            }
+        } else {
+            wgpu::PresentMode::AutoNoVsync
+        };
+
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format,
             width: w,
             height: h,
-            present_mode: if vsync {
-                wgpu::PresentMode::AutoVsync
-            } else {
-                wgpu::PresentMode::AutoNoVsync
-            },
+            present_mode,
             alpha_mode,
             view_formats: vec![],
             desired_maximum_frame_latency: 1,
@@ -1058,14 +1069,14 @@ impl AppState {
         }
     }
 
-    /// Avanza un fotograma del juego si hay un runner activo y redibuja en el compositor.
-    fn step_and_redraw(&mut self) {
+    /// Avanza un fotograma del juego si hay un runner activo.
+    fn step(&mut self) {
         if let Some(runner) = self.runner.as_mut() {
             runner.set_keys(self.touch.key_mask());
             runner.step_frame();
         }
-        self.redraw();
     }
+
 
     /// Publica la máscara KEYINPUT del controlador táctil en `GameRunner`.
     /// Con `touch_enabled == false` el método del controlador ya devuelve
@@ -1211,13 +1222,20 @@ pub fn android_main(app: android_activity::AndroidApp) {
 
         let mut finishing = false;
         let mut resumed = false;
-        let mut last_frame = std::time::Instant::now();
-        let target_frame_time = std::time::Duration::from_nanos(16_666_667); // 60 FPS
+        let mut last_tick = std::time::Instant::now();
+        let mut lag = std::time::Duration::ZERO;
+        let mut last_scan_attempt = std::time::Instant::now();
+        const FRAME_DURATION: std::time::Duration = std::time::Duration::from_nanos(16_666_667); // 60 FPS
+        const MAX_ACCUMULATED: std::time::Duration = std::time::Duration::from_millis(50); // Prevenir espiral
 
         while !finishing {
-            // Suspender espera activa cuando la app no está visible en primer plano
-            let timeout = if resumed && state.window.is_some() {
+            // Suspender espera activa cuando la app no está en primer plano.
+            // Si no hay runner (esperando permisos/ROM), usar un timeout de 100ms para permitir
+            // reescaneo periódico sin bloquear indefinidamente en Android 9 emulado.
+            let timeout = if resumed && state.window.is_some() && state.runner.is_some() {
                 Some(std::time::Duration::ZERO)
+            } else if resumed && state.window.is_some() {
+                Some(std::time::Duration::from_millis(100))
             } else {
                 None
             };
@@ -1243,6 +1261,8 @@ pub fn android_main(app: android_activity::AndroidApp) {
                     MainEvent::Resume { .. } => {
                         log::info!("ciclo de vida: Resume");
                         resumed = true;
+                        last_tick = std::time::Instant::now();
+                        lag = std::time::Duration::ZERO;
                         if state.runner.is_none() {
                             log::info!("sin GameRunner cargado: reintentando escaneo de ROM tras Resume");
                             if let Ok(assets) = crate::storage::scan_and_load_game(&search_dirs) {
@@ -1280,18 +1300,52 @@ pub fn android_main(app: android_activity::AndroidApp) {
                 }) {}
             }
 
+            // Si aún no se ha cargado el juego (ej. usuario concedió permisos en Android 9 emulado sin onResume),
+            // reintentar escaneo al tocar la pantalla o cada 1 segundo automáticamente.
+            if resumed && state.runner.is_none() {
+                if needs_redraw || last_scan_attempt.elapsed() >= std::time::Duration::from_millis(1000) {
+                    last_scan_attempt = std::time::Instant::now();
+                    if let Ok(assets) = crate::storage::scan_and_load_game(&search_dirs) {
+                        log::info!(
+                            "ROM oficial detectada en {:?}. Inicializando motor.",
+                            assets.rom_path
+                        );
+                        state.load(assets.rom, assets.bios.as_deref());
+                        last_tick = std::time::Instant::now();
+                        lag = std::time::Duration::ZERO;
+                        needs_redraw = true;
+                    }
+                }
+            }
+
             if resumed && state.window.is_some() {
-                let elapsed = last_frame.elapsed();
-                if elapsed >= target_frame_time {
-                    last_frame = std::time::Instant::now();
-                    state.step_and_redraw();
-                } else if needs_redraw {
-                    state.redraw();
-                } else {
-                    let remaining = target_frame_time - elapsed;
-                    if remaining > std::time::Duration::from_millis(1) {
+                let now = std::time::Instant::now();
+                let mut delta = now.duration_since(last_tick);
+                last_tick = now;
+                if delta > MAX_ACCUMULATED {
+                    delta = MAX_ACCUMULATED;
+                }
+                lag += delta;
+
+                if state.runner.is_some() {
+                    let mut steps = 0;
+                    while lag >= FRAME_DURATION && steps < 2 {
+                        state.step();
+                        lag -= FRAME_DURATION;
+                        steps += 1;
+                    }
+                    if lag >= FRAME_DURATION {
+                        lag = std::time::Duration::ZERO;
+                    }
+                    if steps > 0 || needs_redraw {
+                        state.redraw();
+                    }
+                    let remaining = FRAME_DURATION.saturating_sub(lag);
+                    if remaining > std::time::Duration::from_millis(2) {
                         std::thread::sleep(std::time::Duration::from_millis(1));
                     }
+                } else if needs_redraw {
+                    state.redraw();
                 }
             } else if needs_redraw {
                 state.redraw();
