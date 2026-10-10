@@ -143,35 +143,33 @@ fn request_adapter_fallback(
 fn create_gpu_context(
     window: Arc<AndroidWindow>,
 ) -> Result<(wgpu::Surface<'static>, wgpu::Adapter), String> {
-    // En Android (y especialmente en emuladores como BlueStacks), probar primero
-    // Backends::GL (OpenGL ES 3.0). De este modo, la ventana nativa (ANativeWindow)
-    // se conecta limpiamente a EGL sin interferencias de capas Vulkan parciales
-    // que puedan bloquear el descriptor con EGL_BAD_ALLOC.
-    let gl_instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::GL,
-        ..Default::default()
-    });
-    if let Ok(gl_surface) = gl_instance.create_surface(window.clone()) {
-        if let Ok(gl_adapter) = request_adapter_fallback(&gl_instance, &gl_surface) {
-            log::info!("Adaptador GPU inicializado exitosamente con OpenGL ES");
-            return Ok((gl_surface, gl_adapter));
-        }
-    }
-
-    log::warn!("Backend OpenGL ES no pudo inicializar la superficie. Probando Vulkan...");
-
+    // 1. Intentar Vulkan primero (bajo overhead de CPU y sincronización directa por hardware)
     let vk_instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
         backends: wgpu::Backends::VULKAN,
         ..Default::default()
     });
-    let vk_surface = vk_instance
-        .create_surface(window.clone())
-        .map_err(|e| format!("surface Vulkan: {e}"))?;
-    let vk_adapter = request_adapter_fallback(&vk_instance, &vk_surface)
-        .map_err(|e| format!("no se encontró adaptador GPU compatible ni en GLES ni en Vulkan: {e}"))?;
+    if let Ok(vk_surface) = vk_instance.create_surface(window.clone()) {
+        if let Ok(vk_adapter) = request_adapter_fallback(&vk_instance, &vk_surface) {
+            log::info!("Adaptador GPU inicializado exitosamente con Vulkan nativo");
+            return Ok((vk_surface, vk_adapter));
+        }
+    }
 
-    log::info!("Adaptador GPU inicializado exitosamente con Vulkan");
-    Ok((vk_surface, vk_adapter))
+    log::warn!("Backend Vulkan no pudo inicializar la superficie o adaptador. Probando OpenGL ES como fallback...");
+
+    // 2. Fallback a OpenGL ES (compatibilidad en emuladores o dispositivos sin Vulkan)
+    let gl_instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+        backends: wgpu::Backends::GL,
+        ..Default::default()
+    });
+    let gl_surface = gl_instance
+        .create_surface(window.clone())
+        .map_err(|e| format!("surface OpenGL ES: {e}"))?;
+    let gl_adapter = request_adapter_fallback(&gl_instance, &gl_surface)
+        .map_err(|e| format!("no se encontró adaptador GPU compatible ni en Vulkan ni en GLES: {e}"))?;
+
+    log::info!("Adaptador GPU inicializado exitosamente con OpenGL ES");
+    Ok((gl_surface, gl_adapter))
 }
 
 impl Compositor {
@@ -565,6 +563,11 @@ impl Compositor {
 
         let mut fps_counter = crate::fps::FpsCounter::new()
             .map_err(|e| format!("fps counter init: {e}"))?;
+        let backend_name = match adapter.get_info().backend {
+            wgpu::Backend::Vulkan => "Vulkan",
+            _ => "OpenGL",
+        };
+        fps_counter.set_renderer(backend_name);
 
         let (hud_w, hud_h) = fps_counter.dimensions();
         let hud_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -763,7 +766,6 @@ impl Compositor {
 
         // 4. Actualizar telemetría y textura del HUD de FPS
         self.fps_counter.set_native(is_native);
-        self.fps_counter.on_frame();
         if self.fps_counter.is_dirty() {
             let (hud_w, hud_h) = self.fps_counter.dimensions();
             let hud_rgba_bytes = unsafe {
@@ -796,8 +798,8 @@ impl Compositor {
 
         // Posición del badge de FPS: márgenes seguros de Safe Area contra esquinas redondeadas y notch
         let (hud_w, hud_h) = self.fps_counter.dimensions();
-        let margin_x = if w > h { 48.0f32 } else { 24.0f32 };
-        let margin_y = if w > h { 20.0f32 } else { 36.0f32 };
+        let margin_x = if w > h { 96.0f32 } else { 24.0f32 };
+        let margin_y = if w > h { 24.0f32 } else { 44.0f32 };
         let hud_ox = (w as f32) - (hud_w as f32) - margin_x;
         let hud_oy = margin_y;
 
@@ -1127,6 +1129,32 @@ impl PermissionsManager {
             log::warn!("permisos: error comprobando o solicitando permisos JNI ({e:?})");
         }
     }
+
+    /// Comprueba si el dispositivo es un Android TV (Leanback / UI_MODE_TYPE_TELEVISION).
+    fn is_television(&self) -> bool {
+        let run = |env: &mut jni::Env| -> Result<bool, jni::errors::Error> {
+            let res_obj = env.call_method(
+                self.activity.as_obj(),
+                jni_str!("getResources"),
+                jni_sig!("()Landroid/content/res/Resources;"),
+                &[],
+            )?.l()?;
+            let conf_obj = env.call_method(
+                &res_obj,
+                jni_str!("getConfiguration"),
+                jni_sig!("()Landroid/content/res/Configuration;"),
+                &[],
+            )?.l()?;
+            let ui_mode = env.get_field(&conf_obj, jni_str!("uiMode"), jni_sig!("I"))?.i()?;
+            let conf_class = env.find_class(jni_str!("android/content/res/Configuration"))?;
+            let tv_mode = env.get_static_field(&conf_class, jni_str!("UI_MODE_TYPE_TELEVISION"), jni_sig!("I"))?.i()?;
+            Ok((ui_mode & 0x0F) == tv_mode)
+        };
+        match self.vm.attach_current_thread(run) {
+            Ok(is_tv) => is_tv,
+            Err(_) => false,
+        }
+    }
 }
 
 /// Estado de la aplicación: lo que persiste entre pausas y reanudaciones
@@ -1294,10 +1322,29 @@ impl AppState {
         }
     }
 
-    /// Combina la entrada táctil con la de mandos físicos (operación AND bit a bit activa en bajo).
+    /// Combina la entrada táctil con la de mandos físicos (operación AND bit a bit activa en bajo)
+    /// con arbitraje para erradicar dobles pulsaciones en emuladores como BlueStacks.
     #[inline]
     fn combined_keys(&self) -> u16 {
-        self.touch.key_mask() & self.physical_key_mask
+        let touch_keys = if self.physical_key_mask != 0x03FF {
+            // Si hay alguna dirección física presionada, enmascarar direcciones táctiles
+            let phys_dpad = !self.physical_key_mask & 0x00F0;
+            if phys_dpad != 0 {
+                self.touch.key_mask() | 0x00F0
+            } else {
+                self.touch.key_mask()
+            }
+        } else {
+            self.touch.key_mask()
+        };
+        touch_keys & self.physical_key_mask
+    }
+
+    /// Registra el avance de `count` fotogramas de simulación GBA en la telemetría de FPS.
+    fn on_sim_frames(&mut self, count: u32) {
+        if let Some(comp) = self.compositor.as_mut() {
+            comp.fps_counter.on_frames(count);
+        }
     }
 
     /// Avanza un fotograma del juego si hay un runner activo.
@@ -1319,6 +1366,11 @@ impl AppState {
 
     /// Procesa eventos de teclado, mandos físicos y control remoto de Android TV.
     fn on_key(&mut self, event: &KeyEvent) -> bool {
+        // Filtrar autorepeat del SO (evita repeticiones espurias en teclados de PC / BlueStacks)
+        if event.action() == KeyAction::Down && event.repeat_count() > 0 {
+            return true;
+        }
+
         let code = event.key_code();
         let button = match code {
             Keycode::DpadUp => crate::input::Button::Up,
@@ -1367,6 +1419,7 @@ impl AppState {
     /// transiciones de pulsación. Devuelve `true` si el estado de los botones
     /// cambió y requiere redibujar.
     fn on_motion(&mut self, event: &MotionEvent<'_>) -> bool {
+        self.touch.touch_enabled = true;
         if let Some(window) = &self.window {
             let (w, h) = window.size();
             if w > 0 && h > 0 && self.touch.size() != (w, h) {
@@ -1447,6 +1500,10 @@ pub fn android_main(app: android_activity::AndroidApp) {
         let permissions = PermissionsManager::connect(app.vm_as_ptr(), app.activity_as_ptr());
         if let Some(ref p) = permissions {
             p.request_storage_permissions();
+            if p.is_television() {
+                log::info!("Dispositivo Android TV detectado: desactivando overlay táctil en pantalla");
+                state.touch.touch_enabled = false;
+            }
         }
 
         // Búsqueda automática de la ROM oficial y BIOS en Downloads y almacenamiento propio
@@ -1617,6 +1674,9 @@ pub fn android_main(app: android_activity::AndroidApp) {
                     }
                     if lag >= FRAME_DURATION {
                         lag = std::time::Duration::ZERO;
+                    }
+                    if steps > 0 {
+                        state.on_sim_frames(steps);
                     }
                     if steps > 0 || needs_redraw {
                         state.redraw();

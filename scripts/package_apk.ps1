@@ -268,8 +268,8 @@ function Build-Recompiled-C {
     }
 
     if ($needCompile0) {
-        Write-Host "   + [Clang $Abi] Compilando unit0 (bios.0.c)..."
-        & $clang --target=$triple -O1 -fPIC -I $cSrcDir -c $unit0 -o $obj0
+        Write-Host "   + [Clang $Abi] Compilando unit0 (bios.0.c) con -O2..."
+        & $clang --target=$triple -O2 -fPIC -fomit-frame-pointer -I $cSrcDir -c $unit0 -o $obj0
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Fallo compilacion de unit0 para $Abi"
             exit $LASTEXITCODE
@@ -288,8 +288,8 @@ function Build-Recompiled-C {
     }
 
     if ($needCompile1) {
-        Write-Host "   + [Clang $Abi] Compilando unit1 (bios.1.c)..."
-        & $clang --target=$triple -O1 -fPIC -I $cSrcDir -c $unit1 -o $obj1
+        Write-Host "   + [Clang $Abi] Compilando unit1 (bios.1.c) con -O2..."
+        & $clang --target=$triple -O2 -fPIC -fomit-frame-pointer -I $cSrcDir -c $unit1 -o $obj1
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Fallo compilacion de unit1 para $Abi"
             exit $LASTEXITCODE
@@ -305,8 +305,8 @@ function Build-Recompiled-C {
     }
 
     if ($needLink) {
-        Write-Host "   + [Clang $Abi] Enlazando libblazing_recompiled.so..."
-        & $clang --target=$triple -shared -O1 $obj0 $obj1 -o $outSo
+        Write-Host "   + [Clang $Abi] Enlazando libblazing_recompiled.so (-O2)..."
+        & $clang --target=$triple -shared -O2 -fomit-frame-pointer $obj0 $obj1 -o $outSo
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Fallo enlazado de libblazing_recompiled.so para $Abi"
             exit $LASTEXITCODE

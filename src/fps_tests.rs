@@ -105,3 +105,42 @@ fn test_hud_shader_wgsl_validates() {
         }
     }
 }
+
+#[test]
+fn test_fps_badge_renderer_switch_triggers_dirty() {
+    let mut counter = FpsCounter::new().expect("FpsCounter debe inicializarse");
+    assert_eq!(counter.renderer(), "Vulkan");
+    counter.mark_clean();
+    assert!(!counter.is_dirty());
+
+    counter.set_renderer("OpenGL");
+    assert_eq!(counter.renderer(), "OpenGL");
+    assert!(counter.is_dirty(), "Cambiar renderer a OpenGL debe marcar dirty");
+
+    counter.mark_clean();
+    counter.set_renderer("OpenGL");
+    assert!(!counter.is_dirty(), "Mismo renderer no debe marcar dirty");
+
+    counter.set_renderer("Vulkan");
+    assert_eq!(counter.renderer(), "Vulkan");
+    assert!(counter.is_dirty(), "Cambiar renderer a Vulkan debe marcar dirty");
+}
+
+#[test]
+fn test_fps_counter_on_frames_batches_correctly() {
+    let mut counter = FpsCounter::new().expect("FpsCounter debe inicializarse");
+    let t0 = Instant::now();
+
+    // 30 llamadas batch de 2 frames cada una (60 frames en total en 1 segundo)
+    for i in 1..=30 {
+        let frame_time = t0 + Duration::from_micros(i * 33_333);
+        counter.on_frames_at(2, frame_time);
+    }
+
+    let calculated_fps = counter.fps();
+    assert!(
+        calculated_fps >= 58.0 && calculated_fps <= 62.0,
+        "FPS por lotes ({calculated_fps}) debe reflejar 60 GBA frames en [58.0, 62.0]"
+    );
+}
+

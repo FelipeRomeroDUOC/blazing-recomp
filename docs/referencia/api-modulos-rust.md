@@ -23,7 +23,7 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | [`storage.rs`](#módulo-storagers) | 14 | Módulo interno del port. |
 | [`runner.rs`](#módulo-runnerrs) | 15 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
 | [`recomp.rs`](#módulo-recomprs) | 10 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
-| [`fps.rs`](#módulo-fpsrs) | 14 | Contador de FPS y generador de HUD visual en pantalla. |
+| [`fps.rs`](#módulo-fpsrs) | 18 | Contador de FPS y generador de HUD visual en pantalla. |
 
 ---
 
@@ -948,6 +948,24 @@ Indica si el motor está reportando modo nativo AOT.
 pub fn is_native(&self) -> bool
 ```
 
+### `set_renderer` (Función)
+
+Actualiza el nombre del renderer activo de la GPU (ej. "Vulkan" u "OpenGL").
+
+**Firma:**
+```rust
+pub fn set_renderer(&mut self, renderer: &'static str)
+```
+
+### `renderer` (Función)
+
+Nombre del backend gráfico activo reportado en el badge.
+
+**Firma:**
+```rust
+pub fn renderer(&self) -> &'static str
+```
+
 ### `dimensions` (Función)
 
 Dimensiones del badge en píxeles `(ancho, alto)`.
@@ -986,7 +1004,7 @@ pub fn mark_clean(&mut self)
 
 ### `badge_rgba` (Función)
 
-Píxeles RGBA del badge actual (80x26).
+Píxeles RGBA del badge actual (216x34).
 
 **Firma:**
 ```rust
@@ -995,20 +1013,38 @@ pub fn badge_rgba(&self) -> &[[u8; 4]]
 
 ### `on_frame` (Función)
 
-Registra el avance de un fotograma en el instante actual.
+Registra el avance de un solo fotograma en el instante actual.
 
 **Firma:**
 ```rust
 pub fn on_frame(&mut self)
 ```
 
+### `on_frames` (Función)
+
+Registra el avance de `count` fotogramas de simulación en el instante actual.
+
+**Firma:**
+```rust
+pub fn on_frames(&mut self, count: u32)
+```
+
 ### `on_frame_at` (Función)
 
-Registra el avance de un fotograma con un timestamp explícito (determinista para tests).
+Registra el avance de un solo fotograma con un timestamp explícito (tests deterministas).
 
 **Firma:**
 ```rust
 pub fn on_frame_at(&mut self, now: Instant)
+```
+
+### `on_frames_at` (Función)
+
+Registra el avance de `count` fotogramas con un timestamp explícito (tests deterministas).
+
+**Firma:**
+```rust
+pub fn on_frames_at(&mut self, count: u32, now: Instant)
 ```
 
 ### `render_badge` (Función)

@@ -8,8 +8,8 @@
 
 use std::time::{Duration, Instant};
 
-pub const BADGE_WIDTH: usize = 112;
-pub const BADGE_HEIGHT: usize = 26;
+pub const BADGE_WIDTH: usize = 216;
+pub const BADGE_HEIGHT: usize = 34;
 
 /// Contador de fotogramas y generador del badge visual de FPS.
 pub struct FpsCounter {
@@ -17,8 +17,9 @@ pub struct FpsCounter {
     last_interval_start: Instant,
     frames_in_interval: u32,
     current_fps: f32,
-    last_rendered: Option<(u32, bool)>,
+    last_rendered: Option<(u32, bool, &'static str)>,
     is_native: bool,
+    renderer: &'static str,
     dirty: bool,
     buffer: Vec<[u8; 4]>,
 }
@@ -39,12 +40,13 @@ impl FpsCounter {
             current_fps: 60.0,
             last_rendered: None,
             is_native: true,
+            renderer: "Vulkan",
             dirty: true,
             buffer: vec![[0, 0, 0, 0]; BADGE_WIDTH * BADGE_HEIGHT],
         };
 
         counter.render_badge(60);
-        counter.last_rendered = Some((60, true));
+        counter.last_rendered = Some((60, true, "Vulkan"));
         counter.dirty = true;
         Ok(counter)
     }
@@ -55,7 +57,7 @@ impl FpsCounter {
             self.is_native = is_native;
             let rounded = self.current_fps.round().clamp(0.0, 999.0) as u32;
             self.render_badge(rounded);
-            self.last_rendered = Some((rounded, is_native));
+            self.last_rendered = Some((rounded, is_native, self.renderer));
             self.dirty = true;
         }
     }
@@ -64,6 +66,23 @@ impl FpsCounter {
     #[inline]
     pub fn is_native(&self) -> bool {
         self.is_native
+    }
+
+    /// Actualiza el nombre del renderer activo de la GPU (ej. "Vulkan" u "OpenGL").
+    pub fn set_renderer(&mut self, renderer: &'static str) {
+        if self.renderer != renderer {
+            self.renderer = renderer;
+            let rounded = self.current_fps.round().clamp(0.0, 999.0) as u32;
+            self.render_badge(rounded);
+            self.last_rendered = Some((rounded, self.is_native, renderer));
+            self.dirty = true;
+        }
+    }
+
+    /// Nombre del backend gráfico activo reportado en el badge.
+    #[inline]
+    pub fn renderer(&self) -> &'static str {
+        self.renderer
     }
 
     /// Dimensiones del badge en píxeles `(ancho, alto)`.
@@ -90,20 +109,30 @@ impl FpsCounter {
         self.dirty = false;
     }
 
-    /// Píxeles RGBA del badge actual (80x26).
+    /// Píxeles RGBA del badge actual (216x34).
     #[inline]
     pub fn badge_rgba(&self) -> &[[u8; 4]] {
         &self.buffer
     }
 
-    /// Registra el avance de un fotograma en el instante actual.
+    /// Registra el avance de un solo fotograma en el instante actual.
     pub fn on_frame(&mut self) {
-        self.on_frame_at(Instant::now());
+        self.on_frames(1);
     }
 
-    /// Registra el avance de un fotograma con un timestamp explícito (determinista para tests).
+    /// Registra el avance de `count` fotogramas de simulación en el instante actual.
+    pub fn on_frames(&mut self, count: u32) {
+        self.on_frames_at(count, Instant::now());
+    }
+
+    /// Registra el avance de un solo fotograma con un timestamp explícito (tests deterministas).
     pub fn on_frame_at(&mut self, now: Instant) {
-        self.frames_in_interval += 1;
+        self.on_frames_at(1, now);
+    }
+
+    /// Registra el avance de `count` fotogramas con un timestamp explícito (tests deterministas).
+    pub fn on_frames_at(&mut self, count: u32, now: Instant) {
+        self.frames_in_interval += count;
         let elapsed = now.duration_since(self.last_interval_start);
 
         // Actualizar medición cada 350 ms para estabilidad visual sin jitter
@@ -113,9 +142,9 @@ impl FpsCounter {
                 self.current_fps = (self.frames_in_interval as f32) / secs;
                 let rounded = self.current_fps.round().clamp(0.0, 999.0) as u32;
 
-                if self.last_rendered != Some((rounded, self.is_native)) {
+                if self.last_rendered != Some((rounded, self.is_native, self.renderer)) {
                     self.render_badge(rounded);
-                    self.last_rendered = Some((rounded, self.is_native));
+                    self.last_rendered = Some((rounded, self.is_native, self.renderer));
                     self.dirty = true;
                 }
             }
@@ -126,10 +155,10 @@ impl FpsCounter {
 
     /// Rasteriza el badge con fondo de pastilla translúcida y texto con la tipografía de assets.
     pub fn render_badge(&mut self, fps_val: u32) {
-        // 1. Limpieza de fondo: pastilla oscura con bordes redondeados (radio 6)
+        // 1. Limpieza de fondo: pastilla oscura con bordes redondeados (radio 8)
         let w = BADGE_WIDTH;
         let h = BADGE_HEIGHT;
-        let corner_r = 6.0f32;
+        let corner_r = 8.0f32;
 
         let bg_color = [12u8, 16u8, 24u8, 205u8]; // Slate translúcido al 80%
         let border_color = [255u8, 255u8, 255u8, 38u8]; // Borde sutil al 15%
@@ -170,10 +199,10 @@ impl FpsCounter {
             [248u8, 113u8, 113u8] // Carmesí (#F87171)
         };
 
-        // 3. Rasterizado del texto (ej. "60 FPS · AOT")
+        // 3. Rasterizado del texto (ej. "60 FPS · AOT · Vulkan")
         let mode_tag = if self.is_native { "AOT" } else { "INT" };
-        let text = format!("{fps_val} FPS · {mode_tag}");
-        let font_size = 13.5f32;
+        let text = format!("{fps_val} FPS · {mode_tag} · {}", self.renderer);
+        let font_size = 15.5f32;
 
         // Calcular ancho total para centrado
         let mut total_w = 0i32;
@@ -183,7 +212,7 @@ impl FpsCounter {
         }
 
         let start_x = ((w as i32 - total_w) / 2).max(4);
-        let baseline_y = 18i32; // Línea base visual dentro de 26px de alto
+        let baseline_y = 23i32; // Línea base visual dentro de 34px de alto
 
         let mut cur_x = start_x;
         for ch in text.chars() {
