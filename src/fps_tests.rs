@@ -59,6 +59,26 @@ fn test_fps_counter_throttles_rasterization() {
 }
 
 #[test]
+fn test_fps_badge_mode_switch_triggers_dirty() {
+    let mut counter = FpsCounter::new().expect("FpsCounter debe inicializarse");
+    assert!(counter.is_native());
+    counter.mark_clean();
+    assert!(!counter.is_dirty());
+
+    counter.set_native(false);
+    assert!(!counter.is_native());
+    assert!(counter.is_dirty(), "Cambiar a INT debe marcar dirty para actualizar textura");
+
+    counter.mark_clean();
+    counter.set_native(false);
+    assert!(!counter.is_dirty(), "Mismo modo no debe marcar dirty");
+
+    counter.set_native(true);
+    assert!(counter.is_native());
+    assert!(counter.is_dirty(), "Cambiar a AOT debe marcar dirty");
+}
+
+#[test]
 fn test_hud_shader_wgsl_validates() {
     let shader_source = crate::overlay_shader::HUD_BLIT_WGSL;
     assert!(

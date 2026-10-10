@@ -247,11 +247,11 @@ function Build-Recompiled-C {
     $obj1 = Join-Path $outDir "unit1.o"
 
     $triple = switch ($Abi) {
-        "arm64-v8a"   { "aarch64-linux-android29" }
-        "armeabi-v7a" { "armv7a-linux-androideabi29" }
-        "x86_64"      { "x86_64-linux-android29" }
-        "x86"         { "i686-linux-android29" }
-        default       { "aarch64-linux-android29" }
+        "arm64-v8a"   { "aarch64-linux-android26" }
+        "armeabi-v7a" { "armv7a-linux-androideabi26" }
+        "x86_64"      { "x86_64-linux-android26" }
+        "x86"         { "i686-linux-android26" }
+        default       { "aarch64-linux-android26" }
     }
 
     $headerTime = if (Test-Path $header) { (Get-Item $header).LastWriteTime } else { [DateTime]::MinValue }

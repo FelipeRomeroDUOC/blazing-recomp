@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use android_activity::input::{InputEvent, MotionEvent, MotionAction};
+use android_activity::input::{InputEvent, MotionEvent, MotionAction, KeyEvent, KeyAction, Keycode};
 use android_activity::{InputStatus, MainEvent, PollEvent};
 use crate::runner::GameRunner;
 use raw_window_handle::{
@@ -671,6 +671,7 @@ impl Compositor {
         rgba: &[[u8; 4]],
         window_physical: (u32, u32),
         touch: &TouchController,
+        is_native: bool,
     ) -> Result<(), String> {
         let (w, h) = (window_physical.0.max(1), window_physical.1.max(1));
         if (w, h) != (self.config.width, self.config.height) {
@@ -761,6 +762,7 @@ impl Compositor {
         );
 
         // 4. Actualizar telemetría y textura del HUD de FPS
+        self.fps_counter.set_native(is_native);
         self.fps_counter.on_frame();
         if self.fps_counter.is_dirty() {
             let (hud_w, hud_h) = self.fps_counter.dimensions();
@@ -792,10 +794,10 @@ impl Compositor {
             self.fps_counter.mark_clean();
         }
 
-        // Posición del badge de FPS: esquina superior derecha con margen de 16 px
+        // Posición del badge de FPS: márgenes seguros de Safe Area contra esquinas redondeadas y notch
         let (hud_w, hud_h) = self.fps_counter.dimensions();
-        let margin_x = 16.0f32;
-        let margin_y = 14.0f32;
+        let margin_x = if w > h { 48.0f32 } else { 24.0f32 };
+        let margin_y = if w > h { 20.0f32 } else { 36.0f32 };
         let hud_ox = (w as f32) - (hud_w as f32) - margin_x;
         let hud_oy = margin_y;
 
@@ -1145,6 +1147,8 @@ struct AppState {
     placeholder_rgba: Vec<[u8; 4]>,
     /// Controlador táctil (hitboxes, estado KEYINPUT, `touch_enabled`).
     touch: TouchController,
+    /// Máscara de botones físicos / gamepad / control remoto de Android TV (activo en bajo, 0x03FF = reposo).
+    physical_key_mask: u16,
     /// Háptica; `None` si no hay JNI disponible (no-op).
     haptics: Option<Haptics>,
     /// Error fatal retenido para presentación visual de diagnóstico.
@@ -1163,6 +1167,7 @@ impl AppState {
             screen_kind,
             placeholder_rgba: vec![[0, 0, 0, 255]; GBA_PIXELS],
             touch: TouchController::new(),
+            physical_key_mask: 0x03FF,
             haptics: None,
             fatal_error: None,
             error_renderer: None,
@@ -1279,31 +1284,81 @@ impl AppState {
             self.touch.resize(w, h);
         }
         let Some(compositor) = self.compositor.as_mut() else { return };
-        let frame = if let Some(runner) = &self.runner {
-            runner.frame_rgba()
+        let (frame, is_native) = if let Some(runner) = &self.runner {
+            (runner.frame_rgba(), runner.is_native())
         } else {
-            &self.placeholder_rgba
+            (self.placeholder_rgba.as_slice(), false)
         };
-        if let Err(e) = compositor.render(frame, (w, h), &self.touch) {
+        if let Err(e) = compositor.render(frame, (w, h), &self.touch, is_native) {
             log::warn!("compositor: {e}");
         }
     }
 
+    /// Combina la entrada táctil con la de mandos físicos (operación AND bit a bit activa en bajo).
+    #[inline]
+    fn combined_keys(&self) -> u16 {
+        self.touch.key_mask() & self.physical_key_mask
+    }
+
     /// Avanza un fotograma del juego si hay un runner activo.
     fn step(&mut self) {
+        let keys = self.combined_keys();
         if let Some(runner) = self.runner.as_mut() {
-            runner.set_keys(self.touch.key_mask());
+            runner.set_keys(keys);
             runner.step_frame();
         }
     }
 
-
-    /// Publica la máscara KEYINPUT del controlador táctil en `GameRunner`.
-    /// Con `touch_enabled == false` el método del controlador ya devuelve
-    /// la máscara sin cambios; con `runner == None` no hay nada que hacer.
+    /// Publica la máscara KEYINPUT combinada (táctil + mando físico) en `GameRunner`.
     fn publish_keys(&mut self) {
+        let keys = self.combined_keys();
         if let Some(runner) = self.runner.as_mut() {
-            runner.set_keys(self.touch.key_mask());
+            runner.set_keys(keys);
+        }
+    }
+
+    /// Procesa eventos de teclado, mandos físicos y control remoto de Android TV.
+    fn on_key(&mut self, event: &KeyEvent) -> bool {
+        let code = event.key_code();
+        let button = match code {
+            Keycode::DpadUp => crate::input::Button::Up,
+            Keycode::DpadDown => crate::input::Button::Down,
+            Keycode::DpadLeft => crate::input::Button::Left,
+            Keycode::DpadRight => crate::input::Button::Right,
+            Keycode::ButtonA | Keycode::DpadCenter | Keycode::Enter => crate::input::Button::A,
+            Keycode::ButtonB | Keycode::Back | Keycode::Escape => crate::input::Button::B,
+            Keycode::ButtonL1 => crate::input::Button::L,
+            Keycode::ButtonR1 => crate::input::Button::R,
+            Keycode::ButtonStart | Keycode::MediaPlayPause => crate::input::Button::Start,
+            Keycode::ButtonSelect => crate::input::Button::Select,
+            _ => return false,
+        };
+
+        let bit = button.key_bit();
+        match event.action() {
+            KeyAction::Down => {
+                let prev = self.physical_key_mask;
+                self.physical_key_mask &= !bit; // activo en bajo (0 = presionado)
+                if prev != self.physical_key_mask {
+                    log::debug!("key down: {button:?} (mask: {:#06x})", self.physical_key_mask);
+                    self.publish_keys();
+                    true
+                } else {
+                    false
+                }
+            }
+            KeyAction::Up => {
+                let prev = self.physical_key_mask;
+                self.physical_key_mask |= bit; // 1 = liberado
+                if prev != self.physical_key_mask {
+                    log::debug!("key up: {button:?} (mask: {:#06x})", self.physical_key_mask);
+                    self.publish_keys();
+                    true
+                } else {
+                    false
+                }
+            }
+            _ => false,
         }
     }
 
@@ -1516,6 +1571,12 @@ pub fn android_main(app: android_activity::AndroidApp) {
                         }
                         InputStatus::Handled
                     }
+                    InputEvent::KeyEvent(k) => {
+                        if state.on_key(k) {
+                            needs_redraw = true;
+                        }
+                        InputStatus::Handled
+                    }
                     _ => InputStatus::Unhandled,
                 }) {}
             }
@@ -1560,10 +1621,8 @@ pub fn android_main(app: android_activity::AndroidApp) {
                     if steps > 0 || needs_redraw {
                         state.redraw();
                     }
-                    let remaining = FRAME_DURATION.saturating_sub(lag);
-                    if remaining > std::time::Duration::from_millis(2) {
-                        std::thread::sleep(std::time::Duration::from_millis(1));
-                    }
+                    // El swapchain de wgpu con VSync y FIFO/Mailbox sincroniza a 60 Hz exactos
+                    // sin recurrir a sleep impreciso del sistema operativo.
                 } else if needs_redraw {
                     state.redraw();
                 }

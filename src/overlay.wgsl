@@ -185,6 +185,11 @@ fn fs_main(in: VSOut) -> @location(0) vec4<f32> {
     var total_a = 0.0;
     if globals.shell > 0.5 {
         let shell_top = res.y * 0.49;
+        // Poda temprana: en portrait, toda la mitad superior (pantalla de juego) está vacía
+        // en el overlay; descartar píxeles superiores ahorra 50% de fillrate en GPUs de tablet.
+        if p.y < shell_top - 8.0 {
+            return vec4<f32>(0.0);
+        }
         let corner_r = min(res.x * 0.08, 36.0);
         var d_shell = p.y - shell_top;
         if p.y < shell_top + corner_r {

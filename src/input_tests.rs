@@ -619,3 +619,21 @@ fn test_touch_controller_multitouch_churn_and_saturation() {
     assert_eq!(tc.pressed_mask(), 0x0000);
     assert_eq!(tc.key_mask(), 0x03FF);
 }
+
+#[test]
+fn test_button_from_android_keycode_mapping() {
+    assert_eq!(button_from_android_keycode(19), Some(Button::Up));
+    assert_eq!(button_from_android_keycode(20), Some(Button::Down));
+    assert_eq!(button_from_android_keycode(21), Some(Button::Left));
+    assert_eq!(button_from_android_keycode(22), Some(Button::Right));
+    assert_eq!(button_from_android_keycode(23), Some(Button::A)); // DPAD_CENTER
+    assert_eq!(button_from_android_keycode(66), Some(Button::A)); // ENTER
+    assert_eq!(button_from_android_keycode(96), Some(Button::A)); // BUTTON_A
+    assert_eq!(button_from_android_keycode(97), Some(Button::B)); // BUTTON_B
+    assert_eq!(button_from_android_keycode(4), Some(Button::B));  // BACK
+    assert_eq!(button_from_android_keycode(102), Some(Button::L));
+    assert_eq!(button_from_android_keycode(103), Some(Button::R));
+    assert_eq!(button_from_android_keycode(108), Some(Button::Start));
+    assert_eq!(button_from_android_keycode(109), Some(Button::Select));
+    assert_eq!(button_from_android_keycode(999), None);
+}

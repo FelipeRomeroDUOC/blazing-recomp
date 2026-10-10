@@ -60,3 +60,25 @@ fn test_block_table_iwram_and_bios_regions() {
     assert!(table.get(0x0000_0080).is_some());
     assert!(table.get(0x0300_2000).is_none());
 }
+
+#[test]
+fn test_run_frame_native_preserves_real_bios_stepping() {
+    static mut BIOS_CALLED: bool = false;
+    extern "C" fn failing_bios(_api: *const gba_core::capi::RtApi, _m: *mut std::ffi::c_void) -> u32 {
+        unsafe { BIOS_CALLED = true; }
+        0
+    }
+
+    let blocks = [RcgBlock { key: 0x0000_0080, func: failing_bios }];
+    let table = BlockTable::from_blocks(&blocks);
+
+    let rom = vec![0u8; 1024];
+    let bios = vec![0u8; 16384];
+    let mut machine = Machine::new_with_bios(rom, &bios);
+    machine.cpu.regs[15] = 0x0000_0080;
+
+    let (native, fallback) = run_frame_native(&mut machine, &table, 10);
+    assert_eq!(native, 0, "No debe invocar bloques AOT en la BIOS real");
+    assert!(fallback > 0, "Debe avanzar en el intérprete paso a paso");
+    assert!(!unsafe { BIOS_CALLED }, "El bloque nativo de la BIOS no debe ejecutarse");
+}

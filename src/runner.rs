@@ -67,6 +67,12 @@ impl GameRunner {
         self.block_table = table;
     }
 
+    /// Indica si el runner está ejecutando con la tabla nativa AOT cargada.
+    #[inline]
+    pub fn is_native(&self) -> bool {
+        self.block_table.as_ref().map_or(false, |t| !t.is_empty())
+    }
+
     /// Inyecta la máscara de botones activa en bajo en el bus de hardware (`KEYINPUT`).
     ///
     /// Bit = 0 significa botón pulsado; Bit = 1 significa botón liberado.

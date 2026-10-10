@@ -16,14 +16,14 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | Módulo | Elementos Públicos | Descripción |
 | :--- | :--- | :--- |
 | [`lib.rs`](#módulo-librs) | 0 | Blazing Recomp — punto de entrada nativo para Android. |
-| [`input.rs`](#módulo-inputrs) | 18 | Entrada táctil ergonómica (Fase 5.1, propuesta |
+| [`input.rs`](#módulo-inputrs) | 19 | Entrada táctil ergonómica (Fase 5.1, propuesta |
 | [`overlay.rs`](#módulo-overlayrs) | 11 | Overlay táctil y marco GBA SP (Fase 5.2, propuesta |
 | [`error_screen.rs`](#módulo-error_screenrs) | 4 | Renderizador de pantalla de error por software y blindaje de GPU. |
 | [`platform.rs`](#módulo-platformrs) | 1 | Plataforma Android (solo compila con `cfg(target_os = "android")`): |
 | [`storage.rs`](#módulo-storagers) | 14 | Módulo interno del port. |
-| [`runner.rs`](#módulo-runnerrs) | 14 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
+| [`runner.rs`](#módulo-runnerrs) | 15 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
 | [`recomp.rs`](#módulo-recomprs) | 10 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
-| [`fps.rs`](#módulo-fpsrs) | 12 | Contador de FPS y generador de HUD visual en pantalla. |
+| [`fps.rs`](#módulo-fpsrs) | 14 | Contador de FPS y generador de HUD visual en pantalla. |
 
 ---
 
@@ -96,6 +96,16 @@ y mapa estándar de KEYINPUT de la GBA.
 **Firma:**
 ```rust
 pub fn key_bit(self) -> u16
+```
+
+### `button_from_android_keycode` (Función)
+
+Mapea un código de tecla estándar de Android (`android.view.KeyEvent.KEYCODE_*`) a un botón de GBA.
+Soporta mandos Bluetooth, USB, teclados físicos y control remoto de Android TV.
+
+**Firma:**
+```rust
+pub fn button_from_android_keycode(keycode: i32) -> Option<Button>
 ```
 
 ### `Orientation` (Enum)
@@ -691,6 +701,15 @@ Asigna o reemplaza la tabla de bloques recompilados nativos.
 pub fn set_block_table(&mut self, table: Option<crate::recomp::BlockTable>)
 ```
 
+### `is_native` (Función)
+
+Indica si el runner está ejecutando con la tabla nativa AOT cargada.
+
+**Firma:**
+```rust
+pub fn is_native(&self) -> bool
+```
+
 ### `set_keys` (Función)
 
 Inyecta la máscara de botones activa en bajo en el bus de hardware (`KEYINPUT`).
@@ -909,6 +928,24 @@ Inicializa el contador cargando la tipografía JetBrains Mono de assets.
 **Firma:**
 ```rust
 pub fn new() -> Result<Self, String>
+```
+
+### `set_native` (Función)
+
+Actualiza el modo del motor (true = AOT nativo C11, false = Intérprete).
+
+**Firma:**
+```rust
+pub fn set_native(&mut self, is_native: bool)
+```
+
+### `is_native` (Función)
+
+Indica si el motor está reportando modo nativo AOT.
+
+**Firma:**
+```rust
+pub fn is_native(&self) -> bool
 ```
 
 ### `dimensions` (Función)

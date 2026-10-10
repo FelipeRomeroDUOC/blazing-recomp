@@ -57,6 +57,24 @@ impl Button {
     }
 }
 
+/// Mapea un código de tecla estándar de Android (`android.view.KeyEvent.KEYCODE_*`) a un botón de GBA.
+/// Soporta mandos Bluetooth, USB, teclados físicos y control remoto de Android TV.
+pub fn button_from_android_keycode(keycode: i32) -> Option<Button> {
+    match keycode {
+        19 => Some(Button::Up),      // KEYCODE_DPAD_UP
+        20 => Some(Button::Down),    // KEYCODE_DPAD_DOWN
+        21 => Some(Button::Left),    // KEYCODE_DPAD_LEFT
+        22 => Some(Button::Right),   // KEYCODE_DPAD_RIGHT
+        23 | 66 | 96 | 160 => Some(Button::A), // KEYCODE_DPAD_CENTER, KEYCODE_ENTER, KEYCODE_BUTTON_A, KEYCODE_NUMPAD_ENTER
+        4 | 97 | 111 => Some(Button::B),       // KEYCODE_BACK, KEYCODE_BUTTON_B, KEYCODE_ESCAPE
+        102 => Some(Button::L),      // KEYCODE_BUTTON_L1
+        103 => Some(Button::R),      // KEYCODE_BUTTON_R1
+        108 | 85 => Some(Button::Start),       // KEYCODE_BUTTON_START, KEYCODE_MEDIA_PLAY_PAUSE
+        109 => Some(Button::Select), // KEYCODE_BUTTON_SELECT
+        _ => None,
+    }
+}
+
 /// Orientación de la pantalla; determina la geometría de los controles.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Orientation {

@@ -8,7 +8,7 @@
 
 use std::time::{Duration, Instant};
 
-pub const BADGE_WIDTH: usize = 80;
+pub const BADGE_WIDTH: usize = 112;
 pub const BADGE_HEIGHT: usize = 26;
 
 /// Contador de fotogramas y generador del badge visual de FPS.
@@ -17,7 +17,8 @@ pub struct FpsCounter {
     last_interval_start: Instant,
     frames_in_interval: u32,
     current_fps: f32,
-    last_rendered_fps: Option<u32>,
+    last_rendered: Option<(u32, bool)>,
+    is_native: bool,
     dirty: bool,
     buffer: Vec<[u8; 4]>,
 }
@@ -36,15 +37,33 @@ impl FpsCounter {
             last_interval_start: Instant::now(),
             frames_in_interval: 0,
             current_fps: 60.0,
-            last_rendered_fps: None,
+            last_rendered: None,
+            is_native: true,
             dirty: true,
             buffer: vec![[0, 0, 0, 0]; BADGE_WIDTH * BADGE_HEIGHT],
         };
 
         counter.render_badge(60);
-        counter.last_rendered_fps = Some(60);
+        counter.last_rendered = Some((60, true));
         counter.dirty = true;
         Ok(counter)
+    }
+
+    /// Actualiza el modo del motor (true = AOT nativo C11, false = Intérprete).
+    pub fn set_native(&mut self, is_native: bool) {
+        if self.is_native != is_native {
+            self.is_native = is_native;
+            let rounded = self.current_fps.round().clamp(0.0, 999.0) as u32;
+            self.render_badge(rounded);
+            self.last_rendered = Some((rounded, is_native));
+            self.dirty = true;
+        }
+    }
+
+    /// Indica si el motor está reportando modo nativo AOT.
+    #[inline]
+    pub fn is_native(&self) -> bool {
+        self.is_native
     }
 
     /// Dimensiones del badge en píxeles `(ancho, alto)`.
@@ -94,9 +113,9 @@ impl FpsCounter {
                 self.current_fps = (self.frames_in_interval as f32) / secs;
                 let rounded = self.current_fps.round().clamp(0.0, 999.0) as u32;
 
-                if self.last_rendered_fps != Some(rounded) {
+                if self.last_rendered != Some((rounded, self.is_native)) {
                     self.render_badge(rounded);
-                    self.last_rendered_fps = Some(rounded);
+                    self.last_rendered = Some((rounded, self.is_native));
                     self.dirty = true;
                 }
             }
@@ -151,9 +170,10 @@ impl FpsCounter {
             [248u8, 113u8, 113u8] // Carmesí (#F87171)
         };
 
-        // 3. Rasterizado del texto (ej. "60 FPS")
-        let text = format!("{fps_val} FPS");
-        let font_size = 15.0f32;
+        // 3. Rasterizado del texto (ej. "60 FPS · AOT")
+        let mode_tag = if self.is_native { "AOT" } else { "INT" };
+        let text = format!("{fps_val} FPS · {mode_tag}");
+        let font_size = 13.5f32;
 
         // Calcular ancho total para centrado
         let mut total_w = 0i32;

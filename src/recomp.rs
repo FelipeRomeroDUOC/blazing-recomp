@@ -152,6 +152,14 @@ pub fn run_frame_native(
 
         if m.bus.real_bios {
             m.bus.pc_in_bios = key < 0x4000;
+            // La BIOS real oficial debe ejecutarse en el intérprete instrucción por
+            // instrucción para preservar verificaciones de cabecera criptográfica y trampas
+            // de bus de memoria (especificación upstream de gba-recomp).
+            if key < 0x4000 {
+                m.step();
+                fallback += 1;
+                continue;
+            }
         }
 
         // 2. Hooks de motor de audio HLE en límites de bloque
