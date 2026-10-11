@@ -242,3 +242,44 @@ name = "Hardware_StatusBitmask"
 address = 0x08008214
 mode = "thumb"
 
+# --- Hotspots de CPU sesión de telemetría Ronda 2 (8 funciones) ---
+[[functions]]
+name = "LZ77_DecompressBlock"
+address = 0x080770a0
+mode = "thumb"
+
+[[functions]]
+name = "Battle_PreDamageStatEval"
+address = 0x0801eb20
+mode = "thumb"
+
+[[functions]]
+name = "Sound_M4A_TrackStateUpdate"
+address = 0x080a2c9c
+mode = "thumb"
+
+[[functions]]
+name = "Palette_BufferRowInterpolate"
+address = 0x08066bf8
+mode = "thumb"
+
+[[functions]]
+name = "OAM_SortRenderList"
+address = 0x080067ac
+mode = "thumb"
+
+[[functions]]
+name = "Map_EventTriggerScan"
+address = 0x0805339c
+mode = "thumb"
+
+[[functions]]
+name = "Entity_FlagBitfieldTest"
+address = 0x080545d4
+mode = "thumb"
+
+[[functions]]
+name = "Unit_ActiveStatusCheck"
+address = 0x08019c90
+mode = "thumb"
+
