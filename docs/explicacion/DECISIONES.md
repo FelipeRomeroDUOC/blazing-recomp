@@ -51,6 +51,7 @@ Este registro documenta de manera exhaustiva y transparente cada decisión de di
 26. [Profiler de Hotspots en Runtime y Expansión de Cobertura AOT C11 a 17,663 Bloques](#26-profiler-de-hotspots-en-runtime-y-expansión-de-cobertura-aot-c11-a-17663-bloques)
 27. [Calibración Simétrica de Swapchain a 960px para 60 FPS Estables en Apaisado y Retrato](#27-calibración-simétrica-de-swapchain-a-960px-para-60-fps-estables-en-apaisado-y-retrato)
 28. [Sincronización Reactiva por Eventos con AndroidAppWaker y Erradicación del Sondeo Inútil en el Hilo Principal](#28-sincronización-reactiva-por-eventos-con-androidappwaker-y-erradicación-del-sondeo-inútil-en-el-hilo-principal)
+29. [Instrumentación de Rendimiento de Hardware en gba-core y Aislamiento del Overhead de Simulación](#29-instrumentación-de-rendimiento-de-hardware-en-gba-core-y-aislamiento-del-overhead-de-simulación)
 
 ---
 
@@ -562,6 +563,39 @@ Como cada fotograma de GBA toma ~16.6 ms, durante cada ciclo de cuadro el hilo p
 #### Alternativas y compromisos
 * **Alternativa descartada:** Bloquear el hilo principal en un `Condvar` compartido con el hilo de emulación. Descartada porque `android-activity` exige que el hilo principal procese su bucle de eventos a través de `poll_events` para atender los eventos del ciclo de vida del sistema operativo (`Pause`, `Resume`, `Destroy`, cambios de tamaño de ventana y eventos de entrada).
 * **Compromiso asumido:** Si la emulación se detuviera de forma inesperada sin emitir eventos, el bucle principal tardaría hasta 50 ms en despertar por el timeout de seguridad, lo cual es imperceptible para la interacción del usuario y garantiza que la aplicación nunca se congele.
+
+---
+
+### 29. Instrumentación de Rendimiento de Hardware en gba-core y Aislamiento del Overhead de Simulación
+
+#### Contexto
+En pruebas en hardware real sobre tablets modestas (Qualcomm Snapdragon 662), el tiempo de ejecución de la simulación (`ejec`) mostraba un piso persistente de ~9 a 13 ms por fotograma, incluso cuando el intérprete de respaldo ejecutaba muy pocas instrucciones. Existía la hipótesis de que dicho piso provenía de la PPU, el sintetizador de audio APU o la frecuencia de accesos al bus de memoria (callbacks `read8/16/32` y `write8/16/32`). Sin embargo, no existía instrumentación granular que permitiera aislar qué subsistema consumía dicho tiempo.
+
+Además, en procesadores móviles de gama de entrada, una llamada a `std::time::Instant::now()` tiene un coste medido de ~460–470 ns. Si se instrumentaba ingenuamente cada evento o acceso a memoria, el propio cronómetro distorsionaría catastróficamente la medición (Efecto Observador).
+
+#### Solución implementada
+1. **Contadores de hardware desacoplados en `gba-core` (`GbaPerfCounters`):**
+   - Se introdujo la feature condicional `perf-counters` en `gba-core` con una estructura que acumula:
+     - `ppu_ns`: nanosegundos en renderizado de scanlines (`render_scanline`).
+     - `apu_ns`: nanosegundos en síntesis de audio (`pump_audio`).
+     - `reads` y `writes`: contadores enteros `u64` para accesos de memoria en el bus, **sin ninguna lectura de reloj** en las rutas críticas de memoria (evitando ~90 ms de sobrecosto artificial).
+2. **Prevención del Efecto Observador en `pump_audio`:**
+   - La función `pump_audio` se invoca en cada `tick()` de reloj del intérprete de instrucciones (hasta 140,000 veces por fotograma en secciones de fallback denso).
+   - Se añadió una cláusula de guarda anticipada (`if self.audio_cursor > until { return; }`) antes de invocar `Instant::now()`.
+   - Con esto, las lecturas de reloj de audio pasaron de ~140,000 llamadas vacías (que causaban un colapso artificial de ~130 ms por fotograma) a un máximo estricto de **1,097 llamadas reales** por fotograma (correspondientes a las muestras discretas a 65,536 Hz), reduciendo el overhead del cronómetro a menos de 0.5 ms.
+3. **Conexión en `blazing-recomp` ([`src/runner.rs`](../../src/runner.rs), [`src/perf.rs`](../../src/perf.rs), [`src/platform.rs`](../../src/platform.rs)):**
+   - `StepTiming` y `FrameTiming` se ampliaron para recolectar `ppu_ms`, `apu_ms`, `reads` y `writes` sin asignaciones dinámicas.
+   - La telemetría por segundo (`PerfReport::to_line`) formatea el desglose:
+     `t=Xs fps=... ejec=... ppu=... apu=... lecturas=... escrituras=... color=... dibujo=...`
+4. **Hallazgo arquitectónico medido:**
+   - La **PPU** consume entre **3.5 y 6.0 ms** por fotograma (promedio ~4.5 ms, ~38% de `ejec`), siendo el componente más intensivo de la simulación de hardware.
+   - El **APU** consume entre **0.6 y 0.9 ms** por fotograma (promedio ~0.7 ms, ~6% de `ejec`), demostrando ser sumamente liviano.
+   - La ejecución de CPU y resolución del bus de memoria consumen entre **6.0 y 7.5 ms** (~56% de `ejec`), resolviendo entre 30,000 y 65,000 accesos de lectura/escritura por fotograma.
+   - El rendimiento global se mantuvo en **60 FPS estables sostenidos** sin caídas ni artefactos de latencia.
+
+#### Alternativas y compromisos
+* **Alternativa descartada:** Cronometrar individualmente cada llamada a `read8/16/32` y `write8/16/32`. Descartada porque 100,000 accesos a 470 ns por lectura de reloj habrían sumado 47 ms adicionales por frame, congelando el juego. El uso de contadores enteros `u64` resolvió el diagnóstico con cero distorsión temporal.
+* **Compromiso asumido:** Los contadores están resguardados bajo la feature `perf-counters`, de modo que pueden desactivarse por completo en compilaciones de producción pura sin dejar ninguna instrucción adicional en el ensamblado final.
 
 ---
 

@@ -17,6 +17,10 @@ fn test_emulation_bridge_single_slot_transfer() {
             color_ms: 1.0,
             native_blocks: 100,
             interpreter_steps: 0,
+            ppu_ms: 2.0,
+            apu_ms: 0.5,
+            reads: 1000,
+            writes: 500,
         },
         is_native: true,
     };

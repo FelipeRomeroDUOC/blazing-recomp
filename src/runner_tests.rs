@@ -100,3 +100,14 @@ fn test_runner_supports_block_table_injection() {
     let _ = runner.step_frame();
     assert_eq!(runner.frames_elapsed(), initial_frames + 1);
 }
+
+#[test]
+fn test_runner_timing_includes_hardware_counters() {
+    let mut runner = GameRunner::new(create_dummy_rom(), None, ScreenKind::Frontlit);
+    runner.step_frame();
+
+    let timing = runner.last_timing();
+    assert!(timing.ppu_ms > 0.0, "debe registrar tiempo de PPU (obtenido: {} ms)", timing.ppu_ms);
+    assert!(timing.apu_ms > 0.0, "debe registrar tiempo de APU (obtenido: {} ms)", timing.apu_ms);
+    assert!(timing.reads > 0, "debe registrar lecturas de memoria (obtenido: {})", timing.reads);
+}

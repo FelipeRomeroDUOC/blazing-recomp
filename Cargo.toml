@@ -9,7 +9,7 @@ description = "Native Android port of Fire Emblem: The Blazing Blade built on gb
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-gba-core = { git = "https://github.com/JRickey/gba-recomp.git", rev = "de4edf59b872d887046d6a3b005e2df551b6d44c" }
+gba-core = { git = "https://github.com/JRickey/gba-recomp.git", rev = "de4edf59b872d887046d6a3b005e2df551b6d44c", features = ["perf-counters"] }
 screen = { git = "https://github.com/JRickey/gba-recomp.git", rev = "de4edf59b872d887046d6a3b005e2df551b6d44c" }
 log = "0.4"
 raw-window-handle = "0.6"
@@ -32,3 +32,6 @@ opt-level = 3
 lto = "thin"
 codegen-units = 1
 panic = "unwind"
+
+[patch."https://github.com/JRickey/gba-recomp.git"]
+gba-core = { path = "../gba-recomp/crates/gba-core" }

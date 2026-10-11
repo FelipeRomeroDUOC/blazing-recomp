@@ -2073,6 +2073,10 @@ pub fn android_main(app: android_activity::AndroidApp) {
                             present_ms: phases.present_ms,
                             nativos: last_step_timing.native_blocks,
                             interprete: last_step_timing.interpreter_steps,
+                            ppu_ms: last_step_timing.ppu_ms,
+                            apu_ms: last_step_timing.apu_ms,
+                            lecturas: last_step_timing.reads,
+                            escrituras: last_step_timing.writes,
                         });
                     } else if needs_redraw {
                         state.redraw();

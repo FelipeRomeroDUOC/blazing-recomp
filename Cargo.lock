@@ -71,7 +71,6 @@ dependencies = [
 [[package]]
 name = "armv4t"
 version = "0.2.0"
-source = "git+https://github.com/JRickey/gba-recomp.git?rev=de4edf59b872d887046d6a3b005e2df551b6d44c#de4edf59b872d887046d6a3b005e2df551b6d44c"
 
 [[package]]
 name = "arrayvec"
@@ -445,7 +444,6 @@ dependencies = [
 [[package]]
 name = "gba-core"
 version = "0.2.0"
-source = "git+https://github.com/JRickey/gba-recomp.git?rev=de4edf59b872d887046d6a3b005e2df551b6d44c#de4edf59b872d887046d6a3b005e2df551b6d44c"
 dependencies = [
  "armv4t",
  "libc",

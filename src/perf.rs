@@ -28,6 +28,14 @@ pub struct FrameTiming {
     pub nativos: u64,
     /// Pasos de intérprete de respaldo ejecutados en este fotograma.
     pub interprete: u64,
+    /// Tiempo en milisegundos dedicado a la PPU (renderizado de scanlines).
+    pub ppu_ms: f64,
+    /// Tiempo en milisegundos dedicado al APU (síntesis de audio).
+    pub apu_ms: f64,
+    /// Accesos de lectura a memoria realizados en este fotograma.
+    pub lecturas: u64,
+    /// Accesos de escritura a memoria realizados en este fotograma.
+    pub escrituras: u64,
 }
 
 /// Informe de rendimiento consolidado correspondiente a un segundo de ejecución.
@@ -41,6 +49,14 @@ pub struct PerfReport {
     pub ejec_avg_ms: f64,
     /// Peor caso (máximo) de milisegundos de ejecución.
     pub ejec_max_ms: f64,
+    /// Promedio de milisegundos consumidos por la PPU.
+    pub ppu_avg_ms: f64,
+    /// Promedio de milisegundos consumidos por el APU.
+    pub apu_avg_ms: f64,
+    /// Promedio de lecturas de memoria por fotograma.
+    pub lecturas_avg: u64,
+    /// Promedio de escrituras de memoria por fotograma.
+    pub escrituras_avg: u64,
     /// Promedio de milisegundos de conversión de color.
     pub color_avg_ms: f64,
     /// Peor caso (máximo) de milisegundos de conversión de color.
@@ -73,11 +89,15 @@ impl PerfReport {
     /// Formatea el informe en una única línea de texto estandarizada.
     pub fn to_line(&self) -> String {
         format!(
-            "t={}s fps={:.1} ejec={:.1}/{:.1} color={:.1}/{:.1} dibujo={:.1}/{:.1} espera={:.1}/{:.1} subida={:.1} codificacion={:.1} present={:.1} nativos={} interprete={} vacias={} ventana={}x{}",
+            "t={}s fps={:.1} ejec={:.1}/{:.1} ppu={:.1} apu={:.1} lecturas={} escrituras={} color={:.1}/{:.1} dibujo={:.1}/{:.1} espera={:.1}/{:.1} subida={:.1} codificacion={:.1} present={:.1} nativos={} interprete={} vacias={} ventana={}x{}",
             self.second_index,
             self.fps,
             self.ejec_avg_ms,
             self.ejec_max_ms,
+            self.ppu_avg_ms,
+            self.apu_avg_ms,
+            self.lecturas_avg,
+            self.escrituras_avg,
             self.color_avg_ms,
             self.color_max_ms,
             self.dibujo_avg_ms,
@@ -141,6 +161,10 @@ impl FramePerf {
                 fps: 0.0,
                 ejec_avg_ms: 0.0,
                 ejec_max_ms: 0.0,
+                ppu_avg_ms: 0.0,
+                apu_avg_ms: 0.0,
+                lecturas_avg: 0,
+                escrituras_avg: 0,
                 color_avg_ms: 0.0,
                 color_max_ms: 0.0,
                 dibujo_avg_ms: 0.0,
@@ -158,6 +182,10 @@ impl FramePerf {
         } else {
             let mut sum_ejec = 0.0;
             let mut max_ejec = 0.0f64;
+            let mut sum_ppu = 0.0;
+            let mut sum_apu = 0.0;
+            let mut sum_lecturas = 0u64;
+            let mut sum_escrituras = 0u64;
             let mut sum_color = 0.0;
             let mut max_color = 0.0f64;
             let mut sum_dibujo = 0.0;
@@ -173,6 +201,10 @@ impl FramePerf {
             for f in &self.frames {
                 sum_ejec += f.ejec_ms;
                 max_ejec = max_ejec.max(f.ejec_ms);
+                sum_ppu += f.ppu_ms;
+                sum_apu += f.apu_ms;
+                sum_lecturas += f.lecturas;
+                sum_escrituras += f.escrituras;
                 sum_color += f.color_ms;
                 max_color = max_color.max(f.color_ms);
                 sum_dibujo += f.dibujo_ms;
@@ -192,6 +224,10 @@ impl FramePerf {
                 fps: c,
                 ejec_avg_ms: sum_ejec / c,
                 ejec_max_ms: max_ejec,
+                ppu_avg_ms: sum_ppu / c,
+                apu_avg_ms: sum_apu / c,
+                lecturas_avg: (sum_lecturas as f64 / c).round() as u64,
+                escrituras_avg: (sum_escrituras as f64 / c).round() as u64,
                 color_avg_ms: sum_color / c,
                 color_max_ms: max_color,
                 dibujo_avg_ms: sum_dibujo / c,

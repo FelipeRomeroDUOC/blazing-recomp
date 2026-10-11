@@ -31,6 +31,14 @@ pub struct StepTiming {
     pub native_blocks: u64,
     /// Cantidad de pasos en intérprete de respaldo ejecutados.
     pub interpreter_steps: u64,
+    /// Milisegundos empleados por la PPU en renderizado de scanlines.
+    pub ppu_ms: f64,
+    /// Milisegundos empleados por el APU en síntesis de audio.
+    pub apu_ms: f64,
+    /// Cantidad de accesos de lectura a memoria realizados.
+    pub reads: u64,
+    /// Cantidad de accesos de escritura a memoria realizados.
+    pub writes: u64,
 }
 
 /// Ejecutor del juego que conecta el hardware emulado con la generación del framebuffer RGBA.
@@ -117,6 +125,10 @@ impl GameRunner {
         let t1 = std::time::Instant::now();
         let ejec_ms = t1.duration_since(t0).as_secs_f64() * 1000.0;
 
+        let hw = self.machine.take_perf_counters();
+        let ppu_ms = (hw.ppu_ns as f64) / 1_000_000.0;
+        let apu_ms = (hw.apu_ns as f64) / 1_000_000.0;
+
         if self.machine.bus.frame_ready {
             let t2 = std::time::Instant::now();
             self.temporal.push(&self.machine.bus.framebuffer, &self.lut);
@@ -129,6 +141,10 @@ impl GameRunner {
                 color_ms,
                 native_blocks: native,
                 interpreter_steps: fallback,
+                ppu_ms,
+                apu_ms,
+                reads: hw.reads,
+                writes: hw.writes,
             };
 
             self.frames_elapsed += 1;
@@ -140,6 +156,10 @@ impl GameRunner {
                 color_ms: 0.0,
                 native_blocks: native,
                 interpreter_steps: fallback,
+                ppu_ms,
+                apu_ms,
+                reads: hw.reads,
+                writes: hw.writes,
             };
             false
         }
