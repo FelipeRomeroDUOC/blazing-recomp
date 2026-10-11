@@ -41,6 +41,9 @@ pub struct FramePacket {
 /// bloqueante: el productor nunca espera a la GPU. Si el consumidor no ha retirado el
 /// fotograma anterior, el buzón lo sobrescribe con el más reciente y devuelve su búfer
 /// al pool, de modo que no se asigna memoria nueva por fotograma.
+/// Notificador invocable al depositar un fotograma para despertar al hilo de presentación.
+pub type WakeFn = Arc<dyn Fn() + Send + Sync>;
+
 pub struct EmulationBridge {
     /// Buzón con el fotograma más reciente pendiente de consumir.
     mailbox: Mutex<Option<FramePacket>>,
@@ -52,11 +55,18 @@ pub struct EmulationBridge {
     running: AtomicBool,
     paused: AtomicBool,
     pause_sync: (Mutex<bool>, Condvar),
+    /// Notificador opcional para interrumpir la espera del hilo principal.
+    waker: Mutex<Option<WakeFn>>,
 }
 
 impl EmulationBridge {
     /// Crea un nuevo puente con buzón de un solo slot para latencia mínima.
     pub fn new() -> Self {
+        Self::new_with_waker(None)
+    }
+
+    /// Crea un nuevo puente con un notificador de eventos opcional.
+    pub fn new_with_waker(waker: Option<WakeFn>) -> Self {
         Self {
             mailbox: Mutex::new(None),
             buffer_pool: Mutex::new(Vec::with_capacity(2)),
@@ -65,6 +75,14 @@ impl EmulationBridge {
             running: AtomicBool::new(true),
             paused: AtomicBool::new(false),
             pause_sync: (Mutex::new(false), Condvar::new()),
+            waker: Mutex::new(waker),
+        }
+    }
+
+    /// Configura o reemplaza el notificador de despertar del puente.
+    pub fn set_waker(&self, waker: Option<WakeFn>) {
+        if let Ok(mut slot) = self.waker.lock() {
+            *slot = waker;
         }
     }
 
@@ -105,6 +123,11 @@ impl EmulationBridge {
         };
         if let Some(old) = displaced {
             self.recycle_buffer(old.rgba);
+        }
+        if let Ok(guard) = self.waker.lock() {
+            if let Some(ref wake) = *guard {
+                wake();
+            }
         }
     }
 
@@ -208,7 +231,18 @@ impl EmulationWorker {
         screen_kind: ScreenKind,
         block_table: Option<crate::recomp::BlockTable>,
     ) -> Self {
-        let bridge = Arc::new(EmulationBridge::new());
+        Self::start_with_waker(rom, bios, screen_kind, block_table, None)
+    }
+
+    /// Inicia un nuevo hilo de trabajo dedicado con un notificador de despertar.
+    pub fn start_with_waker(
+        rom: Vec<u8>,
+        bios: Option<Vec<u8>>,
+        screen_kind: ScreenKind,
+        block_table: Option<crate::recomp::BlockTable>,
+        waker: Option<WakeFn>,
+    ) -> Self {
+        let bridge = Arc::new(EmulationBridge::new_with_waker(waker));
         let b_clone = Arc::clone(&bridge);
 
         let handle = std::thread::Builder::new()

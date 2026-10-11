@@ -1385,6 +1385,8 @@ fn init_perf_file(
 struct AppState {
     /// Hilo de trabajo de emulación dedicado en segundo plano.
     worker: Option<EmulationWorker>,
+    /// Notificador para despertar al hilo principal cuando el worker entrega un fotograma.
+    waker: Option<crate::pipeline::WakeFn>,
     /// Último paquete de fotograma recibido desde el hilo de emulación.
     latest_frame: Option<FramePacket>,
     /// Compositor GPU unificado (`wgpu`) sobre la ventana Android. `None`
@@ -1426,6 +1428,7 @@ impl AppState {
         let screen_kind = ScreenKind::Frontlit;
         AppState {
             worker: None,
+            waker: None,
             latest_frame: None,
             compositor: None,
             window: None,
@@ -1476,11 +1479,12 @@ impl AppState {
     #[allow(dead_code)]
     fn load(&mut self, rom: Vec<u8>, bios: Option<&[u8]>) {
         let bios_owned = bios.map(|b| b.to_vec());
-        self.worker = Some(EmulationWorker::start(
+        self.worker = Some(EmulationWorker::start_with_waker(
             rom,
             bios_owned,
             self.screen_kind,
             None,
+            self.waker.clone(),
         ));
     }
 
@@ -1876,6 +1880,10 @@ pub fn android_main(app: android_activity::AndroidApp) {
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut state = AppState::new();
+        let app_waker = app.create_waker();
+        state.waker = Some(Arc::new(move || {
+            app_waker.wake();
+        }));
         state.haptics = Haptics::connect(app.vm_as_ptr(), app.activity_as_ptr());
 
         // Comprobación y solicitud proactiva de permisos de almacenamiento en el arranque
@@ -1941,11 +1949,12 @@ pub fn android_main(app: android_activity::AndroidApp) {
 
         while !finishing {
             // Suspender espera activa cuando la app no está en primer plano.
-            // Con el hilo de emulación corriendo en segundo plano a 60 Hz, usamos un timeout breve (1ms)
-            // para responder inmediatamente a eventos táctiles y fotogramas sin busy-wait.
-            // Si no hay worker (esperando permisos/ROM), usar un timeout de 100ms.
+            // Con el hilo de emulación notificando cada fotograma vía AndroidAppWaker,
+            // usamos un timeout de seguridad de 50 ms como respaldo si la emulación se retrasa,
+            // erradicando el sondeo a 1 ms y las ~600 vueltas vacías por segundo.
+            // Si no hay worker (esperando permisos/ROM), usar un timeout de 100 ms.
             let timeout = if resumed && state.window.is_some() && state.worker.is_some() {
-                Some(std::time::Duration::from_millis(1))
+                Some(std::time::Duration::from_millis(50))
             } else if resumed && state.window.is_some() {
                 Some(std::time::Duration::from_millis(100))
             } else {
@@ -1953,49 +1962,54 @@ pub fn android_main(app: android_activity::AndroidApp) {
             };
 
             app.poll_events(timeout, |event| {
-                let PollEvent::Main(main) = event else { return };
-                match main {
-                    MainEvent::InitWindow { .. } => {
-                        log::info!("ciclo de vida: InitWindow");
-                        state.create_compositor(
-                            app.native_window().map(AndroidWindow::new).map(Arc::new),
-                        );
-                        state.redraw();
+                match event {
+                    PollEvent::Wake => {
+                        // Despertado por waker tras completarse un fotograma de emulación
                     }
-                    MainEvent::WindowResized { .. } | MainEvent::RedrawNeeded { .. } => {
-                        log::info!("ciclo de vida: redibujar ventana");
-                        state.redraw();
-                    }
-                    MainEvent::TerminateWindow { .. } => {
-                        log::info!("ciclo de vida: TerminateWindow");
-                        state.remove_compositor();
-                    }
-                    MainEvent::Resume { .. } => {
-                        log::info!("ciclo de vida: Resume");
-                        resumed = true;
-                        if let Some(worker) = &state.worker {
-                            worker.bridge().set_paused(false);
+                    PollEvent::Main(main) => match main {
+                        MainEvent::InitWindow { .. } => {
+                            log::info!("ciclo de vida: InitWindow");
+                            state.create_compositor(
+                                app.native_window().map(AndroidWindow::new).map(Arc::new),
+                            );
+                            state.redraw();
                         }
-                        if state.worker.is_none() {
-                            log::info!("sin EmulationWorker cargado: reintentando escaneo de ROM tras Resume");
-                            if let Ok(assets) = crate::storage::scan_and_load_game(&search_dirs) {
-                                log::info!(
-                                    "ROM oficial encontrada en {:?} tras Resume. Inicializando motor a 60 FPS.",
-                                    assets.rom_path
-                                );
-                                state.load(assets.rom, assets.bios.as_deref());
+                        MainEvent::WindowResized { .. } | MainEvent::RedrawNeeded { .. } => {
+                            log::info!("ciclo de vida: redibujar ventana");
+                            state.redraw();
+                        }
+                        MainEvent::TerminateWindow { .. } => {
+                            log::info!("ciclo de vida: TerminateWindow");
+                            state.remove_compositor();
+                        }
+                        MainEvent::Resume { .. } => {
+                            log::info!("ciclo de vida: Resume");
+                            resumed = true;
+                            if let Some(worker) = &state.worker {
+                                worker.bridge().set_paused(false);
+                            }
+                            if state.worker.is_none() {
+                                log::info!("sin EmulationWorker cargado: reintentando escaneo de ROM tras Resume");
+                                if let Ok(assets) = crate::storage::scan_and_load_game(&search_dirs) {
+                                    log::info!(
+                                        "ROM oficial encontrada en {:?} tras Resume. Inicializando motor a 60 FPS.",
+                                        assets.rom_path
+                                    );
+                                    state.load(assets.rom, assets.bios.as_deref());
+                                }
                             }
                         }
-                    }
-                    MainEvent::Pause => {
-                        log::info!("ciclo de vida: Pause");
-                        resumed = false;
-                        state.suspend();
-                    }
-                    MainEvent::Destroy => {
-                        log::info!("ciclo de vida: Destroy");
-                        finishing = true;
-                    }
+                        MainEvent::Pause => {
+                            log::info!("ciclo de vida: Pause");
+                            resumed = false;
+                            state.suspend();
+                        }
+                        MainEvent::Destroy => {
+                            log::info!("ciclo de vida: Destroy");
+                            finishing = true;
+                        }
+                        _ => {}
+                    },
                     _ => {}
                 }
             });

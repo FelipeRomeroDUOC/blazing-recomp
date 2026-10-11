@@ -9,6 +9,7 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 ## [Sin publicar]
 
 ### Añadido
+* **Sincronización reactiva del hilo principal con `AndroidAppWaker` (`src/pipeline.rs`, `src/platform.rs`):** El hilo de emulación dedicado despierta al looper nativo de Android mediante un notificador desacoplado (`WakeFn = Arc<dyn Fn() + Send + Sync>`) tras depositar cada fotograma en el buzón. Esto elevó el timeout de sondeo de 1 ms a 50 ms como respaldo de seguridad, reduciendo las vueltas vacías del hilo principal de ~600/s a ~7/s (98.8% de reducción de sondeo) sin busy-waiting y preservando 60 FPS estables.
 * **Topes dinámicos de resolución de swapchain diferenciados por orientación (`src/present.rs`):** Límites de resolución independientes para mitigar saturación de fillrate y ancho de banda en paneles 2K/QHD: 1280px para modo apaisado ($1280 \times 768$) y 960px para modo retrato ($576 \times 960$). Esto redujo el coste de `present` de 52 ms a 0.6–3.5 ms, alcanzando 60 FPS estables en vertical y 56–58 FPS en horizontal.
 * **Resolución canónica de biblioteca nativa AOT con `dladdr` (`src/recomp.rs`):** Resuelve la ruta física absoluta de `libblazing_recompiled.so` contigua a `libblazing_recomp.so`, superando las restricciones de los namespaces de Bionic linker en hilos secundarios de `NativeActivity`.
 * **Identificador SONAME en biblioteca C11 recompilada (`scripts/package_apk.ps1`):** Inclusión de flag `-Wl,-soname,libblazing_recompiled.so` en Clang NDK para garantizar vinculación dinámica válida en Android.

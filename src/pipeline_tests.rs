@@ -171,3 +171,30 @@ fn test_emulation_worker_lifecycle_and_frame_generation() {
     worker.stop();
 }
 
+#[test]
+fn test_emulation_bridge_waker_invoked_on_send_frame() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let wake_count = Arc::new(AtomicUsize::new(0));
+    let count_clone = Arc::clone(&wake_count);
+    let bridge = EmulationBridge::new_with_waker(Some(Arc::new(move || {
+        count_clone.fetch_add(1, Ordering::SeqCst);
+    })));
+
+    assert_eq!(wake_count.load(Ordering::SeqCst), 0);
+
+    deposit(&bridge, 1);
+    assert_eq!(
+        wake_count.load(Ordering::SeqCst),
+        1,
+        "el waker debe invocarse tras send_frame"
+    );
+
+    deposit(&bridge, 2);
+    assert_eq!(
+        wake_count.load(Ordering::SeqCst),
+        2,
+        "el waker debe invocarse en cada send_frame exitoso"
+    );
+}
+

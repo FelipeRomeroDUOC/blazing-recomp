@@ -50,6 +50,7 @@ Este registro documenta de manera exhaustiva y transparente cada decisión de di
 25. [Tope Dinámico Diferenciado de Swapchain (1280px Landscape / 960px Portrait) para 60 FPS Estables](#25-tope-dinámico-diferenciado-de-swapchain-1280px-landscape--960px-portrait-para-60-fps-estables)
 26. [Profiler de Hotspots en Runtime y Expansión de Cobertura AOT C11 a 17,663 Bloques](#26-profiler-de-hotspots-en-runtime-y-expansión-de-cobertura-aot-c11-a-17663-bloques)
 27. [Calibración Simétrica de Swapchain a 960px para 60 FPS Estables en Apaisado y Retrato](#27-calibración-simétrica-de-swapchain-a-960px-para-60-fps-estables-en-apaisado-y-retrato)
+28. [Sincronización Reactiva por Eventos con AndroidAppWaker y Erradicación del Sondeo Inútil en el Hilo Principal](#28-sincronización-reactiva-por-eventos-con-androidappwaker-y-erradicación-del-sondeo-inútil-en-el-hilo-principal)
 
 ---
 
@@ -532,6 +533,35 @@ Tras optimizar la CPU a <8 ms mediante AOT, el juego corría a 60 FPS clavados e
 #### Alternativas y compromisos
 * **Alternativa descartada:** Mantener 1280px y activar frameskip en apaisado. Descartada porque generaría tirones visuales (*stuttering*) en un juego de estrategia por turnos que debe ser 100% fluido a 60 FPS.
 * **Compromiso asumido:** En apaisado la resolución de swapchain es de $960 \times 576$; el escalador por hardware de la GPU del dispositivo proyecta la imagen en el panel 2K a coste cero sin pérdida perceptible de calidad.
+
+---
+
+### 28. Sincronización Reactiva por Eventos con AndroidAppWaker y Erradicación del Sondeo Inútil en el Hilo Principal
+
+#### Contexto
+Para evitar bloquear el hilo principal de la interfaz y permitir que la emulación corriera a 60 Hz desacoplada, el hilo principal en Android utilizaba un timeout breve de 1 ms (`Duration::from_millis(1)`) en `app.poll_events()` ([`src/platform.rs`](../../src/platform.rs)). Este sondeo ciego era necesario porque el hilo principal no recibía ninguna notificación cuando el hilo de emulación (`blazing-emu`) completaba un fotograma y lo depositaba en el buzón `worker.bridge().try_recv_frame()`.
+
+Como cada fotograma de GBA toma ~16.6 ms, durante cada ciclo de cuadro el hilo principal se despertaba inútilmente entre 10 y 15 veces sin hacer ningún trabajo útil. La telemetría en runtime (`blazing-perf.txt`) reflejaba de manera constante entre **550 y 650 vueltas vacías por segundo** (`vacias`), generando un consumo innecesario de ciclos de CPU, disipación térmica y gasto acelerado de batería en dispositivos móviles.
+
+#### Decisión e implementación
+1. **Abstracción desacoplada en el pipeline ([`src/pipeline.rs`](../../src/pipeline.rs)):** Para mantener `pipeline.rs` 100% agnóstico a la plataforma y compilable en entornos host sin dependencias de Android, se definió un alias de closure genérico:
+   ```rust
+   pub type WakeFn = Arc<dyn Fn() + Send + Sync>;
+   ```
+2. **Notificación en el depósito de fotogramas:** Se equipó a `EmulationBridge` con un notificador opcional (`waker: Mutex<Option<WakeFn>>`, configurable vía `new_with_waker` o `set_waker`). Inmediatamente tras depositar un fotograma válido en `send_frame` y liberar el cerrojo del buzón, se invoca `wake()`.
+3. **Integración con el Looper de Android ([`src/platform.rs`](../../src/platform.rs)):**
+   - En `android_main`, se crea una instancia de `AndroidAppWaker` con `app.create_waker()`.
+   - Se entrega al estado de la aplicación capturado en un closure `Arc::new(move || app_waker.wake())`, el cual se propaga al iniciar el worker con `EmulationWorker::start_with_waker`.
+   - Al llamarse `wake()`, el sistema subyacente invoca `ALooper_wake()` en la capa C de Bionic/NDK, interrumpiendo al instante el bloqueo de `app.poll_events()` y entregando el evento `PollEvent::Wake`.
+4. **Elevación del timeout de seguridad:** Con el flujo guiado por eventos, el timeout activo de `poll_events` se elevó de 1 ms a **50 ms** (equivalente a 3 fotogramas) como mecanismo de respaldo por si la emulación sufriera una pausa imprevista, erradicando el sondeo repetitivo.
+5. **Impacto medido en telemetría:**
+   - Las vueltas vacías colapsaron de **~600 vueltas/s a un promedio de ~7 vueltas/s** (una reducción del **98.8%** en ciclos ociosos de CPU).
+   - En múltiples tramos de gameplay activo, el valor de `vacias` cayó a **0**, demostrando que el hilo principal reposa en el kernel y solo despierta al llegar un fotograma o eventos de entrada táctil.
+   - El framerate se mantuvo sólido e inalterado en **58.0 a 60.0 FPS**, con tiempos de ejecución de CPU (`ejec`) y composición de GPU (`dibujo`, `present`) idénticos a la línea base.
+
+#### Alternativas y compromisos
+* **Alternativa descartada:** Bloquear el hilo principal en un `Condvar` compartido con el hilo de emulación. Descartada porque `android-activity` exige que el hilo principal procese su bucle de eventos a través de `poll_events` para atender los eventos del ciclo de vida del sistema operativo (`Pause`, `Resume`, `Destroy`, cambios de tamaño de ventana y eventos de entrada).
+* **Compromiso asumido:** Si la emulación se detuviera de forma inesperada sin emitir eventos, el bucle principal tardaría hasta 50 ms en despertar por el timeout de seguridad, lo cual es imperceptible para la interacción del usuario y garantiza que la aplicación nunca se congele.
 
 ---
 
