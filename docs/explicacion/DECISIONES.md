@@ -628,6 +628,32 @@ Tras la instrumentación de hardware (ADR 29), las mediciones en Snapdragon 662 
 
 ---
 
+### 31. Optimización Lineal de Composición de Capas y Pre-Evaluación de Ventanas en la PPU
+
+#### Contexto
+A pesar de la optimización de desempaquetado de tiles y recorte de sprites (ADR 30), en escenas con ventanas, efectos de color o múltiples fondos activos, el renderizado de la PPU consumía entre 3.2 y 5.5 ms por fotograma. Al analizar la función de composición de capas (`compose` en `crates/gba-core/src/ppu.rs`), se identificaron dos ineficiencias críticas:
+1. **Búsqueda por fuerza bruta en cada píxel:** La función ejecutaba un bucle anidado `'outer: for p in 0..4u8` sobre las 4 prioridades posibles de hardware ($0 \dots 3$). Dentro de cada prioridad evaluaba el sprite (`obj.priority == p`), y si no coincidía, realizaba un segundo bucle lineal sobre las 4 capas de fondo (`bg_prio`). Si el píxel requería mezcla de colores (*alpha blend* o efectos de fade), se repetía otra búsqueda anidada completa para encontrar la segunda capa visible (`tgt2`), lo que generaba hasta 20 iteraciones y evaluaciones condicionales por píxel ($>3,800$ evaluaciones por scanline, más de 614,000 por fotograma).
+2. **Evaluación redundante de ventanas:** Para cada uno de los 240 píxeles horizontales, la función evaluaba la jerarquía de `WIN0`, `WIN1` y `OBJWIN`, incluso en scanlines donde los registros `DISPCNT` indicaban que ninguna ventana de hardware estaba habilitada.
+3. **Sobrecarga de llamadas en operaciones de color:** Pequeñas funciones matemáticas críticas de cálculo de color (`alpha_blend`, `brighten`, `darken`, `split6`, `join6`) no contaban con directiva de inlining forzado, introduciendo llamadas de función repetidas durante operaciones de blending.
+
+#### Solución implementada
+1. **Recorrido lineal directo sobre `bg_prio`:**
+   - Como el arreglo `bg_prio` ya viene pre-ordenado por prioridad canónica de GBA (calculado una sola vez por scanline), no es necesario iterar arbitrariamente sobre `0..4u8`.
+   - Se reemplazó la búsqueda anidada por un escaneo lineal que recorre los fondos activos e intercala el sprite exactamente en el momento en que `obj.priority <= bp`.
+   - Esto reduce drásticamente las comprobaciones de hasta 20 a un máximo estricto de 5 comparaciones por píxel, acelerando tanto la selección de la primera capa (`tgt1`) como de la segunda (`tgt2`).
+2. **Pre-evaluación y atajo de ventanas por scanline:**
+   - Antes de iniciar el bucle horizontal de 240 píxeles, se calcula una bandera booleana `line_has_window`:
+     `let line_has_window = (dispcnt & (DISPCNT_WIN0 | DISPCNT_WIN1 | DISPCNT_OBJWIN)) != 0;`
+   - Si ninguna ventana está activa, se ataja directamente a la configuración por defecto de `winout` sin computar rangos ni bifurcaciones de ventana por píxel.
+3. **Inlining forzado de aritmética de color:**
+   - Se anotaron con `#[inline(always)]` las funciones `alpha_blend`, `brighten`, `darken`, `split6` y `join6`, permitiendo al compilador fusionar las operaciones de 15 bits en registros vectoriales o inmediatos sin saltos de pila.
+
+#### Alternativas y compromisos
+* **Alternativa descartada:** Fusión en un único búfer de capas con índice Z en scanline. Descartada porque la precedencia de hardware de GBA requiere mantener separados los identificadores de capa para aplicar máscaras de ventana y blending dinámico de `BLDCNT`.
+* **Compromiso asumido:** La intercalación del sprite asume que los fondos en `bg_prio` están rigurosamente ordenados por prioridad ascendente; esto se garantiza por construcción al ordenar las capas activas al inicio de cada scanline.
+
+---
+
 ## Alternativas y Compromisos Globales
 
 
