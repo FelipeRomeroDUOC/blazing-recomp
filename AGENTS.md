@@ -190,9 +190,27 @@ Todo agente que vaya a modificar, crear o refactorizar código en este repositor
   - Este script compila automáticamente los tres ABIs soportados (`arm64-v8a`, `armeabi-v7a`, `x86_64`) con `cargo ndk`, procesa recursos con `aapt2`, alinea memoria a 16 KB con `zipalign` y firma el Fat APK con `apksigner` bajo los esquemas v1/v2/v3 sin depender de Gradle.
   - Para verificar que el APK se genera limpiamente ante cambios en el manifiesto, dependencias nativas o integración de assets, el agente debe invocar siempre esta orden completa.
 
+- **Suite Oficial de Diagnóstico e Ingeniería Inversa AOT (`scripts/diagnostico/`):**
+  Para investigar cuellos de botella de rendimiento, analizar telemetría emitida por el motor en Android o mapear nuevas subrutinas hacia código nativo C11, los agentes deben utilizar las herramientas modulares del proyecto:
+  1. **Análisis de Telemetría:**
+     `python scripts/diagnostico/analizar_telemetria.py --archivo <log.txt> --top <N>`
+     Calcula tasas de FPS, desglose por fases de frame (`ejec`, `ppu`, `apu`, `dibujo`, `present`) y genera el ranking porcentual de hotspots del intérprete.
+  2. **Desensamblado e Inspección de la ROM:**
+     `python scripts/diagnostico/desensamblar_rom.py --addr <0x08xxxxxx> --count <N>`
+     `python scripts/diagnostico/desensamblar_rom.py --buscar-prologo <0x08xxxxxx>`
+     Decodifica instrucciones Thumb de la ROM oficial y localiza automáticamente los puntos de entrada canónicos (`PUSH {..., lr}`, `0xb5xx`) o destinos de *jump tables* (`mov pc, rx`).
+  3. **Auditoría de Labels AOT:**
+     `python scripts/diagnostico/auditar_labels.py`
+     Comprueba la integridad de [`blazing.labels.toml`](blazing.labels.toml) frente a la ROM, verificando que no existan nombres duplicados, colisiones de dirección ni rangos inválidos.
+  4. **Generador AOT C11 Automatizado:**
+     `powershell -ExecutionPolicy Bypass -File scripts/diagnostico/compilar_recomp_aot.ps1`
+     Ejecuta `recomp build` con `$env:RECOMP_KEEP_C = "1"` y sincroniza de forma inmediata los archivos C11 generados en `src-c/`.
+
 - **Checklist Obligatorio de Pre-Commit Gatekeeper:**
-  Antes de proponer o ejecutar un `git commit` y `git push`, el agente debe verificar sin excepción los siguientes 4 criterios:
-  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (63 tests actuales: 54 en `src/lib.rs` + 9 en `tests/packaging_tests.rs`).
+  Antes de proponer o ejecutar un `git commit` y `git push`, el agente debe verificar sin excepción los siguientes 5 criterios:
+  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (111 tests actuales: 100 en `src/lib.rs` + 11 en `tests/packaging_tests.rs`).
   2. **Validación Diátaxis sin errores:** `python .agents/skills/diataxis-docs/scripts/validar_docs.py .` devuelve `0 error(es), 0 aviso(s)`.
   3. **Especificaciones de API sincronizadas:** `python scripts/extraer_referencias.py --check` sale con código de éxito 0.
-  4. **Auditoría de rutas absolutas limpia:** Ningún archivo agregado o modificado contiene rutas locales del usuario o del sistema.
+  4. **Auditoría de labels AOT aprobada:** `python scripts/diagnostico/auditar_labels.py` sale con código de éxito 0.
+  5. **Auditoría de rutas absolutas limpia:** Ningún archivo agregado o modificado contiene rutas locales del usuario o del sistema.
+

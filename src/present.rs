@@ -61,6 +61,12 @@ pub fn calcular_escala_swapchain(w: u32, h: u32) -> f32 {
     let (max_dim, tope) = if w < h {
         (h, TOPE_SWAPCHAIN_PORTRAIT)
     } else {
+        // En pantallas apaisadas estándar de televisión o consolas portátiles (≤ 1280x720),
+        // preservamos escala 1.0 nativa para evitar reducción de marco en drivers sin autoescalador
+        // (como Vulkan en Mali-G31 de Android TV Box).
+        if w <= 1280 && h <= 720 {
+            return 1.0;
+        }
         (w.max(h), TOPE_SWAPCHAIN_LANDSCAPE)
     };
     if max_dim > tope {

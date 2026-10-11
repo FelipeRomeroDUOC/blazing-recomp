@@ -228,24 +228,13 @@ function Build-Recompiled-C {
     }
 
     $cSrcDir = Join-Path $RepoRoot "src-c"
-    $unit0 = Join-Path $cSrcDir "1575 - Fire Emblem (E)(Independent)-bios.0.c"
-    $unit1 = Join-Path $cSrcDir "1575 - Fire Emblem (E)(Independent)-bios.1.c"
-    $header = Join-Path $cSrcDir "recompiled.h"
-
-    if (-not (Test-Path $unit0) -or -not (Test-Path $unit1)) {
+    $cUnits = Get-ChildItem $cSrcDir -Filter "*-bios.*.c"
+    if (-not $cUnits -or $cUnits.Count -eq 0) {
         Write-Warning "Archivos C en src-c no encontrados. Saltando compilacion AOT de C."
         return
     }
 
     $outDir = Join-Path $RepoRoot "target\recompiled\$Abi"
-    if (-not (Test-Path $outDir)) {
-        New-Item -ItemType Directory -Path $outDir -Force | Out-Null
-    }
-
-    $outSo = Join-Path $outDir "libblazing_recompiled.so"
-    $obj0 = Join-Path $outDir "unit0.o"
-    $obj1 = Join-Path $outDir "unit1.o"
-
     $triple = switch ($Abi) {
         "arm64-v8a"   { "aarch64-linux-android26" }
         "armeabi-v7a" { "armv7a-linux-androideabi26" }
@@ -254,66 +243,13 @@ function Build-Recompiled-C {
         default       { "aarch64-linux-android26" }
     }
 
-    $headerTime = if (Test-Path $header) { (Get-Item $header).LastWriteTime } else { [DateTime]::MinValue }
-    $u0Time = (Get-Item $unit0).LastWriteTime
-    $u1Time = (Get-Item $unit1).LastWriteTime
-
-    # Compilar unit0 si no existe o esta desactualizado
-    $needCompile0 = $true
-    if (Test-Path $obj0) {
-        $obj0Time = (Get-Item $obj0).LastWriteTime
-        if ($obj0Time -gt $u0Time -and $obj0Time -gt $headerTime) {
-            $needCompile0 = $false
-        }
-    }
-
-    if ($needCompile0) {
-        Write-Host "   + [Clang $Abi] Compilando unit0 (bios.0.c) con -O2..."
-        & $clang --target=$triple -O2 -fPIC -fomit-frame-pointer -I $cSrcDir -c $unit0 -o $obj0
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Fallo compilacion de unit0 para $Abi"
-            exit $LASTEXITCODE
-        }
-    } else {
-        Write-Host "   + [Clang $Abi] unit0.o en cache (sin cambios)"
-    }
-
-    # Compilar unit1 si no existe o esta desactualizado
-    $needCompile1 = $true
-    if (Test-Path $obj1) {
-        $obj1Time = (Get-Item $obj1).LastWriteTime
-        if ($obj1Time -gt $u1Time -and $obj1Time -gt $headerTime) {
-            $needCompile1 = $false
-        }
-    }
-
-    if ($needCompile1) {
-        Write-Host "   + [Clang $Abi] Compilando unit1 (bios.1.c) con -O2..."
-        & $clang --target=$triple -O2 -fPIC -fomit-frame-pointer -I $cSrcDir -c $unit1 -o $obj1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Fallo compilacion de unit1 para $Abi"
-            exit $LASTEXITCODE
-        }
-    } else {
-        Write-Host "   + [Clang $Abi] unit1.o en cache (sin cambios)"
-    }
-
-    # Enlazar .so si no existe o si se recompilo algun objeto
-    $needLink = $true
-    if ((Test-Path $outSo) -and -not $needCompile0 -and -not $needCompile1) {
-        $needLink = $false
-    }
-
-    if ($needLink) {
-        Write-Host "   + [Clang $Abi] Enlazando libblazing_recompiled.so (-O2, soname)..."
-        & $clang --target=$triple -shared -O2 -fomit-frame-pointer "-Wl,-soname,libblazing_recompiled.so" $obj0 $obj1 -o $outSo
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "Fallo enlazado de libblazing_recompiled.so para $Abi"
-            exit $LASTEXITCODE
-        }
-        Write-Host "   + [Clang $Abi] Generado $outSo"
-    } else {
-        Write-Host "   + [Clang $Abi] libblazing_recompiled.so en cache (sin cambios)"
+    # Compila en paralelo cada unidad C a .o y enlaza con -Wl,-soname,libblazing_recompiled.so
+    $pyCompiler = Join-Path $RepoRoot "scripts\diagnostico\compilar_c_paralelo.py"
+    Write-Host "==> Compilando unidades C en paralelo para $Abi con compilar_c_paralelo.py..."
+    python $pyCompiler --clang $clang --triple $triple --src-dir $cSrcDir --out-dir $outDir --abi $Abi --opt=-O1 --jobs 6
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Fallo compilacion paralela de C para $Abi"
+        exit $LASTEXITCODE
     }
 }
 

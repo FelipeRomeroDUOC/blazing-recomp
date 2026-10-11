@@ -21,8 +21,10 @@
 *.sav
 
 # IDEs y sistema
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
+# Python cache y volcados de telemetría local
+__pycache__/
+*.py[cod]
+scripts/diagnostico/log_*.txt
 .freebuff/
+
+

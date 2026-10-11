@@ -261,9 +261,13 @@ fn test_calcular_escala_swapchain_dispositivos() {
     assert_eq!(rw_fhd_l, 960);
     assert_eq!(rh_fhd_l, 540);
 
-    // 3. Pantalla HD nativa apaisada (1280x720) -> escala a 960/1280 = 0.75
+    // 3. Pantalla HD nativa apaisada (1280x720, Android TV Box) -> 1.0 nativo
     let escala_hd_l = calcular_escala_swapchain(1280, 720);
-    assert!((escala_hd_l - 0.75).abs() < 1e-5);
+    assert_eq!(escala_hd_l, 1.0);
+    let rw_hd_l = (1280.0f32 * escala_hd_l).round() as u32;
+    let rh_hd_l = (720.0f32 * escala_hd_l).round() as u32;
+    assert_eq!(rw_hd_l, 1280);
+    assert_eq!(rh_hd_l, 720);
 
     // 4. Pantallas pequeñas o retro (< 960) -> 1.0 (nativo)
     assert_eq!(calcular_escala_swapchain(800, 600), 1.0);

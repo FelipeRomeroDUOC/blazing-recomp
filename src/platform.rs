@@ -1322,7 +1322,8 @@ impl PermissionsManager {
         }
     }
 
-    /// Comprueba si el dispositivo es un Android TV (Leanback / UI_MODE_TYPE_TELEVISION).
+    /// Comprueba si el dispositivo es un Android TV (Leanback / UI_MODE_TYPE_TELEVISION)
+    /// o carece de pantalla táctil física (como TV Boxes con firmware AOSP).
     fn is_television(&self) -> bool {
         let run = |env: &mut jni::Env| -> Result<bool, jni::errors::Error> {
             let res_obj = env.call_method(
@@ -1340,7 +1341,26 @@ impl PermissionsManager {
             let ui_mode = env.get_field(&conf_obj, jni_str!("uiMode"), jni_sig!("I"))?.i()?;
             let conf_class = env.find_class(jni_str!("android/content/res/Configuration"))?;
             let tv_mode = env.get_static_field(&conf_class, jni_str!("UI_MODE_TYPE_TELEVISION"), jni_sig!("I"))?.i()?;
-            Ok((ui_mode & 0x0F) == tv_mode)
+            if (ui_mode & 0x0F) == tv_mode {
+                return Ok(true);
+            }
+
+            // Detección complementaria para TV Boxes genéricos (firmwares AOSP sin flag de TV):
+            // verificar si el hardware carece de pantalla táctil ("android.hardware.touchscreen").
+            let pm = env.call_method(
+                self.activity.as_obj(),
+                jni_str!("getPackageManager"),
+                jni_sig!("()Landroid/content/pm/PackageManager;"),
+                &[],
+            )?.l()?;
+            let feature_touch = env.new_string("android.hardware.touchscreen")?;
+            let has_touch = env.call_method(
+                &pm,
+                jni_str!("hasSystemFeature"),
+                jni_sig!("(Ljava/lang/String;)Z"),
+                &[jni::objects::JValue::Object(&feature_touch)],
+            )?.z()?;
+            Ok(!has_touch)
         };
         match self.vm.attach_current_thread(run) {
             Ok(is_tv) => is_tv,
@@ -1771,6 +1791,10 @@ impl AppState {
             Keycode::ButtonSelect => crate::input::Button::Select,
             _ => return false,
         };
+
+        // Al usar mando físico, teclado o control remoto de TV, desactivar el overlay táctil
+        // para ahorrar fillrate y cómputo de shaders en la GPU.
+        self.touch.touch_enabled = false;
 
         let bit = button.key_bit();
         match event.action() {

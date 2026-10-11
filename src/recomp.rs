@@ -328,7 +328,7 @@ pub fn load_native_blocks() -> Option<BlockTable> {
                 return None;
             }
             let count = std::ptr::read_unaligned(count_ptr) as usize;
-            if count == 0 || count > 100_000 {
+            if count == 0 || count > 500_000 {
                 log::warn!("rcg_block_count ({count}) inválido en libblazing_recompiled.so");
                 return None;
             }
