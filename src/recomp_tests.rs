@@ -110,3 +110,34 @@ fn test_recomp_canonical_path_derivation() {
         "libblazing_recompiled.so"
     );
 }
+
+/// Verifica que HotspotTracker acumule frecuencias únicamente para direcciones de la ROM de GBA,
+/// ordene de mayor a menor y limpie el acumulador de forma atómica en cada volcado.
+#[test]
+fn test_hotspot_tracker_accumulation_and_drain() {
+    // Vaciar acumulador previo
+    let _ = drain_top_hotspots(100);
+
+    // 1. Direcciones fuera de la ROM deben ignorarse (BIOS e IWRAM)
+    record_hotspot(0x0000_0020);
+    record_hotspot(0x0300_1000);
+    assert!(drain_top_hotspots(10).is_empty());
+
+    // 2. Direcciones de ROM: acumular frecuencias y limpiar bit Thumb (bit 0)
+    record_hotspot(0x0801_2001); // Thumb -> 0x08012000
+    record_hotspot(0x0801_2000); // 2 veces
+    record_hotspot(0x0801_2001); // 3 veces
+
+    record_hotspot(0x0802_4001); // 1 vez
+    record_hotspot(0x0802_4000); // 2 veces
+
+    record_hotspot(0x0803_8001); // 1 vez
+
+    let top = drain_top_hotspots(2);
+    assert_eq!(top.len(), 2);
+    assert_eq!(top[0], (0x0801_2000, 3));
+    assert_eq!(top[1], (0x0802_4000, 2));
+
+    // El acumulador debe haber quedado vacío tras el drain
+    assert!(drain_top_hotspots(10).is_empty());
+}

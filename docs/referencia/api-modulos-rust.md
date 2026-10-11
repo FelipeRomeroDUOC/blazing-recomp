@@ -22,7 +22,7 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | [`platform.rs`](#módulo-platformrs) | 1 | Plataforma Android (solo compila con `cfg(target_os = "android")`): |
 | [`storage.rs`](#módulo-storagers) | 14 | Módulo interno del port. |
 | [`runner.rs`](#módulo-runnerrs) | 17 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
-| [`recomp.rs`](#módulo-recomprs) | 11 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
+| [`recomp.rs`](#módulo-recomprs) | 15 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
 | [`fps.rs`](#módulo-fpsrs) | 18 | Contador de FPS y generador de HUD visual en pantalla. |
 
 ---
@@ -886,6 +886,42 @@ Retorna la tupla `(bloques_nativos_ejecutados, pasos_interprete_fallback)`.
 **Firma:**
 ```rust
 pub fn run_frame_native( m: &mut Machine, table: &BlockTable, max_steps: u64, ) -> (u64, u64)
+```
+
+### `ROM_REGION_START` (Constante)
+
+Rango de direcciones de la memoria ROM de Game Boy Advance (Cartucho).
+
+**Firma:**
+```rust
+pub const ROM_REGION_START: u32
+```
+
+### `ROM_REGION_END` (Constante)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub const ROM_REGION_END: u32
+```
+
+### `record_hotspot` (Función)
+
+Registra una dirección ejecutada en el intérprete de respaldo si pertenece a la ROM.
+
+**Firma:**
+```rust
+pub fn record_hotspot(pc: u32)
+```
+
+### `drain_top_hotspots` (Función)
+
+Extrae las `limit` direcciones de ROM más ejecutadas y reinicia el acumulador.
+
+**Firma:**
+```rust
+pub fn drain_top_hotspots(limit: usize) -> Vec<(u32, u64)>
 ```
 
 ### `resolve_sibling_library_path` (Función)

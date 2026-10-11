@@ -48,6 +48,8 @@ Este registro documenta de manera exhaustiva y transparente cada decisión de di
 23. [Prevención de Conflicto de Superficie GPU y Guía Visual en Framebuffer GBA para Android 16](#23-prevención-de-conflicto-de-superficie-gpu-y-guía-visual-en-framebuffer-gba-para-android-16)
 24. [Triple Buffering Explícito en Swapchain Vulkan para Prevenir Degradación de Mailbox](#24-triple-buffering-explícito-en-swapchain-vulkan-para-prevenir-degradación-de-mailbox)
 25. [Tope Dinámico Diferenciado de Swapchain (1280px Landscape / 960px Portrait) para 60 FPS Estables](#25-tope-dinámico-diferenciado-de-swapchain-1280px-landscape--960px-portrait-para-60-fps-estables)
+26. [Profiler de Hotspots en Runtime y Expansión de Cobertura AOT C11 a 17,663 Bloques](#26-profiler-de-hotspots-en-runtime-y-expansión-de-cobertura-aot-c11-a-17663-bloques)
+27. [Calibración Simétrica de Swapchain a 960px para 60 FPS Estables en Apaisado y Retrato](#27-calibración-simétrica-de-swapchain-a-960px-para-60-fps-estables-en-apaisado-y-retrato)
 
 ---
 
@@ -488,7 +490,53 @@ Dispositivos móviles y tablets modernos incorporan paneles de resolución 2K/QH
 
 ---
 
+### 26. Profiler de Hotspots en Runtime y Expansión de Cobertura AOT C11 a 17,663 Bloques
+
+#### Contexto
+A pesar de contar con 17,207 bloques traducidos a C11, la telemetría en runtime (`blazing-perf.txt`) revelaba entre 35,000 y 55,000 pasos de intérprete de respaldo por segundo, manteniendo la ejecución de CPU (`ejec`) en ~12.5 ms por fotograma. Al operar sin un juego completo de labels en `blazing.labels.toml`, ciertas rutinas centrales del juego se saltaban de forma indirecta hacia direcciones no indexadas en la tabla de bloques estática, obligando al bucle de emulación a recurrir a `m.step()` para interpretar dichas instrucciones. Sin embargo, diagnosticar a ciegas qué funciones de la ROM ($0x08000000..0x09FFFFFF$) consumían ese volumen resultaba inviable.
+
+#### Decisión e implementación
+1. **Hotspot Profiler en runtime ([`src/recomp.rs`](../../src/recomp.rs)):** Se implementó un acumulador de frecuencias atómico (`HotspotTracker`, `record_hotspot`, `drain_top_hotspots`) que registra en $O(1)$ cada dirección de PC ejecutada en la rama `None` de `run_frame_native`, normalizando el bit Thumb (`pc & !1`) y filtrando exclusivamente direcciones del cartucho (`ROM_REGION_START..ROM_REGION_END`).
+2. **Volcado periódico en telemetría ([`src/platform.rs`](../../src/platform.rs)):** Cada 5 segundos, el hilo principal extrae las direcciones más ejecutadas y emite una línea `# hotspots top=...` en `blazing-perf.txt`.
+3. **Mapeo a labels de Fire Emblem ([`blazing.labels.toml`](../../blazing.labels.toml)):** El profiler identificó de inmediato funciones críticas no etiquetadas:
+   - `0x08019120` (`Unit_GetStruct`): Bucle de 7 instrucciones que busca punteros a unidades en RAM (más de 58,000 ejecuciones por ventana).
+   - `0x08026060` (`Battle_MapScanUnits`): Bucle que recorre las 191 unidades en mapa invocando la función anterior.
+   - `0x08006980` (`OAM_BuildSpriteList`): Construcción y culling de sprites en pantalla.
+   - `0x08000360` (`Checksum_CalculateCRC`, ARM 32-bit): Cálculo de sumas de comprobación CRC.
+   - `0x080B4270` (`ScriptEngine_StepTick`), `0x08069E98` (`VRAM_TileAnimationStep`), `0x08066FB4` (`Palette_ColorFadeRGB555`), entre otras (31 funciones etiquetadas en total).
+4. **Recompilación AOT expandida ([`src-c/`](../../src-c/)):** Mediante `recomp build ... --ram`, la tabla nativa `rcg_blocks` se incrementó a **17,663 funciones C11** (+456 bloques nativos adicionales).
+5. **Impacto medido:** Las llamadas al intérprete en gameplay normal colapsaron de **55,000 a entre 200 y 2,000 pasos por segundo** (reducción del 95%), y el tiempo de CPU (`ejec`) cayó a **4.3–8.2 ms por fotograma** (50% de reducción).
+
+#### Alternativas y compromisos
+* **Alternativa descartada:** Recompilación interpretada JIT dinámica en memoria ejecutable (`mprotect` / `PAGE_EXECUTE`). Descartada por las restricciones de seguridad W^X de SELinux en Android y porque el pipeline AOT estático es la base arquitectónica del proyecto.
+* **Compromiso asumido:** El archivo de código C11 derivado creció ligeramente (de 24 MB a 24.8 MB en total), pero la biblioteca compilada en disco (`libblazing_recompiled.so`) se mantiene ligera (~7.4 MB).
+
+---
+
+### 27. Calibración Simétrica de Swapchain a 960px para 60 FPS Estables en Apaisado y Retrato
+
+#### Contexto
+Tras optimizar la CPU a <8 ms mediante AOT, el juego corría a 60 FPS clavados en modo vertical (retrato), pero en modo horizontal (apaisado, $2000 \times 1200$) la tasa de refresco fluctuaba entre 55 y 58 FPS. La telemetría por fase reveló que `ejec` tardaba solo 6.6 ms, pero `present` se elevaba a **14.2 ms** (agotando casi la totalidad de los 16.6 ms de VSync). Con el tope anterior de 1280px para apaisado, la superficie del swapchain se dimensionaba en $1280 \times 768$ (983,040 píxeles, un 77% más área que en retrato), saturando el fillrate del hardware y la cola de composición de la GPU.
+
+#### Decisión e implementación
+1. **Tope simétrico para ambas orientaciones ([`src/present.rs`](../../src/present.rs)):** Se ajustó `TOPE_SWAPCHAIN_LANDSCAPE = 960;` (igualándolo a `TOPE_SWAPCHAIN_PORTRAIT = 960;`).
+2. **Equiparación de área de renderizado:**
+   - Modo Retrato ($1200 \times 2000$): escala $0.48 \to 576 \times 960 = 552,960$ píxeles.
+   - Modo Apaisado ($2000 \times 1200$): escala $0.48 \to 960 \times 576 = 552,960$ píxeles.
+3. **Escalado exacto entero 4× para GBA:** $960 \times 576$ es un múltiplo limpio ($4.0\times$ ancho, $3.6\times$ alto) sobre la resolución nativa de Game Boy Advance ($240 \times 160$), conservando nitidez pixel-perfect.
+4. **Impacto medido:**
+   - En modo apaisado, el tiempo de `dibujo` GPU se desplomó de **15.8 ms a 2.4–3.6 ms** (reducción del 80%).
+   - El tiempo de `present` cayó de **14.2 ms a 0.4–1.8 ms**.
+   - El juego sostiene **58.0 a 60.0 FPS sólidos y continuos** en ambas orientaciones con holgura de tiempo para futuras fases de audio y shaders.
+
+#### Alternativas y compromisos
+* **Alternativa descartada:** Mantener 1280px y activar frameskip en apaisado. Descartada porque generaría tirones visuales (*stuttering*) en un juego de estrategia por turnos que debe ser 100% fluido a 60 FPS.
+* **Compromiso asumido:** En apaisado la resolución de swapchain es de $960 \times 576$; el escalador por hardware de la GPU del dispositivo proyecta la imagen en el panel 2K a coste cero sin pérdida perceptible de calidad.
+
+---
+
 ## Alternativas y Compromisos Globales
+
 
 A nivel arquitectónico y operativo, el proyecto se rige por compromisos transversales:
 1. **Rendimiento nativo sobre facilidad de desarrollo:** Se priorizó el desarrollo en C11/Rust con `NativeActivity` en lugar de Java/Kotlin con JNI, garantizando 60 FPS estables y mínimo consumo de batería.

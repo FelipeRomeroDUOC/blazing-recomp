@@ -41,8 +41,9 @@ pub const MARGEN_MEJORA: f64 = 0.05;
 pub const ESCALA_REDUCIDA: f32 = 0.5;
 
 /// Dimensión máxima para el swapchain en modo apaisado (landscape).
-/// 1280px garantiza 60 FPS estables con escalado HD 720p sin sobrecargar el fillrate.
-pub const TOPE_SWAPCHAIN_LANDSCAPE: u32 = 1280;
+/// 960px equipara el área de renderizado (960x576 = 552k px) a la de retrato (576x960),
+/// reduciendo el tiempo de presentación a <3 ms para sostener 60 FPS clavados con escalado 4x de GBA (240x160).
+pub const TOPE_SWAPCHAIN_LANDSCAPE: u32 = 960;
 
 /// Dimensión máxima para el swapchain en modo retrato (portrait).
 /// Debido a la carga adicional de fragment shader al componer la carcasa y controles GBA SP
@@ -52,6 +53,7 @@ pub const TOPE_SWAPCHAIN_PORTRAIT: u32 = 960;
 
 /// Alias de compatibilidad hacia atrás para el tope general.
 pub const TOPE_DIMENSION_SWAPCHAIN: u32 = TOPE_SWAPCHAIN_LANDSCAPE;
+
 
 /// Calcula la escala de render del swapchain respetando el tope de dimensión máxima
 /// según la orientación de la pantalla (apaisado vs retrato).

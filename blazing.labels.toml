@@ -76,3 +76,98 @@ mode = "thumb"
 name = "RNG_Advance"
 address = 0x080283c8
 mode = "thumb"
+
+# ==============================================================================
+# RUTINAS IDENTIFICADAS POR EL PROFILER DE HOTSPOTS EN RUNTIME
+# ==============================================================================
+
+[[functions]]
+name = "Unit_GetStruct"
+address = 0x08019120
+mode = "thumb"
+
+[[functions]]
+name = "Battle_MapScanUnits"
+address = 0x08026060
+mode = "thumb"
+
+[[functions]]
+name = "OAM_BuildSpriteList"
+address = 0x08006980
+mode = "thumb"
+
+[[functions]]
+name = "Unit_GetStatusField"
+address = 0x08006ed0
+mode = "thumb"
+
+[[functions]]
+name = "DMA_BufferTransferHelper"
+address = 0x08003080
+mode = "thumb"
+
+[[functions]]
+name = "ScriptEngine_StepTick"
+address = 0x080b4270
+mode = "thumb"
+
+[[functions]]
+name = "VRAM_TileAnimationStep"
+address = 0x08069e98
+mode = "thumb"
+
+[[functions]]
+name = "Sound_AudioTrackStep"
+address = 0x080a3668
+mode = "thumb"
+
+[[functions]]
+name = "Menu_CursorAnimStep"
+address = 0x08087748
+mode = "thumb"
+
+[[functions]]
+name = "Memory_FastCopy32"
+address = 0x08083324
+mode = "thumb"
+
+[[functions]]
+name = "Palette_ColorFadeRGB555"
+address = 0x08066fb4
+mode = "thumb"
+
+[[functions]]
+name = "Palette_BlendBufferStep"
+address = 0x080672f8
+mode = "thumb"
+
+[[functions]]
+name = "Map_CoordinateOffsetCalc"
+address = 0x08032a24
+mode = "thumb"
+
+[[functions]]
+name = "Checksum_CalculateCRC"
+address = 0x08000360
+mode = "arm"
+
+[[functions]]
+name = "Timer_SyncEvent"
+address = 0x080bb634
+mode = "thumb"
+
+[[functions]]
+name = "Palette_TransformBuffer"
+address = 0x08066ca8
+mode = "thumb"
+
+[[functions]]
+name = "Battle_UnitStatusCheck"
+address = 0x08025c50
+mode = "thumb"
+
+[[functions]]
+name = "Menu_CursorInputFilter"
+address = 0x08082282
+mode = "thumb"
+

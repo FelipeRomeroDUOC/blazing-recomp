@@ -9,6 +9,7 @@ use gba_core::cpu::FLAG_I;
 use gba_core::machine::IRQ_RETURN_ADDR;
 use gba_core::{Machine, Mode};
 use std::collections::HashMap;
+use std::sync::Mutex;
 
 /// Puntero a función de bloque C11 recompilado.
 pub type BlockFn = extern "C" fn(*const gba_core::capi::RtApi, *mut std::ffi::c_void) -> u32;
@@ -176,12 +177,44 @@ pub fn run_frame_native(
                 native += 1;
             }
             None => {
+                record_hotspot(key);
                 m.step();
                 fallback += 1;
             }
         }
     }
     (native, fallback)
+}
+
+/// Rango de direcciones de la memoria ROM de Game Boy Advance (Cartucho).
+pub const ROM_REGION_START: u32 = 0x0800_0000;
+pub const ROM_REGION_END: u32 = 0x0A00_0000;
+
+static HOTSPOTS: Mutex<Option<HashMap<u32, u64>>> = Mutex::new(None);
+
+/// Registra una dirección ejecutada en el intérprete de respaldo si pertenece a la ROM.
+#[inline]
+pub fn record_hotspot(pc: u32) {
+    let clean_pc = pc & !1;
+    if clean_pc >= ROM_REGION_START && clean_pc < ROM_REGION_END {
+        if let Ok(mut guard) = HOTSPOTS.lock() {
+            let map = guard.get_or_insert_with(HashMap::new);
+            *map.entry(clean_pc).or_insert(0) += 1;
+        }
+    }
+}
+
+/// Extrae las `limit` direcciones de ROM más ejecutadas y reinicia el acumulador.
+pub fn drain_top_hotspots(limit: usize) -> Vec<(u32, u64)> {
+    let map = match HOTSPOTS.lock() {
+        Ok(mut guard) => guard.take(),
+        Err(_) => None,
+    };
+    let Some(map) = map else { return Vec::new() };
+    let mut entries: Vec<(u32, u64)> = map.into_iter().collect();
+    entries.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+    entries.truncate(limit);
+    entries
 }
 
 /// Resuelve la ruta a una biblioteca hermana contigua a partir de la ruta absoluta

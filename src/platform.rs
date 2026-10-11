@@ -2072,6 +2072,16 @@ pub fn android_main(app: android_activity::AndroidApp) {
                         // la ventana `t=` a la que describen.
                         state.calibrar_presentacion(&report, (win_w, win_h));
                         state.write_perf_report(&report);
+                        if report.second_index % 5 == 0 {
+                            let top = crate::recomp::drain_top_hotspots(6);
+                            if !top.is_empty() {
+                                let items: Vec<String> = top
+                                    .iter()
+                                    .map(|(addr, c)| format!("0x{:08X} ({})", addr, c))
+                                    .collect();
+                                state.append_perf_line(&format!("# hotspots top={}", items.join(" ")));
+                            }
+                        }
                     }
                 } else {
                     state.perf.record_empty_turn();
