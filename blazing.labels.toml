@@ -171,3 +171,74 @@ name = "Menu_CursorInputFilter"
 address = 0x08082282
 mode = "thumb"
 
+# --- Hotspots de CPU sesión de telemetría (14 funciones) ---
+[[functions]]
+name = "Battle_EventInterpolateStep"
+address = 0x08076bd8
+mode = "thumb"
+
+[[functions]]
+name = "LZ77_DecompressBuffer"
+address = 0x08077020
+mode = "thumb"
+
+[[functions]]
+name = "Map_TileScrollAnimStep"
+address = 0x08069bfc
+mode = "thumb"
+
+[[functions]]
+name = "Battle_DamageCalcFormulas"
+address = 0x0801ebf4
+mode = "thumb"
+
+[[functions]]
+name = "Palette_BufferTransformExt"
+address = 0x08066a80
+mode = "thumb"
+
+[[functions]]
+name = "Palette_ContrastModulateStep"
+address = 0x08066d6c
+mode = "thumb"
+
+[[functions]]
+name = "Entity_MainScanLoop"
+address = 0x080046e8
+mode = "thumb"
+
+[[functions]]
+name = "Map_IndexUnpackHelper"
+address = 0x080778c0
+mode = "thumb"
+
+[[functions]]
+name = "Script_DialogueStep"
+address = 0x080c0788
+mode = "thumb"
+
+[[functions]]
+name = "Memory_AuxBlockCopy"
+address = 0x080771a4
+mode = "thumb"
+
+[[functions]]
+name = "Cursor_GridPosCalc"
+address = 0x08013280
+mode = "thumb"
+
+[[functions]]
+name = "Menu_CursorAccumulate"
+address = 0x080820d4
+mode = "thumb"
+
+[[functions]]
+name = "Unit_StatTablePreload"
+address = 0x08023ea8
+mode = "thumb"
+
+[[functions]]
+name = "Hardware_StatusBitmask"
+address = 0x08008214
+mode = "thumb"
+
