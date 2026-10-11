@@ -52,6 +52,7 @@ Este registro documenta de manera exhaustiva y transparente cada decisión de di
 27. [Calibración Simétrica de Swapchain a 960px para 60 FPS Estables en Apaisado y Retrato](#27-calibración-simétrica-de-swapchain-a-960px-para-60-fps-estables-en-apaisado-y-retrato)
 28. [Sincronización Reactiva por Eventos con AndroidAppWaker y Erradicación del Sondeo Inútil en el Hilo Principal](#28-sincronización-reactiva-por-eventos-con-androidappwaker-y-erradicación-del-sondeo-inútil-en-el-hilo-principal)
 29. [Instrumentación de Rendimiento de Hardware en gba-core y Aislamiento del Overhead de Simulación](#29-instrumentación-de-rendimiento-de-hardware-en-gba-core-y-aislamiento-del-overhead-de-simulación)
+30. [Optimización de Desempaquetado Ráfaga 4bpp y Recorte de Sprites en la PPU](#30-optimización-de-desempaquetado-ráfaga-4bpp-y-recorte-de-sprites-en-la-ppu)
 
 ---
 
@@ -596,6 +597,34 @@ Además, en procesadores móviles de gama de entrada, una llamada a `std::time::
 #### Alternativas y compromisos
 * **Alternativa descartada:** Cronometrar individualmente cada llamada a `read8/16/32` y `write8/16/32`. Descartada porque 100,000 accesos a 470 ns por lectura de reloj habrían sumado 47 ms adicionales por frame, congelando el juego. El uso de contadores enteros `u64` resolvió el diagnóstico con cero distorsión temporal.
 * **Compromiso asumido:** Los contadores están resguardados bajo la feature `perf-counters`, de modo que pueden desactivarse por completo en compilaciones de producción pura sin dejar ninguna instrucción adicional en el ensamblado final.
+
+---
+
+### 30. Optimización de Desempaquetado Ráfaga 4bpp y Recorte de Sprites en la PPU
+
+#### Contexto
+Tras la instrumentación de hardware (ADR 29), las mediciones en Snapdragon 662 demostraron que el renderizador de software de la PPU (`crates/gba-core/src/ppu.rs`) representaba el componente individual más pesado de la simulación, consumiendo entre 3.5 y 6.9 ms por fotograma. Al perfilar el renderizado de scanlines se identificaron dos cuellos de botella algorítmicos fundamentales:
+1. En fondos de texto de 4 bits por píxel (Modo 0, predominante en *Fire Emblem*), la función `render_text_bg` leía la VRAM byte a byte píxel a píxel, realizando divisiones `fx / 2` y bifurcaciones condicionales repetitivas (`if fx & 1 == 0`) para desempaquetar cada nibble.
+2. En `render_sprites`, el bucle horizontal iteraba ciegamente sobre el ancho completo del sprite (`0..bw`), evaluando en cada píxel si caía dentro de la pantalla (`(0..VISIBLE_WIDTH).contains(&sx)`) y recalculando la coordenada vertical y dirección de tile en cada iteración horizontal, incluso para sprites no afines.
+
+#### Solución implementada
+1. **Desempaquetado ráfaga de tiles 4bpp:**
+   - Una fila de 8 píxeles en 4bpp equivale a exactamente 4 bytes contiguos en VRAM.
+   - Se reemplazaron las lecturas byte a byte por una única carga de 32 bits (`u32::from_le_bytes`), extrayendo el color de cada píxel en ráfaga mediante desplazamiento y máscara libre de ramas:
+     `let nib = ((row_bytes >> (fx * 4)) & 0xF) as usize;`
+   - Se forzó el inlining de `pal16` (`#[inline(always)]`), reduciendo la sobrecarga de resolución de colores.
+2. **Recorte horizontal temprano de Sprites:**
+   - Se calcula el intervalo visible horizontal antes de iniciar el bucle:
+     `let min_bx = (-x).max(0); let max_bx = (VISIBLE_WIDTH as i32 - x).min(bw);`
+   - Si `min_bx >= max_bx`, el sprite se descarta de inmediato sin procesar píxeles.
+   - Para sprites no afines (la gran mayoría), las coordenadas verticales (`tv`, `pv`) se calculan una sola vez fuera del bucle horizontal, evitando multiplicaciones y divisiones por píxel.
+3. **Impacto medido en telemetría en hardware real:**
+   - En escenas de Modo 0, el tiempo de ejecución `ejec` se redujo de **10.5–11.7 ms a 8.4–8.5 ms** (hasta **-3.3 ms**, una mejora del **28%** en velocidad de CPU).
+   - En escenas densas con casi 60,000 instrucciones de intérprete y más de 72,000 accesos a memoria, la simulación se mantuvo sólida en **55–60 FPS**, completándose en ~14.7 ms.
+
+#### Alternativas y compromisos
+* **Alternativa descartada:** Migrar el renderizado de la PPU a shaders de fragmentos de la GPU en Vulkan. Descartada por ahora porque requeriría transferir tablas de baldosas y mapas de patrones a texturas de GPU por scanline, rompiendo la independencia de `gba-core` y añadiendo complejidad en sincronización de DMA y VRAM.
+* **Compromiso asumido:** El desempaquetado de 32 bits asume que los 4 bytes de una fila de tile residen en el espacio canónico de VRAM; si una dirección cae fuera de `0x10000`, la guarda produce píxeles transparentes en consonancia con el comportamiento original.
 
 ---
 
