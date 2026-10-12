@@ -43,7 +43,7 @@ O ábrelo directamente en el dispositivo con Files de Google u otro explorador d
 Para validar que la medición se registró correctamente, abre `blazing-perf.txt` y comprueba que contenga:
 1. Una línea de encabezado inicial: `# backend=Vulkan modo=AOT present=Mailbox alpha=Opaque reloj=NNns`
 2. Una línea por cada segundo transcurrido con el siguiente formato:
-   `t=1s fps=60.0 ejec=2.3/4.1 color=0.8/1.2 dibujo=3.5/6.0 espera=1.2/3.0 subida=0.3 codificacion=1.7 present=1.5 nativos=1520 interprete=0 vacias=12 ventana=1080x2400`
+   `t=45s fps=60.0 ejec=13.6/21.9 ppu=7.7 ppubg=3.3 ppuspr=1.1 ppucomp=3.3 apu=1.5 lecturas=6581 escrituras=4206 color=1.2/1.3 dibujo=7.0/15.5 espera=0.0/0.0 subida=0.5 codificacion=1.2 present=5.4 presentmax=14.0 nativos=4945 interprete=2 vacias=1 ventana=1280x720`
 
 ### Significado de los campos
 Cada par `A/B` representa el **promedio** y el **peor caso (máximo)** en milisegundos:
@@ -52,17 +52,30 @@ Cada par `A/B` representa el **promedio** y el **peor caso (máximo)** en milise
 | :--- | :--- | :--- |
 | `t` | segundos | Segundo transcurrido desde el inicio de la sesión (`t=1s`, `t=2s`, ...). |
 | `fps` | fotogramas | Cantidad de fotogramas de simulación completados en esa ventana de 1 segundo. |
-| `ejec` | ms (prom/máx) | Tiempo de CPU ejecutando la lógica del juego y el hardware emulado. |
+| `ejec` | ms (prom/máx) | Tiempo de CPU ejecutando la lógica del juego y el hardware emulado (incluye la PPU y el APU). |
+| `ppu` | ms (prom) | Tiempo de CPU de la PPU en software. Desde el 2026-10-12 es **exactamente la suma de sus tres partes**: `ppu = ppubg + ppuspr + ppucomp`, sin contador propio. Si la suma se desvía de `ppu` más de 0,1 ms (la resolución de impresión), hay un contador sin declarar. |
+| `ppubg` | ms (prom) | Renderizado de fondos (modos de texto y bitmap), incluido el desplazamiento de las líneas. |
+| `ppuspr` | ms (prom) | Extracción y dibujado de sprites, incluidas las transformaciones afines de la OAM. |
+| `ppucomp` | ms (prom) | Composición de la línea: prioridad de capas, ventana, mosaico y mezclas alfa y semitransparentes. |
+| `apu` | ms (prom) | Muestreo de audio de los canales que avanzan en esa ventana. |
+| `lecturas` / `escrituras` | enteros | Lecturas y escrituras del bus de memoria emulado por fotograma (promedio de la ventana). |
 | `color` | ms (prom/máx) | Tiempo de CPU convirtiendo píxeles al espacio de color y persistencia LCD (`temporal.compose`). |
 | `dibujo` | ms (prom/máx) | Tiempo total de `Compositor::render` (suma de `subida` + `codificacion` + `present`). |
 | `espera` | ms (prom/máx) | Tiempo bloqueado esperando un búfer de presentación del swapchain en `get_current_texture`. |
 | `subida` | ms (prom) | Fase de subida de la textura de juego y los búferes uniformes a la GPU (`write_texture`/`write_buffer`). |
 | `codificacion` | ms (prom) | Fase de adquisición de búfer, grabado de los pases de render y `queue.submit`. |
 | `present` | ms (prom) | Fase de `frame.present()`: incluye la espera de VSync **y** la espera de que el compositor libere un búfer del swapchain; suele dominar el coste de `dibujo`. |
+| `presentmax` | ms (máx) | Peor `present` de esa ventana. Un valor muy por encima del resto de la sesión señala un tirón del compositor de Android (u otra pausa del sistema), no trabajo del motor. |
 | `nativos` | entero | Promedio de bloques C11 nativos recompilados ejecutados por fotograma. |
 | `interprete` | entero | Promedio de pasos de instrucción en el intérprete de respaldo por fotograma. |
 | `vacias` | entero | Vueltas del bucle de eventos sin avance de fotograma ni redibujado durante ese segundo. |
 | `ventana` | píxeles | Resolución física de la ventana (`ancho x alto`), distinguiendo portrait de landscape. |
+
+Sobre `reloj=` del encabezado: es el **coste medido de una lectura de `Instant::now()` del port**
+(promedio de 10.000 lecturas al arrancar, [`src/perf.rs`](../../src/perf.rs)). En estos dispositivos
+ronda 1,4-2,2 µs, tres órdenes de magnitud por encima de lo habitual, y sirve para saber cuánto cuesta
+cronometrar la propia telemetría. **No** mide el contador del sistema con el que el motor cronometra
+las fases de la PPU, así que no sirve para comparar el coste de ese reloj entre versiones.
 
 ### Líneas de calibración de presentación
 
