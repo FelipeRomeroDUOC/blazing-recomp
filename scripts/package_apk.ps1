@@ -171,7 +171,7 @@ if (-not $jar -and $keytool) {
     if (Test-Path $cJar) { $jar = $cJar }
 }
 
-# Detección de python para fallback de inyección STORED (sin compresión)
+# Detección de python para fallback de inyección comprimida (DEFLATE)
 $python = $null
 if (Get-Command python -ErrorAction SilentlyContinue) {
     $python = (Get-Command python).Source
@@ -312,7 +312,8 @@ if (-not (Test-Path $targetDir)) {
 
 $unalignedApk = Join-Path $targetDir "blazing-recomp-unaligned.apk"
 $alignedApk = Join-Path $targetDir "blazing-recomp-aligned.apk"
-$finalApk = Join-Path $targetDir "blazing-recomp-debug.apk"
+# El nombre final refleja el perfil real: `-release` por defecto y `-debug` con -Debug.
+$finalApk = Join-Path $targetDir "blazing-recomp-$targetProfile.apk"
 
 if (Test-Path $unalignedApk) { Remove-Item $unalignedApk -Force }
 if (Test-Path $alignedApk) { Remove-Item $alignedApk -Force }
@@ -325,10 +326,11 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-# 8. Incorporar bibliotecas nativas (.so) en lib/<abi>/ SIN COMPRESIÓN (STORED, metodo 0)
-# Esto es imprescindible para carga directa por mmap (extractNativeLibs=false)
-# y alineacion exacta de paginas de 16 KB requerida en Android 15.
-Write-Host "==> Preparando bibliotecas nativas sin compresion..."
+# 8. Incorporar bibliotecas nativas (.so) en lib/<abi>/ COMPRIMIDAS (DEFLATE, metodo 8).
+# El manifiesto declara android:extractNativeLibs="true", asi que Android extrae las
+# bibliotecas al instalar y acepta entradas comprimidas; el empaquetado STORED solo era
+# imprescindible en el modo extractNativeLibs="false" (carga por mmap desde el propio APK).
+Write-Host "==> Preparando bibliotecas nativas comprimidas..."
 
 $stagingDir = Join-Path $targetDir "apk-staging"
 if (Test-Path $stagingDir) { Remove-Item -Recurse -Force $stagingDir }
@@ -367,21 +369,25 @@ if (Test-Path $recompSo) {
     Write-Host "   + Incluyendo AOT recomp: $TargetAbi ($recompSo)"
 }
 
-# Si existen otros ABIs ya compilados en target, incorporarlos (Fat APK multi-arquitectura)
-foreach ($arch in $abiMap.Keys) {
-    $abi = $abiMap[$arch]
-    if ($abi -ne $TargetAbi) {
-        $otherSo = Join-Path $RepoRoot "target\$arch\$targetProfile\libblazing_recomp.so"
-        if (Test-Path $otherSo) {
-            $otherStaging = Join-Path $stagingDir "lib\$abi"
-            New-Item -ItemType Directory -Path $otherStaging -Force | Out-Null
-            Stage-So-File -SourcePath $otherSo -DestPath (Join-Path $otherStaging "libblazing_recomp.so")
-            Write-Host "   + Incluyendo soporte multi-ABI: $abi ($otherSo)"
+# Si existen otros ABIs ya compilados en target, incorporarlos (Fat APK multi-arquitectura).
+# La guarda es imprescindible: sin ella, -AllAbis:$false seguiria incorporando cualquier ABI
+# presente en target/ y el APK saldria "gordo" igual.
+if ($AllAbis) {
+    foreach ($arch in $abiMap.Keys) {
+        $abi = $abiMap[$arch]
+        if ($abi -ne $TargetAbi) {
+            $otherSo = Join-Path $RepoRoot "target\$arch\$targetProfile\libblazing_recomp.so"
+            if (Test-Path $otherSo) {
+                $otherStaging = Join-Path $stagingDir "lib\$abi"
+                New-Item -ItemType Directory -Path $otherStaging -Force | Out-Null
+                Stage-So-File -SourcePath $otherSo -DestPath (Join-Path $otherStaging "libblazing_recomp.so")
+                Write-Host "   + Incluyendo soporte multi-ABI: $abi ($otherSo)"
 
-            $otherRecomp = Join-Path $RepoRoot "target\recompiled\$abi\libblazing_recompiled.so"
-            if (Test-Path $otherRecomp) {
-                Stage-So-File -SourcePath $otherRecomp -DestPath (Join-Path $otherStaging "libblazing_recompiled.so")
-                Write-Host "   + Incluyendo soporte multi-ABI AOT recomp: $abi ($otherRecomp)"
+                $otherRecomp = Join-Path $RepoRoot "target\recompiled\$abi\libblazing_recompiled.so"
+                if (Test-Path $otherRecomp) {
+                    Stage-So-File -SourcePath $otherRecomp -DestPath (Join-Path $otherStaging "libblazing_recompiled.so")
+                    Write-Host "   + Incluyendo soporte multi-ABI AOT recomp: $abi ($otherRecomp)"
+                }
             }
         }
     }
@@ -389,22 +395,22 @@ foreach ($arch in $abiMap.Keys) {
 
 try {
     if ($jar) {
-        Write-Host "--> Usando jar (--no-compress) para empaquetado STORED de lib/..."
-        & $jar -u -0 -M -f $unalignedApk -C $stagingDir "lib"
+        Write-Host "--> Usando jar (deflate) para empaquetado comprimido de lib/..."
+        & $jar -u -M -f $unalignedApk -C $stagingDir "lib"
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Fallo jar al inyectar la biblioteca nativa."
             exit $LASTEXITCODE
         }
     } elseif ($python) {
-        Write-Host "--> Usando python (zipfile.ZIP_STORED) para empaquetado STORED de lib/..."
-        $pyScript = 'import zipfile, sys, os; z = zipfile.ZipFile(sys.argv[1], mode="a"); staging = sys.argv[2]; [z.write(os.path.join(r, f), arcname=os.path.relpath(os.path.join(r, f), staging).replace(chr(92), "/"), compress_type=zipfile.ZIP_STORED) for r, _, fs in os.walk(staging) for f in fs]; z.close()'
+        Write-Host "--> Usando python (zipfile.ZIP_DEFLATED) para empaquetado comprimido de lib/..."
+        $pyScript = 'import zipfile, sys, os; z = zipfile.ZipFile(sys.argv[1], mode="a"); staging = sys.argv[2]; [z.write(os.path.join(r, f), arcname=os.path.relpath(os.path.join(r, f), staging).replace(chr(92), "/"), compress_type=zipfile.ZIP_DEFLATED) for r, _, fs in os.walk(staging) for f in fs]; z.close()'
         & $python -c $pyScript $unalignedApk $stagingDir
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Fallo python al inyectar la biblioteca nativa."
             exit $LASTEXITCODE
         }
     } else {
-        Write-Error "Se requiere 'jar' (JDK / Android Studio JBR) o 'python' para inyectar bibliotecas nativas sin compresion (STORED)."
+        Write-Error "Se requiere 'jar' (JDK / Android Studio JBR) o 'python' para inyectar bibliotecas nativas comprimidas (DEFLATE)."
         exit 1
     }
 } finally {

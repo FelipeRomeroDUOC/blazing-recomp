@@ -1383,12 +1383,13 @@ fn init_perf_file(
         if let Ok(mut f) = std::fs::File::create(&candidate) {
             use std::io::Write;
             let header = format!(
-                "# backend={} modo={} present={} alpha={} reloj={}ns\n",
+                "# backend={} modo={} present={} alpha={} reloj={}ns ppu={}\n",
                 backend,
                 if is_native { "AOT" } else { "INT" },
                 present_mode,
                 alpha_mode,
-                clock_cost_ns
+                clock_cost_ns,
+                gba_core::ppu::PPU_CAMINO_VERSION
             );
             if f.write_all(header.as_bytes()).is_ok() && f.flush().is_ok() {
                 log::info!("Telemetría de rendimiento iniciada en {:?}", candidate);
@@ -1687,25 +1688,18 @@ impl AppState {
         if self.perf_file.is_some() || self.perf_write_warned {
             return;
         }
+        // Postergar la creación del archivo hasta que el compositor esté instanciado
+        // para registrar el modo de presentación y formato alfa reales del swapchain.
+        let Some(c) = self.compositor.as_ref() else {
+            return;
+        };
         let is_native = self.latest_frame.as_ref().map_or_else(
             || crate::recomp::load_native_blocks().is_some(),
             |p| p.is_native,
         );
-        let backend = self
-            .compositor
-            .as_ref()
-            .map(|c| c.fps_counter.renderer())
-            .unwrap_or("Vulkan");
-        let (present_mode, alpha_mode) = self
-            .compositor
-            .as_ref()
-            .map(|c| {
-                (
-                    format!("{:?}", c.present_mode()),
-                    format!("{:?}", c.alpha_mode()),
-                )
-            })
-            .unwrap_or_else(|| ("desconocido".to_string(), "desconocido".to_string()));
+        let backend = c.fps_counter.renderer();
+        let present_mode = format!("{:?}", c.present_mode());
+        let alpha_mode = format!("{:?}", c.alpha_mode());
         self.perf_file = init_perf_file(
             &self.search_dirs,
             backend,
@@ -2098,6 +2092,9 @@ pub fn android_main(app: android_activity::AndroidApp) {
                             nativos: last_step_timing.native_blocks,
                             interprete: last_step_timing.interpreter_steps,
                             ppu_ms: last_step_timing.ppu_ms,
+                            ppu_bg_ms: last_step_timing.ppu_bg_ms,
+                            ppu_sprite_ms: last_step_timing.ppu_sprite_ms,
+                            ppu_compose_ms: last_step_timing.ppu_compose_ms,
                             apu_ms: last_step_timing.apu_ms,
                             lecturas: last_step_timing.reads,
                             escrituras: last_step_timing.writes,
@@ -2114,14 +2111,32 @@ pub fn android_main(app: android_activity::AndroidApp) {
                         // la ventana `t=` a la que describen.
                         state.calibrar_presentacion(&report, (win_w, win_h));
                         state.write_perf_report(&report);
-                        if report.second_index % 5 == 0 {
+                        if report.second_index % 2 == 0 {
                             let top = crate::recomp::drain_top_hotspots(6);
                             if !top.is_empty() {
                                 let items: Vec<String> = top
                                     .iter()
                                     .map(|(addr, c)| format!("0x{:08X} ({})", addr, c))
                                     .collect();
-                                state.append_perf_line(&format!("# hotspots top={}", items.join(" ")));
+                                let msg = format!("# hotspots top={}", items.join(" "));
+                                log::info!("PERF: {}", msg);
+                                state.append_perf_line(&msg);
+                            }
+                            // Totales acumulados por región de memoria: permiten ver en qué
+                            // región (ROM/IWRAM/EWRAM/BIOS) se está gastando el intérprete.
+                            let regiones = crate::recomp::region_counters();
+                            if !regiones.is_empty() {
+                                let msg = regiones.to_line();
+                                log::info!("PERF: {}", msg);
+                                state.append_perf_line(&msg);
+                            }
+                            // Reparto de las líneas de la PPU entre los caminos de composición:
+                            // dice si la vía rápida se ejecuta en juego real y, si no, por qué.
+                            let camino = crate::recomp::ppu_path_counters();
+                            if !camino.is_empty() {
+                                let msg = camino.to_line();
+                                log::info!("PERF: {}", msg);
+                                state.append_perf_line(&msg);
                             }
                         }
                     }

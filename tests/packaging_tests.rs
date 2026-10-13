@@ -12,6 +12,82 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+/// Nombres candidatos del APK final, en orden de preferencia (`release` primero).
+///
+/// El script deriva el nombre del perfil de compilacion, asi que un mismo `target/` puede tener
+/// artefactos de los dos perfiles. Se listan ambos para que los tests de estructura sigan
+/// validando el paquete despues de cualquier renombrado, en vez de fijar una sola ruta.
+fn candidatos_apk() -> Vec<PathBuf> {
+    const NOMBRES: [&str; 2] = ["blazing-recomp-release.apk", "blazing-recomp-debug.apk"];
+    NOMBRES
+        .iter()
+        .map(|nombre| repo_root().join("target").join(nombre))
+        .collect()
+}
+
+/// Primer candidato que existe en disco, si hay alguno.
+fn apk_final() -> Option<PathBuf> {
+    candidatos_apk().into_iter().find(|ruta| ruta.exists())
+}
+
+/// Presupuesto maximo del APK de tres ABIs con las librerias nativas comprimidas (60 MiB).
+///
+/// El APK sin comprimir pesaba 186.6 MiB y el empaquetado DEFLATE medido da ~44 MB, asi que
+/// el umbral deja margen suficiente sin permitir una regresion silenciosa a STORED.
+const APK_SIZE_BUDGET_BYTES: u64 = 62_914_560;
+
+/// El nombre del APK final debe derivarse del perfil de compilacion, no de una cadena fija:
+/// un paquete de perfil `release` llamandose `-debug` hace indistinguibles dos artefactos.
+#[test]
+fn test_packaging_script_names_apk_after_profile() {
+    let script_path = repo_root().join("scripts").join("package_apk.ps1");
+    let script_content =
+        fs::read_to_string(&script_path).expect("Debe poder leerse scripts/package_apk.ps1");
+
+    assert!(
+        script_content.contains("blazing-recomp-$targetProfile.apk"),
+        "El nombre del APK final debe derivarse del perfil de compilacion"
+    );
+    assert!(
+        !script_content.contains("\"blazing-recomp-debug.apk\""),
+        "No debe quedar ningun nombre de APK final fijo que ignore el perfil"
+    );
+}
+
+/// Los tests de estructura abren el APK bajo `if exists`, asi que si la lista de candidatos se
+/// desincroniza del nombre que produce el script dejarian de validar sin fallar. Aqui se cruzan
+/// las dos cosas: los nombres que el script produce para cada perfil y los que buscan los tests.
+#[test]
+fn test_candidatos_apk_cubren_ambos_perfiles() {
+    let script_content = fs::read_to_string(repo_root().join("scripts").join("package_apk.ps1"))
+        .expect("Debe poder leerse scripts/package_apk.ps1");
+
+    let patron = script_content
+        .lines()
+        .find_map(|linea| {
+            linea
+                .trim()
+                .strip_prefix("$finalApk = Join-Path $targetDir \"")?
+                .strip_suffix('"')
+                .map(str::to_string)
+        })
+        .expect("El script debe declarar el nombre del APK final");
+
+    let esperados: Vec<String> = ["release", "debug"]
+        .iter()
+        .map(|perfil| patron.replace("$targetProfile", perfil))
+        .collect();
+    let reales: Vec<String> = candidatos_apk()
+        .iter()
+        .map(|ruta| ruta.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+
+    assert_eq!(
+        reales, esperados,
+        "Los candidatos que buscan estos tests deben coincidir con los nombres que el script produce para cada perfil"
+    );
+}
+
 #[test]
 fn test_manifest_declares_native_activity() {
     let manifest_path = repo_root().join("android").join("AndroidManifest.xml");
@@ -144,8 +220,7 @@ fn test_apk_generation_and_signature() {
     );
 
     // Si el APK ya fue generado, verificar su estructura como archivo zip valido
-    let apk_path = repo_root().join("target").join("blazing-recomp-debug.apk");
-    if apk_path.exists() {
+    if let Some(apk_path) = apk_final() {
         let file = fs::File::open(&apk_path).expect("Debe abrirse el APK generado");
         let metadata = file.metadata().expect("Debe obtener metadatos");
         assert!(
@@ -160,27 +235,45 @@ fn test_apk_generation_and_signature() {
             "El APK debe contener AndroidManifest.xml"
         );
 
-        let so_entry = entries
+        // El manifiesto declara android:extractNativeLibs="true", asi que Android extrae las
+        // bibliotecas al instalar y acepta entradas comprimidas. El empaquetado STORED solo era
+        // necesario en el modo extractNativeLibs="false" (carga por mmap desde el propio APK),
+        // y costaba 4.5x de tamano. Contrato nuevo: DEFLATE (metodo 8).
+        let lib_so_entries: Vec<&ZipEntryInfo> = entries
             .iter()
-            .find(|e| e.name.contains("libblazing_recomp.so"))
-            .expect("El APK debe contener libblazing_recomp.so");
+            .filter(|e| e.name.starts_with("lib/") && e.name.ends_with(".so"))
+            .collect();
 
-        // Validar que la biblioteca esta almacenada sin compresion (STORED = metodo 0)
         assert_eq!(
-            so_entry.compression_method, 0,
-            "libblazing_recomp.so debe almacenarse SIN compresion (metodo 0 STORED) para permitir mmap directo"
-        );
-        assert_eq!(
-            so_entry.comp_size, so_entry.uncomp_size,
-            "Para un archivo STORED, el tamano comprimido debe ser exactamente igual al descomprimido"
+            lib_so_entries.len(),
+            6,
+            "El APK fat debe contener 6 entradas lib/**/*.so (3 ABIs x runtime + AOT), encontradas: {:?}",
+            lib_so_entries
+                .iter()
+                .map(|e| e.name.as_str())
+                .collect::<Vec<_>>()
         );
 
-        // Validar que el inicio de datos de la biblioteca esta alineado a paginas de 16 KB (Android 15)
-        assert_eq!(
-            so_entry.data_offset % 16384,
-            0,
-            "El offset de datos ({}) de libblazing_recomp.so debe estar alineado a 16 KB (16384 bytes) para Android 15",
-            so_entry.data_offset
+        for entry in &lib_so_entries {
+            assert_eq!(
+                entry.compression_method, 8,
+                "{} debe almacenarse comprimido (metodo 8 DEFLATE) para reducir el tamano del APK",
+                entry.name
+            );
+            assert!(
+                entry.comp_size < entry.uncomp_size,
+                "{} debe tener tamano comprimido ({}) menor que el descomprimido ({})",
+                entry.name,
+                entry.comp_size,
+                entry.uncomp_size
+            );
+        }
+
+        assert!(
+            metadata.len() <= APK_SIZE_BUDGET_BYTES,
+            "El APK de tres ABIs pesa {} bytes, por encima del presupuesto de {} bytes",
+            metadata.len(),
+            APK_SIZE_BUDGET_BYTES
         );
     }
 }
@@ -397,5 +490,60 @@ fn test_packaging_script_soname_flag() {
     assert!(
         script_content.contains("-Wl,-soname,libblazing_recompiled.so"),
         "El script de empaquetado debe incluir el flag de SONAME al enlazar libblazing_recompiled.so"
+    );
+}
+
+#[test]
+fn test_apk_keeps_arsc_stored() {
+    // Android 11+ exige resources.arsc sin comprimir. Comprimir lib/ no debe tocarlo:
+    // `jar -u -C <staging> lib` solo reemplaza entradas bajo lib/, y este test lo fija.
+    let Some(apk_path) = apk_final() else {
+        return;
+    };
+
+    let file = fs::File::open(&apk_path).expect("Debe abrirse el APK generado");
+    let entries = zip_read_check(&file);
+
+    let arsc = entries
+        .iter()
+        .find(|e| e.name == "resources.arsc")
+        .expect("El APK debe contener resources.arsc");
+
+    assert_eq!(
+        arsc.compression_method, 0,
+        "resources.arsc debe seguir almacenado sin comprimir (metodo 0): Android 11+ lo exige"
+    );
+}
+
+#[test]
+fn test_packaging_script_respects_single_abi_flag() {
+    let script_path = repo_root().join("scripts").join("package_apk.ps1");
+    let script_content =
+        fs::read_to_string(&script_path).expect("Debe poder leerse scripts/package_apk.ps1");
+
+    let lineas: Vec<&str> = script_content.lines().collect();
+    let indice_bucle = lineas
+        .iter()
+        .position(|l| l.trim() == "foreach ($arch in $abiMap.Keys) {")
+        .expect("El script debe recorrer los ABIs adicionales presentes en target/");
+
+    // Sin la guarda, `-AllAbis:$false` sigue incluyendo cualquier ABI ya compilado en
+    // target/ y el APK sale gordo igual. La primera linea no vacia anterior debe ser la guarda.
+    let mut j = indice_bucle;
+    let guardado = loop {
+        if j == 0 {
+            break false;
+        }
+        j -= 1;
+        let linea = lineas[j].trim();
+        if linea.is_empty() {
+            continue;
+        }
+        break linea.starts_with("if ($AllAbis)");
+    };
+
+    assert!(
+        guardado,
+        "El bucle de ABIs adicionales debe estar condicionado por `if ($AllAbis)` para que -AllAbis:$false produzca un APK de un solo ABI"
     );
 }

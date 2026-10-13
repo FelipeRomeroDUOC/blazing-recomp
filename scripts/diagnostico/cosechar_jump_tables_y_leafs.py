@@ -55,7 +55,7 @@ def cosechar_jump_tables(rom: bytes) -> dict:
                     count = (w & 0xFF) + 1
                     break
 
-            if not count or count > 128:
+            if not count or count > 256:
                 count = 32 # Limite defensivo para tablas sin cmp inmediato detectado
 
             # 2. Localizar la referencia a la tabla de punteros (ldr reg, [pc, #imm])
@@ -126,7 +126,7 @@ def cosechar_punteros_funciones(rom: bytes) -> dict:
                     # Comprobar que no sea un bloque de datos puros buscando retorno o instruccion ejecutable
                     # en las primeras 8 instrucciones
                     tiene_retorno_o_logica = False
-                    for step in range(0, 32, 2):
+                    for step in range(0, 256, 2):
                         if t_off + step + 2 > rom_len:
                             break
                         inst = read16(rom, t_off + step)
@@ -207,6 +207,18 @@ def obtener_rutinas_arm_criticas() -> dict:
     }
     return arm_funcs
 
+def obtener_subrutinas_criticas_telemetria() -> dict:
+    """
+    Subrutinas y bucles identificados directamente en los perfiles de telemetria
+    de Android TV (Run 12) para garantizar su incorporacion incondicional.
+    """
+    return {
+        0x0800A502: "FE7_Loop_0800A502",
+        0x080841A0: "FE7_Loop_080841A0",
+        0x080BE900: "FE7_Leaf_080BE900",
+        0x080AA9AC: "FE7_Leaf_080AA9AC",
+    }
+
 def main():
     if not ROM_PATH.exists():
         print(f"ERROR: No se encontró la ROM en '{ROM_PATH}'.")
@@ -240,8 +252,12 @@ def main():
     arm_funcs = obtener_rutinas_arm_criticas()
     print(f"    Subrutinas ARM identificadas: {len(arm_funcs)}")
 
+    print("==> 6. Cosechando hotspots criticos de telemetria (Android TV Run 12)...")
+    subrutinas_telemetria = obtener_subrutinas_criticas_telemetria()
+    print(f"    Hotspots criticos de telemetria: {len(subrutinas_telemetria)}")
+
     # Cargar labels existentes
-    print(f"==> 6. Cargando labels existentes desde '{LABELS_PATH}'...")
+    print(f"==> 7. Cargando labels existentes desde '{LABELS_PATH}'...")
     with open(LABELS_PATH, "r", encoding="utf-8") as f:
         content = f.read()
 
@@ -254,8 +270,12 @@ def main():
 
     # Unificar candidatos sin colisiones
     nuevas_thumb = {}
-    for addr, name in jt_targets.items():
+    for addr, name in subrutinas_telemetria.items():
         if addr not in existentes and addr not in arm_funcs:
+            nuevas_thumb[addr] = name
+
+    for addr, name in jt_targets.items():
+        if addr not in existentes and addr not in nuevas_thumb and addr not in arm_funcs:
             nuevas_thumb[addr] = name
 
     for addr, name in fn_ptrs.items():

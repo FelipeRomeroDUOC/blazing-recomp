@@ -654,6 +654,134 @@ A pesar de la optimización de desempaquetado de tiles y recorte de sprites (ADR
 
 ---
 
+### 32. Compresión DEFLATE de las Bibliotecas Nativas en el APK
+
+#### Contexto
+El APK universal de tres ABIs pesaba **195,670,857 bytes (186.6 MiB)**. La medición de su estructura interna mostró que las seis entradas `lib/**/*.so` ocupaban dentro del archivo exactamente lo mismo que fuera de él: estaban almacenadas con `compression_method=0` (STORED), sin comprimir. El empaquetado STORED se justificaba en el script como imprescindible para la carga directa por `mmap` con `android:extractNativeLibs="false"`, pero el manifiesto declara `android:extractNativeLibs="true"` desde la decisión 14: Android **extrae** las bibliotecas al instalar y acepta entradas comprimidas. Se pagaba 4.5× de tamaño por una ventaja que la configuración real no utilizaba.
+
+#### Decisión e implementación
+1. En [`scripts/package_apk.ps1`](../../scripts/package_apk.ps1) se retiró la opción `-0` de la llamada a `jar`, de modo que las entradas inyectadas bajo `lib/` se guardan con DEFLATE (método 8). El respaldo con Python pasó de `zipfile.ZIP_STORED` a `zipfile.ZIP_DEFLATED`.
+2. Se conserva `zipalign -P 16 4` y la firma v1/v2/v3 sin cambios.
+3. Se corrigió además el bucle que incorpora ABIs adicionales: ahora está condicionado por `if ($AllAbis)`, de forma que `-AllAbis:$false` produce realmente un APK de un solo ABI en lugar de arrastrar cualquier arquitectura ya compilada en `target/`.
+4. El contrato de los tests de empaquetado cambió de «STORED + offset de datos alineado a 16 KB» a «DEFLATE con `comp_size < uncomp_size`» más dos guardas: el APK de tres ABIs debe caber en 60 MiB, y `resources.arsc` debe seguir almacenado sin comprimir porque Android 11+ lo exige.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: adoptar `android:extractNativeLibs="false"` + STORED.** Es el modo moderno (carga por `mmap` desde el propio APK, sin extracción en disco), pero no reduce el tamaño del paquete —seguiría pesando 186 MiB— y rompería la compatibilidad con emuladores que la decisión 16 fijó explícitamente.
+* **Alternativa descartada: bajar la optimización del código C11 recompilado (`-Oz`).** Iría en contra del objetivo del proyecto, que es precisamente maximizar el rendimiento de ejecución en el hardware objetivo.
+* **Compromiso asumido:** comprimir reduce el tamaño de la **descarga**, no el espacio ocupado en el dispositivo: como `extractNativeLibs="true"`, Android descomprime al instalar y el juego sigue ocupando los mismos ~186 MB en disco. Para reducir ese segundo número hace falta el recorte por ABI, que queda fuera de esta decisión.
+* **Compromiso asumido:** el alineado a páginas de 16 KB del punto de datos dentro del ZIP deja de aplicar a las entradas de `lib/`, porque solo es necesario en el modo de `mmap` directo. La alineación de la propia biblioteca ELF es una cuestión independiente de esta decisión y no queda cubierta por ella.
+
+---
+
+### 33. El acceso a memoria no se troca por puntero directo, y la instrumentación que viaja en el APK pasa a ser el objetivo
+
+#### Contexto
+El residuo de `ejec` en el Android TV (4,54 ms de mediana tras descontar PPU y APU, sesión 17) se atribuía al acceso a memoria: cada lectura y escritura del juego es una llamada indirecta a la vtable `RtApi`, y a 12.214 accesos por fotograma eso daba ~3,7 ms a 0,27 µs por acceso. La fase A de [`2026-10-12_acceso-memoria-sin-llamada-indirecta.md`](../propuestas/2026-10-12_acceso-memoria-sin-llamada-indirecta.md) existía para medir antes de tocar el generador.
+
+#### Decisión e implementación
+1. El salto indirecto se midió en aislamiento (10⁷ accesos, misma ROM y mismas direcciones): 0,95 ns por lectura directa contra 2,69 ns por la vtable — **2,8×**, la suposición era cierta— pero 2,69 ns × 12.214 accesos son 0,033 ms por fotograma en host (~0,45 ms con el factor host→dispositivo), **ocho veces menos** que la atribución que fundaba la propuesta.
+2. Se prototipó el camino rápido de lectura de ROM (tres campos nuevos en `RtApi`, `rc_rom_fast`/`rc_read8/16/32` en el preámbulo C y los ocho puntos de emisión de lecturas del generador) detrás de la constante de entorno `RECOMP_FAST_ROM`: los tres hashes guardianes quedaron idénticos con el camino activo (600 → `31184031261ea2ec`; 2400 y 7200 → `b54066dc06f2b76c`) y un control de mutación (puntero de ROM desplazado 4 bytes) probó que el camino se ejecutaba de verdad.
+3. El A/B del arnés —6 pares intercalados, el mismo `.dll`— **no separó el efecto del ruido**: mediana de 7822 ms sin el camino rápido contra 7852,5 ms con él (+0,4 %, más lento), mediana pareada −286,5 ms (−3,6 %) y 4 de 6 pares más rápidos. El prototipo se revirtió y el generador no se tocó.
+4. El mismo tipo de A/B aplicado a la instrumentación que viaja en el APK ([`Cargo.toml:12`](../../Cargo.toml#L12) activa `perf-counters`: seis incrementos por acceso en el bus y cuatro cronómetros por línea visible en la PPU) dio **+10,4 % de mediana pareada, con 5 de 6 pares más lentos** (0,105 ms por fotograma en host).
+5. La fase A de [`2026-10-12_telemetria-sin-coste-en-el-apk.md`](../propuestas/2026-10-12_telemetria-sin-coste-en-el-apk.md) repartió ese efecto con cuatro variantes temporales del motor (6 ciclos intercalados y el mismo `.dll`), y el reparto desmintió la premisa de la propuesta: los seis incrementos del bus cuestan **−0,7 %** (dentro del ruido, 2 de 6 pares más lentos) y los cronómetros PPU+APU **+10,1 %** (5 de 6 pares más lentos), con el reparto aditivo y un residuo de −0,5 %.
+6. El mecanismo de ese +10,1 % se midió después: 89,4 µs por fotograma entre 640 lecturas de reloj ⇒ **~140 ns por lectura**, casi cinco veces los ~30 ns que documenta `perf_clock` para su camino genérico. Y ese camino genérico (`Instant::now()`) es el que usan el arnés de host, `armeabi-v7a` y `x86_64`, porque `perf_clock` **solo usa `CNTVCT_EL0` bajo `#[cfg(target_arch = "aarch64")]`**. Mover los contadores del bus a un estático con línea propia (`#[repr(align(64))]`) no quitó nada —+7,3 % frente a +8,6 %, dentro de la dispersión del arnés—: no había interferencia que quitar.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: seguir con EWRAM/IWRAM y con las escrituras.** El prototipo cubrió solo la lectura de ROM; si la mitad más limpia del camino no movió el fotograma, el resto tampoco.
+* **Compromiso asumido: el metro estaba estirado, pero el 10 % no lo pagaba el APK principal.** El reparto medido deja claro que el coste no está en los seis incrementos del bus —que son los que viajan en cualquier ABI— sino en la lectura de reloj de la PPU, barata en `aarch64` (`CNTVCT_EL0`) y cara en el camino genérico (`Instant::now()`). Lo que sí queda es un **sesgo del arnés de host**: cuando el proyecto compara variantes en el host, un ~8-10 % del fotograma es cronómetro del propio arnés. La primera propuesta se cerró como `discrepada` y la pregunta que queda (cuánto cuesta el reloj del motor en el dispositivo) se mide en [`2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md`](../propuestas/2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md) antes de decidir si hay algo que reparar.
+* **Compromiso asumido: el host no resuelve diferencias de pocos puntos.** Entre corridas idénticas de 7200 fotogramas el arnés dispersó de 7589 a 10468 ms (±13 %), así que un A/B de menos de ~5 % solo es interpretable con pares intercalados y cinco o más pares.
+
+---
+
+### 34. La composición de la PPU se decide por tramos de línea, no por píxel
+
+#### Contexto
+La PPU en software costaba 9,20 ms por fotograma en el Android TV (55 % de `ejec`, con `ejec` ocupando
+el presupuesto entero de 60 FPS) y su parte mayor era la composición: 4,20 ms para decidir, píxel a
+píxel, qué capa se ve. Esa decisión no cambia de un píxel a otro dentro de una línea —el orden de
+prioridad es constante, las ventanas son rangos de x, el modo de mezcla es de la línea entera—, así
+que se pagaba 240 veces por línea y 160 veces por fotograma. El trabajo lo pidió
+[`2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md`](../propuestas/2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md),
+con la salida visual como restricción intocable.
+
+#### Decisión e implementación
+1. En [`../gba-recomp/crates/gba-core/src/ppu.rs`](../../../gba-recomp/crates/gba-core/src/ppu.rs)
+   (motor, ruta local del `[patch]`) la línea se parte en **tramos** de x con control de capas
+   constante (hasta cinco: los bordes de WIN0H/WIN1H) y cada tramo se compone en una pasada con la
+   lista de fondos monomorfizada por número de fondos activos (`straight_span`, `straight_bgs`,
+   `straight_obj`, `compose_straight`). El tramo se corta de la misma forma que `control_at` decide por
+   píxel, incluido el caso que da la vuelta cuando X1 > X2.
+2. La vía rápida se toma **solo si nada puede mezclarse en la línea**: `BLDCNT` en modo 0, sin ventana
+   de sprites y sin ningún píxel de sprite translúcido. Los efectos de color, la ventana de sprites y
+   los sprites translúcidos (que sí mezclan en modo 0) siguen por el camino general, que no se tocó.
+3. El sprite translúcido lo señala `render_sprites` al dibujarlo: su firma ya documentaba que
+   devolvería esa información, y barrer la línea de 240 píxeles para deducirla costaba 0,026 ms por
+   fotograma (16 % de la composición).
+4. En los fondos, un tramo de tile cuya fila está vacía se rellena de una vez en lugar de
+   decodificarse píxel a píxel, y la comprobación de que la fila de tile cabe en VRAM sale del bucle
+   de píxeles del camino de 8bpp.
+5. La fidelidad se comprueba con los tres hashes guardianes del arnés (`600 → 31184031261ea2ec`;
+   `2400` y `7200` → `b54066dc06f2b76c`, con 1.776.798 / 2.167.398 / 3.208.998 bloques y
+   `fallback_steps: 0`) y con dos tests nuevos de frontera: los bordes exactos de un tramo de ventana
+   (X1 inclusive, X2 exclusivo) y el sprite translúcido con `BLDCNT` en modo 0.
+6. Medido en host a 7.200 fotogramas, mismo host y misma sesión contra el binario de referencia:
+   `compose` 0,157 → **0,071 ms** (−54 %), fondos 0,284 → 0,197 (−31 %), `ppu` 0,536 → **0,367**
+   (−32 %), con los subsistemas que no se tocaron planos (`spr` +4 %, `apu` +1 %) como control.
+
+#### Alternativas y compromisos
+* **Compromiso asumido: el listón del 60 % de `ppu` en host no se alcanza** (68,5 %). El prototipo del
+  suelo lo explica: con la composición sustituida por un relleno (0,009 ms) el `ppu` sigue en 0,309 ms,
+  porque lo que queda no es composición sino dibujar —fondos a 1,3 ns por píxel—. El techo se alcanza
+  **dejando de dibujar líneas que no han cambiado** (la fase C de la propuesta, no implementada), no
+  optimizando el cálculo. La mejora del dispositivo queda pendiente de medir allí.
+* **Alternativa descartada: llevar la PPU a la GPU.** Sigue siendo el plan B (no el primero): a
+  resolución nativa no garantiza menos latencia y añade el riesgo de divergencias de píxel con el
+  modelo en software, que es la restricción que manda.
+* **Alternativa descartada: escribir el framebuffer por pares `u32`.** Los bucles rectos quedan sin
+  comprobación de límites y el compilador ya los vectoriza; hacerlo a mano habría pedido `unsafe` sin
+  ganancia medida.
+* **Compromiso asumido: los búferes por línea siguen reinicializándose enteros.** Quitarlo exige que
+  vivan en `MemMap`, y las funciones de dibujado leen de `mem` mientras escriben su línea: eso obliga
+  a partir los préstamos o a cambiar sus firmas. Queda como deuda de ~0,02-0,03 ms por fotograma.
+
+---
+
+### 35. Efectos de color inertes y camino especializado para oscurecido y aclarado en la PPU
+
+#### Contexto
+En mediciones de telemetría de Android TV (sesión 19), el 78 % de las líneas del fotograma eran
+descartadas hacia el camino general de composición por tener `BLDCNT` activo, triplicando `ppucomp`
+(3,63 ms de media). La investigación reveló que la mayoría eran efectos identidad (`BLDY = 0` o alpha
+sin segundos objetivos) o efectos de oscurecido/aclarado (modos 2 y 3) cuyo resultado depende únicamente
+de la capa ganadora superior sin requerir la búsqueda per-píxel de la segunda capa. Esto se planificó
+en [`2026-10-13_ppu-efectos-inertes-y-camino-especializado.md`](../propuestas/2026-10-13_ppu-efectos-inertes-y-camino-especializado.md).
+
+#### Decisión e implementación
+1. **Regla de efectos inertes en vía rápida ([`../gba-recomp/crates/gba-core/src/ppu.rs`](../../../gba-recomp/crates/gba-core/src/ppu.rs)):**
+   Se detectan efectos identidad en tiempo de escaneo: modos 2 y 3 con `EVY == 0` y modo 1 sin bits en la
+   máscara de segundos objetivos. Estas líneas entran directamente por la vía rápida de tramos continuos
+   (`rectas`), incrementando además el contador informativo `inertes`.
+2. **Composición especializada para oscurecido y aclarado real (modos 2 y 3):**
+   Las líneas con `BLDY > 0` en modos 2 y 3 se componen por tramos de control constante aplicando la
+   transformación de color directamente sobre la capa ganadora si es objetivo de `BLDCNT` y las ventanas
+   lo permiten, eliminando por completo la búsqueda de la segunda capa (`BUSQUEDAS_DOS_CAPAS = 0`).
+3. **Telemetría diagnóstica detallada ([`src/recomp.rs`](../../src/recomp.rs)):**
+   Se versionó el pipeline a `ppu=recto-2` y se amplió la línea `# ppucamino` con los campos `inertes`,
+   `efecto`, `efalpha`, `efbrillo` y `efoscuro`, permitiendo auditar en Android TV qué fracción de las
+   líneas son efectos identidad frente a efectos reales.
+4. **Verificación diferencial:**
+   Se contrastó el framebuffer píxel a píxel contra el camino general forzado, demostrando 100 % de
+   fidelidad visual sin divergencias.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Especializar el modo alpha real (modo 1).** En ARM64 el producto de mezcla
+  por canal toma un ciclo; el coste dominante es la búsqueda obligatoria de dos capas requerida por el
+  alpha, por lo que el modo 1 se conservó en el camino general.
+* **Alternativa descartada: Tablas precalculadas de color por `EVY`.** Añadir 64 KB de estado sin
+  medir previamente en el dispositivo físico no se justificó frente al camino por tramos.
+
+---
+
 ## Alternativas y Compromisos Globales
 
 

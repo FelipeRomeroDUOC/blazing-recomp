@@ -134,6 +134,7 @@ pub fn run_frame_native(
     let mut native = 0u64;
     let mut fallback = 0u64;
     let mut steps = 0u64;
+    let mut nativos_por_region = [0u64; 4];
     let mptr = m as *mut Machine as *mut std::ffi::c_void;
 
     while !m.bus.frame_ready && steps < max_steps {
@@ -152,15 +153,16 @@ pub fn run_frame_native(
         let key = m.cpu.regs[15] | m.cpu.thumb() as u32;
 
         if m.bus.real_bios {
+            // Los bloques nativos no pasan por `note_fetch`, así que el flag de "la CPU está
+            // ejecutando dentro de la BIOS" se mantiene aquí, en el despacho: `gba-core`
+            // decide con él si las lecturas de la región 0 devuelven bytes reales.
+            //
+            // No se desvía la BIOS al intérprete: se ejecuta con sus bloques AOT, igual que
+            // en el motor (rev de4edf59b872d887046d6a3b005e2df551b6d44c,
+            // `crates/recomp/src/main.rs`, que en este mismo punto solo asigna este flag).
+            // Si una dirección de BIOS no tiene bloque, el despacho de más abajo cae al
+            // intérprete como en cualquier otra región, y la telemetría lo cuenta en `bios`.
             m.bus.pc_in_bios = key < 0x4000;
-            // La BIOS real oficial debe ejecutarse en el intérprete instrucción por
-            // instrucción para preservar verificaciones de cabecera criptográfica y trampas
-            // de bus de memoria (especificación upstream de gba-recomp).
-            if key < 0x4000 {
-                m.step();
-                fallback += 1;
-                continue;
-            }
         }
 
         // 2. Hooks de motor de audio HLE en límites de bloque
@@ -175,6 +177,9 @@ pub fn run_frame_native(
             Some(f) => {
                 f(&RT_API, mptr);
                 native += 1;
+                if let Some(region) = region_of(key & !1) {
+                    nativos_por_region[region.index()] += 1;
+                }
             }
             None => {
                 record_hotspot(key);
@@ -183,6 +188,7 @@ pub fn run_frame_native(
             }
         }
     }
+    add_native_region_ticks(&nativos_por_region);
     (native, fallback)
 }
 
@@ -190,31 +196,273 @@ pub fn run_frame_native(
 pub const ROM_REGION_START: u32 = 0x0800_0000;
 pub const ROM_REGION_END: u32 = 0x0A00_0000;
 
-static HOTSPOTS: Mutex<Option<HashMap<u32, u64>>> = Mutex::new(None);
+/// Región de memoria ejecutable de Game Boy Advance.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Region {
+    /// Cartucho (`0x08000000..0x0A000000`).
+    Rom = 0,
+    /// RAM interna de trabajo (`0x03000000..0x03008000`).
+    Iwram = 1,
+    /// RAM externa de trabajo (`0x02000000..0x02040000`).
+    Ewram = 2,
+    /// BIOS (`0x00000000..0x00004000`).
+    Bios = 3,
+}
 
-/// Registra una dirección ejecutada en el intérprete de respaldo si pertenece a la ROM.
+impl Region {
+    /// Nombres cortos, en el orden canónico de la telemetría `# regiones`.
+    pub const NAMES: [&'static str; 4] = ["rom", "iwram", "ewram", "bios"];
+
+    /// Índice de la región dentro de los arreglos de [`RegionCounters`].
+    #[inline]
+    pub fn index(self) -> usize {
+        self as usize
+    }
+}
+
+/// Ejecución acumulada por región de memoria desde el arranque de la sesión.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RegionCounters {
+    /// Pasos ejecutados por el intérprete de respaldo, indexados por [`Region::index`].
+    pub interprete: [u64; 4],
+    /// Bloques ejecutados por la tabla nativa AOT, indexados por [`Region::index`].
+    ///
+    /// Cuenta **bloques**, no instrucciones, así que no es comparable término a término con
+    /// `interprete`: dividir ambos da una fracción de eventos de despacho, no de instrucciones.
+    pub nativos: [u64; 4],
+}
+
+impl RegionCounters {
+    /// Indica si todavía no se ha registrado ninguna ejecución.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.interprete.iter().all(|&c| c == 0) && self.nativos.iter().all(|&c| c == 0)
+    }
+
+    /// Formatea la línea de telemetría `# regiones`, con un par `interprete/nativos` por región.
+    pub fn to_line(&self) -> String {
+        use std::fmt::Write as _;
+        let mut linea = String::from("# regiones");
+        for (indice, nombre) in Region::NAMES.iter().enumerate() {
+            let _ = write!(
+                linea,
+                " {}={}/{}",
+                nombre, self.interprete[indice], self.nativos[indice]
+            );
+        }
+        linea
+    }
+}
+
+/// Reparto acumulado de las líneas de la PPU entre los caminos de la composición.
+///
+/// Las cuatro cuentas suman las líneas dibujadas desde el arranque de la sesión: cada línea cae en
+/// una sola razón, la primera que impide usar la vía rápida (efectos de color, ventana de sprites o
+/// sprite translúcido). Es el dato que dice si la vía rápida se ejecuta en juego real y, si no, por
+/// qué.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PpuPathCounters {
+    /// Líneas compuestas por la vía rápida (tramos de control constante).
+    pub rectas: u64,
+    /// De las `rectas`, cuántas lo son porque el efecto de color es la identidad (oscurecer o
+    /// aclarar con `BLDY = 0`, o alpha sin segundos objetivos): líneas que antes se descartaban.
+    pub inertes: u64,
+    /// De las `rectas`, cuántas aplicaron un aclarado u oscurecido real sin buscar la segunda
+    /// capa (modos 2 y 3).
+    pub efecto: u64,
+    /// Líneas con efecto real que piden alpha (modo 1), contadas entre las descartadas.
+    pub efalpha: u64,
+    /// De las líneas con efecto real, cuántas piden aclarar (modo 2).
+    pub efbrillo: u64,
+    /// De las líneas con efecto real, cuántas piden oscurecer (modo 3).
+    pub efoscuro: u64,
+    /// Líneas descartadas porque `BLDCNT` pide un efecto de color que necesita la segunda capa.
+    pub mezcla: u64,
+    /// Líneas descartadas por la ventana de sprites (`OBJWIN`).
+    pub ventana: u64,
+    /// Líneas descartadas por un píxel de sprite translúcido.
+    pub semi: u64,
+}
+
+impl PpuPathCounters {
+    /// Indica si todavía no se ha contado ninguna línea.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.total() == 0
+    }
+
+    /// Total de líneas contadas, que debe cerrar en múltiplos de 160 (las líneas de un fotograma).
+    #[inline]
+    pub fn total(&self) -> u64 {
+        self.rectas + self.mezcla + self.ventana + self.semi
+    }
+
+    /// Porcentaje de líneas que tomaron la vía rápida, redondeado al entero (0 sin líneas contadas).
+    pub fn rectas_pct(&self) -> u64 {
+        match self.total() {
+            0 => 0,
+            total => (self.rectas * 100 + total / 2) / total,
+        }
+    }
+
+    /// Formatea la línea de telemetría `# ppucamino` con las cuatro cuentas, el reparto de los
+    /// efectos y el porcentaje de líneas por la vía rápida.
+    pub fn to_line(&self) -> String {
+        format!(
+            "# ppucamino rectas={} mezcla={} ventana={} semi={} inertes={} efecto={} efalpha={} \
+             efbrillo={} efoscuro={} (rectas={}%)",
+            self.rectas,
+            self.mezcla,
+            self.ventana,
+            self.semi,
+            self.inertes,
+            self.efecto,
+            self.efalpha,
+            self.efbrillo,
+            self.efoscuro,
+            self.rectas_pct()
+        )
+    }
+}
+
+/// Clasifica una dirección de PC normalizada (bit 0 en cero) en su región ejecutable.
+#[inline]
+fn region_of(pc: u32) -> Option<Region> {
+    if (ROM_REGION_START..ROM_REGION_END).contains(&pc) {
+        Some(Region::Rom)
+    } else if (0x0300_0000..0x0300_8000).contains(&pc) {
+        Some(Region::Iwram)
+    } else if (0x0200_0000..0x0204_0000).contains(&pc) {
+        Some(Region::Ewram)
+    } else if pc < 0x4000 {
+        Some(Region::Bios)
+    } else {
+        None
+    }
+}
+
+/// Acumulador global de hotspots, de ejecución por región de memoria y del reparto
+/// de líneas de la PPU por camino de composición.
+#[derive(Default)]
+struct HotspotState {
+    map: HashMap<u32, u64>,
+    region: RegionCounters,
+    camino: PpuPathCounters,
+}
+
+static HOTSPOTS: Mutex<Option<HotspotState>> = Mutex::new(None);
+
+// El acumulador de hotspots es estado global del proceso y `cargo test` ejecuta los
+// tests en paralelo, así que cualquier test que escriba en él (directamente o a través
+// de `run_frame_native`) debe serializarse con este candado para que sus aserciones
+// por diferencia sean deterministas.
+#[cfg(test)]
+pub(crate) static LOCK_ACUMULADORES: Mutex<()> = Mutex::new(());
+
+/// Registra una dirección ejecutada en el intérprete de respaldo si pertenece a regiones ejecutables
+/// (ROM, IWRAM, EWRAM o BIOS).
 #[inline]
 pub fn record_hotspot(pc: u32) {
     let clean_pc = pc & !1;
-    if clean_pc >= ROM_REGION_START && clean_pc < ROM_REGION_END {
-        if let Ok(mut guard) = HOTSPOTS.lock() {
-            let map = guard.get_or_insert_with(HashMap::new);
-            *map.entry(clean_pc).or_insert(0) += 1;
+    let Some(region) = region_of(clean_pc) else {
+        return;
+    };
+    if let Ok(mut guard) = HOTSPOTS.lock() {
+        let estado = guard.get_or_insert_with(HotspotState::default);
+        *estado.map.entry(clean_pc).or_insert(0) += 1;
+        estado.region.interprete[region.index()] += 1;
+    }
+}
+
+/// Extrae las `limit` direcciones ejecutadas con más frecuencia y **consume solo esas**.
+///
+/// Las direcciones que no entran en el `top` conservan su contador y vuelven a competir en el
+/// volcado siguiente, de modo que ninguna ejecución registrada se descarta. Un `limit` mayor o
+/// igual que el número de direcciones registradas deja el acumulador vacío.
+pub fn drain_top_hotspots(limit: usize) -> Vec<(u32, u64)> {
+    let mut guard = match HOTSPOTS.lock() {
+        Ok(guard) => guard,
+        Err(_) => return Vec::new(),
+    };
+    let Some(estado) = guard.as_mut() else {
+        return Vec::new();
+    };
+    let mut entries: Vec<(u32, u64)> = estado.map.iter().map(|(addr, hits)| (*addr, *hits)).collect();
+    entries.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+    entries.truncate(limit);
+    for (addr, _) in &entries {
+        estado.map.remove(addr);
+    }
+    entries
+}
+
+/// Acumula los bloques nativos ejecutados en un fotograma, agrupados por región.
+///
+/// Se invoca una sola vez por fotograma y no una vez por bloque, para no añadir
+/// sincronización al camino caliente de despacho nativo.
+pub(crate) fn add_native_region_ticks(counts: &[u64; 4]) {
+    if counts.iter().all(|&c| c == 0) {
+        return;
+    }
+    if let Ok(mut guard) = HOTSPOTS.lock() {
+        let estado = guard.get_or_insert_with(HotspotState::default);
+        for (indice, &conteo) in counts.iter().enumerate() {
+            estado.region.nativos[indice] += conteo;
         }
     }
 }
 
-/// Extrae las `limit` direcciones de ROM más ejecutadas y reinicia el acumulador.
-pub fn drain_top_hotspots(limit: usize) -> Vec<(u32, u64)> {
-    let map = match HOTSPOTS.lock() {
-        Ok(mut guard) => guard.take(),
-        Err(_) => None,
-    };
-    let Some(map) = map else { return Vec::new() };
-    let mut entries: Vec<(u32, u64)> = map.into_iter().collect();
-    entries.sort_unstable_by(|a, b| b.1.cmp(&a.1));
-    entries.truncate(limit);
-    entries
+/// Acumula el reparto de líneas del fotograma que el motor acaba de medir.
+///
+/// Se invoca una sola vez por fotograma (no una vez por línea) desde el bucle de emulación, así
+/// que no añade sincronización al camino caliente: el motor cuenta por línea sin bloqueo y aquí
+/// se vuelca el total del fotograma.
+pub(crate) fn add_ppu_path(
+    rectas: u64,
+    mezcla: u64,
+    ventana: u64,
+    semi: u64,
+    inertes: u64,
+    efecto: u64,
+    efalpha: u64,
+    efbrillo: u64,
+    efoscuro: u64,
+) {
+    if rectas | mezcla | ventana | semi | inertes | efecto | efalpha | efbrillo | efoscuro == 0 {
+        return;
+    }
+    if let Ok(mut guard) = HOTSPOTS.lock() {
+        let estado = guard.get_or_insert_with(HotspotState::default);
+        estado.camino.rectas += rectas;
+        estado.camino.mezcla += mezcla;
+        estado.camino.ventana += ventana;
+        estado.camino.semi += semi;
+        estado.camino.inertes += inertes;
+        estado.camino.efecto += efecto;
+        estado.camino.efalpha += efalpha;
+        estado.camino.efbrillo += efbrillo;
+        estado.camino.efoscuro += efoscuro;
+    }
+}
+
+/// Devuelve una copia del reparto acumulado de líneas por camino. No reinicia los contadores.
+pub fn ppu_path_counters() -> PpuPathCounters {
+    match HOTSPOTS.lock() {
+        Ok(guard) => guard
+            .as_ref()
+            .map_or_else(PpuPathCounters::default, |estado| estado.camino),
+        Err(_) => PpuPathCounters::default(),
+    }
+}
+
+/// Devuelve una copia de la ejecución acumulada por región de memoria. No reinicia los contadores.
+pub fn region_counters() -> RegionCounters {
+    match HOTSPOTS.lock() {
+        Ok(guard) => guard
+            .as_ref()
+            .map_or_else(RegionCounters::default, |estado| estado.region),
+        Err(_) => RegionCounters::default(),
+    }
 }
 
 /// Resuelve la ruta a una biblioteca hermana contigua a partir de la ruta absoluta

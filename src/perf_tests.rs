@@ -15,6 +15,9 @@ fn test_informe_promedia_y_reporta_peor_caso() {
             nativos: 1000,
             interprete: 10,
             ppu_ms: 3.0,
+            ppu_bg_ms: 1.5,
+            ppu_sprite_ms: 0.5,
+            ppu_compose_ms: 1.0,
             apu_ms: 1.0,
             lecturas: 50000,
             escrituras: 10000,
@@ -30,6 +33,9 @@ fn test_informe_promedia_y_reporta_peor_caso() {
             nativos: 1000,
             interprete: 10,
             ppu_ms: 3.0,
+            ppu_bg_ms: 1.5,
+            ppu_sprite_ms: 0.5,
+            ppu_compose_ms: 1.0,
             apu_ms: 1.0,
             lecturas: 50000,
             escrituras: 10000,
@@ -45,6 +51,9 @@ fn test_informe_promedia_y_reporta_peor_caso() {
             nativos: 1000,
             interprete: 10,
             ppu_ms: 3.0,
+            ppu_bg_ms: 1.5,
+            ppu_sprite_ms: 0.5,
+            ppu_compose_ms: 1.0,
             apu_ms: 1.0,
             lecturas: 50000,
             escrituras: 10000,
@@ -60,6 +69,9 @@ fn test_informe_promedia_y_reporta_peor_caso() {
             nativos: 1000,
             interprete: 10,
             ppu_ms: 3.0,
+            ppu_bg_ms: 1.5,
+            ppu_sprite_ms: 0.5,
+            ppu_compose_ms: 1.0,
             apu_ms: 1.0,
             lecturas: 50000,
             escrituras: 10000,
@@ -74,9 +86,10 @@ fn test_informe_promedia_y_reporta_peor_caso() {
     }
 
     let report = perf.close_window((1200, 1920));
+    assert_eq!(report.present_max_ms, 27.0);
     assert_eq!(
         report.to_line(),
-        "t=1s fps=4.0 ejec=20.0/20.0 ppu=3.0 apu=1.0 lecturas=50000 escrituras=10000 color=1.0/1.0 dibujo=15.0/30.0 espera=4.0/10.0 subida=1.0 codificacion=2.0 present=12.0 nativos=1000 interprete=10 vacias=7 ventana=1200x1920"
+        "t=1s fps=4.0 ejec=20.0/20.0 ppu=3.0 ppubg=1.5 ppuspr=0.5 ppucomp=1.0 apu=1.0 lecturas=50000 escrituras=10000 color=1.0/1.0 dibujo=15.0/30.0 espera=4.0/10.0 subida=1.0 codificacion=2.0 present=12.0 presentmax=27.0 nativos=1000 interprete=10 vacias=7 ventana=1200x1920"
     );
 }
 
@@ -94,6 +107,9 @@ fn test_report_breaks_down_draw_time() {
         nativos: 10,
         interprete: 20,
         ppu_ms: 2.0,
+        ppu_bg_ms: 1.0,
+        ppu_sprite_ms: 0.5,
+        ppu_compose_ms: 0.5,
         apu_ms: 0.5,
         lecturas: 1000,
         escrituras: 500,
@@ -106,6 +122,9 @@ fn test_report_breaks_down_draw_time() {
     assert!(line.contains("codificacion=4.0"), "la línea debe reportar la codificación: {line}");
     assert!(line.contains("present=48.0"), "la línea debe reportar la presentación: {line}");
     assert!(line.contains("ppu=2.0"), "la línea debe reportar la PPU: {line}");
+    assert!(line.contains("ppubg=1.0"), "la línea debe reportar fondos PPU: {line}");
+    assert!(line.contains("ppuspr=0.5"), "la línea debe reportar sprites PPU: {line}");
+    assert!(line.contains("ppucomp=0.5"), "la línea debe reportar composición PPU: {line}");
     assert!(line.contains("apu=0.5"), "la línea debe reportar el APU: {line}");
     assert!(line.contains("lecturas=1000"), "la línea debe reportar las lecturas: {line}");
     assert!(line.contains("escrituras=500"), "la línea debe reportar las escrituras: {line}");
@@ -128,9 +147,10 @@ fn test_ventana_sin_fotogramas_no_divide_por_cero() {
     }
 
     let report = perf.close_window((1200, 1920));
+    assert_eq!(report.present_max_ms, 0.0);
     assert_eq!(
         report.to_line(),
-        "t=1s fps=0.0 ejec=0.0/0.0 ppu=0.0 apu=0.0 lecturas=0 escrituras=0 color=0.0/0.0 dibujo=0.0/0.0 espera=0.0/0.0 subida=0.0 codificacion=0.0 present=0.0 nativos=0 interprete=0 vacias=1000 ventana=1200x1920"
+        "t=1s fps=0.0 ejec=0.0/0.0 ppu=0.0 ppubg=0.0 ppuspr=0.0 ppucomp=0.0 apu=0.0 lecturas=0 escrituras=0 color=0.0/0.0 dibujo=0.0/0.0 espera=0.0/0.0 subida=0.0 codificacion=0.0 present=0.0 presentmax=0.0 nativos=0 interprete=0 vacias=1000 ventana=1200x1920"
     );
 }
 
@@ -156,4 +176,79 @@ fn test_resolve_perf_candidates_prioritizes_downloads() {
     // Verificar que no hay duplicados de /sdcard/Download
     assert_eq!(candidates.iter().filter(|p| **p == std::path::PathBuf::from("/sdcard/Download")).count(), 1);
 }
+
+#[test]
+fn test_informe_reporta_peor_caso_de_presentacion() {
+    let mut perf = FramePerf::new();
+    let frame_base = FrameTiming {
+        ejec_ms: 10.0,
+        color_ms: 1.0,
+        dibujo_ms: 5.0,
+        espera_ms: 0.1,
+        subida_ms: 1.0,
+        codificacion_ms: 1.0,
+        present_ms: 2.0,
+        nativos: 100,
+        interprete: 0,
+        ppu_ms: 2.0,
+        ppu_bg_ms: 1.0,
+        ppu_sprite_ms: 0.5,
+        ppu_compose_ms: 0.5,
+        apu_ms: 0.5,
+        lecturas: 1000,
+        escrituras: 500,
+    };
+
+    // Frame 1: presentación normal rápida (2.0 ms)
+    perf.record_frame(frame_base.clone());
+
+    // Frame 2: stall severo en present() (500.0 ms)
+    let mut frame_stall = frame_base;
+    frame_stall.present_ms = 500.0;
+    frame_stall.dibujo_ms = 503.0;
+    perf.record_frame(frame_stall);
+
+    let report = perf.close_window((1280, 720));
+
+    // El promedio no se altera: (2.0 + 500.0) / 2 = 251.0 ms
+    assert_eq!(report.present_avg_ms, 251.0);
+    // El peor caso captura el bloqueo aislado exacto:
+    assert_eq!(report.present_max_ms, 500.0);
+
+    let line = report.to_line();
+    assert!(line.contains("present=251.0 presentmax=500.0"));
+}
+
+#[test]
+fn test_report_desglose_ppu_subfases() {
+    let mut perf = FramePerf::new();
+    perf.record_frame(FrameTiming {
+        ejec_ms: 10.0,
+        color_ms: 0.5,
+        dibujo_ms: 2.0,
+        espera_ms: 0.0,
+        subida_ms: 0.5,
+        codificacion_ms: 0.5,
+        present_ms: 1.0,
+        nativos: 100,
+        interprete: 0,
+        ppu_ms: 5.5,
+        ppu_bg_ms: 2.5,
+        ppu_sprite_ms: 1.0,
+        ppu_compose_ms: 2.0,
+        apu_ms: 0.8,
+        lecturas: 1000,
+        escrituras: 500,
+    });
+
+    let report = perf.close_window((1280, 720));
+    assert_eq!(report.ppu_avg_ms, 5.5);
+    assert_eq!(report.ppu_bg_avg_ms, 2.5);
+    assert_eq!(report.ppu_sprite_avg_ms, 1.0);
+    assert_eq!(report.ppu_compose_avg_ms, 2.0);
+
+    let line = report.to_line();
+    assert!(line.contains("ppu=5.5 ppubg=2.5 ppuspr=1.0 ppucomp=2.0"));
+}
+
 

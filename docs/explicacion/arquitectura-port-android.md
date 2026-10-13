@@ -99,7 +99,7 @@ flowchart TD
   1. Compilación cruzada paralela con `cargo ndk` para `arm64-v8a`, `armeabi-v7a` y `x86_64`.
   2. Compilación de recursos y manifiesto con `aapt2 compile` y `aapt2 link`.
   3. Stripping no destructivo de bibliotecas `.so` en el staging con `llvm-strip --strip-all`.
-  4. Empaquetado `STORED` (sin compresión interna) de bibliotecas con `jar`.
+  4. Empaquetado comprimido (`deflate`) de bibliotecas con `jar`; el APK de tres ABIs baja de 186.6 MiB a ~44 MB (ADR 32).
   5. Alineación de memoria a 16 KB con `zipalign`.
   6. Firma multi-esquema simultánea (v1 JAR, v2 y v3) con `apksigner`.
 

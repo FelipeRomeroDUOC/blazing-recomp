@@ -19,12 +19,19 @@ def parsear_telemetria(ruta_o_stream):
     fps_muestras = []
     ejec_muestras = []
     ppu_muestras = []
+    ppu_bg_muestras = []
+    ppu_spr_muestras = []
+    ppu_comp_muestras = []
     apu_muestras = []
     dibujo_muestras = []
     present_muestras = []
+    present_max_muestras = []
     interp_instrucciones = []
     nativas_instrucciones = []
     hotspots = Counter()
+    # Acumulado por región de memoria: la última línea `# regiones` del archivo contiene
+    # los totales de la sesión, así que cada lectura sobrescribe la anterior.
+    regiones = {}
 
     lineas = ruta_o_stream.readlines() if hasattr(ruta_o_stream, "readlines") else []
 
@@ -38,30 +45,47 @@ def parsear_telemetria(ruta_o_stream):
             for addr, count in matches:
                 hotspots[addr.upper()] += int(count)
 
+        elif linea.startswith("# regiones"):
+            for nombre, interp, nativos in re.findall(r"(\w+)=(\d+)/(\d+)", linea):
+                regiones[nombre.lower()] = (int(interp), int(nativos))
+
         elif linea.startswith("t="):
             m = re.search(
-                r"fps=([\d\.]+)\s+ejec=([\d\.]+)/[\d\.]+\s+ppu=([\d\.]+)\s+apu=([\d\.]+).*?"
-                r"dibujo=([\d\.]+)/[\d\.]+.*?present=([\d\.]+)\s+nativos=(\d+)\s+interprete=(\d+)",
+                r"fps=([\d\.]+)\s+ejec=([\d\.]+)/[\d\.]+\s+ppu=([\d\.]+)"
+                r"(?:\s+ppubg=([\d\.]+)\s+ppuspr=([\d\.]+)\s+ppucomp=([\d\.]+))?"
+                r"\s+apu=([\d\.]+).*?"
+                r"dibujo=([\d\.]+)/[\d\.]+.*?present=([\d\.]+)(?:\s+presentmax=[\d\.]+)?\s+nativos=(\d+)\s+interprete=(\d+)",
                 linea,
             )
             if m:
                 fps = float(m.group(1))
                 ejec = float(m.group(2))
                 ppu = float(m.group(3))
-                apu = float(m.group(4))
-                dibujo = float(m.group(5))
-                present = float(m.group(6))
-                nativos = int(m.group(7))
-                interp = int(m.group(8))
+                ppubg = float(m.group(4)) if m.group(4) is not None else None
+                ppuspr = float(m.group(5)) if m.group(5) is not None else None
+                ppucomp = float(m.group(6)) if m.group(6) is not None else None
+                apu = float(m.group(7))
+                dibujo = float(m.group(8))
+                present = float(m.group(9))
+                nativos = int(m.group(10))
+                interp = int(m.group(11))
 
                 fps_muestras.append(fps)
                 ejec_muestras.append(ejec)
                 ppu_muestras.append(ppu)
+                if ppubg is not None:
+                    ppu_bg_muestras.append(ppubg)
+                    ppu_spr_muestras.append(ppuspr)
+                    ppu_comp_muestras.append(ppucomp)
                 apu_muestras.append(apu)
                 dibujo_muestras.append(dibujo)
                 present_muestras.append(present)
                 nativas_instrucciones.append(nativos)
                 interp_instrucciones.append(interp)
+
+                m_pmax = re.search(r"presentmax=([\d\.]+)", linea)
+                if m_pmax:
+                    present_max_muestras.append(float(m_pmax.group(1)))
 
     total_seg = len(fps_muestras)
     if total_seg == 0:
@@ -75,8 +99,12 @@ def parsear_telemetria(ruta_o_stream):
     prom_ejec = sum(ejec_muestras) / total_seg
     max_ejec = max(ejec_muestras) if ejec_muestras else 0.0
     prom_ppu = sum(ppu_muestras) / total_seg
+    prom_ppubg = (sum(ppu_bg_muestras) / len(ppu_bg_muestras)) if ppu_bg_muestras else None
+    prom_ppuspr = (sum(ppu_spr_muestras) / len(ppu_spr_muestras)) if ppu_spr_muestras else None
+    prom_ppucomp = (sum(ppu_comp_muestras) / len(ppu_comp_muestras)) if ppu_comp_muestras else None
     prom_apu = sum(apu_muestras) / total_seg
     prom_present = sum(present_muestras) / total_seg
+    max_present = max(present_max_muestras) if present_max_muestras else 0.0
     prom_dibujo = sum(dibujo_muestras) / total_seg
 
     total_nativas = sum(nativas_instrucciones)
@@ -92,13 +120,18 @@ def parsear_telemetria(ruta_o_stream):
         "prom_ejec": prom_ejec,
         "max_ejec": max_ejec,
         "prom_ppu": prom_ppu,
+        "prom_ppubg": prom_ppubg,
+        "prom_ppuspr": prom_ppuspr,
+        "prom_ppucomp": prom_ppucomp,
         "prom_apu": prom_apu,
         "prom_dibujo": prom_dibujo,
         "prom_present": prom_present,
+        "max_present": max_present,
         "total_nativas": total_nativas,
         "total_interp": total_interp,
         "ratio_aot": ratio_aot,
         "hotspots": hotspots,
+        "regiones": regiones,
     }
 
 
@@ -112,14 +145,42 @@ def imprimir_informe(d, top_n=20, titulo="INFORME DE TELEMETRÍA — BLAZING REC
     print("DESGLOSE DE TIEMPOS POR FOTOGRAMA:")
     print(f"  • CPU Emulación (ejec):   {d['prom_ejec']:5.2f} ms  (peor segundo: {d['max_ejec']:.2f} ms)")
     print(f"  • PPU Software:           {d['prom_ppu']:5.2f} ms")
+    if d.get("prom_ppubg") is not None:
+        print(f"      - Fondos (BG):        {d['prom_ppubg']:5.2f} ms")
+        print(f"      - Sprites (OBJ):      {d['prom_ppuspr']:5.2f} ms")
+        print(f"      - Composición/Blend:  {d['prom_ppucomp']:5.2f} ms")
     print(f"  • APU Audio:              {d['prom_apu']:5.2f} ms")
     print(f"  • Render GPU (dibujo):    {d['prom_dibujo']:5.2f} ms")
-    print(f"  • Presentación Swapchain: {d['prom_present']:5.2f} ms")
+    if d.get("max_present"):
+        print(f"  • Presentación Swapchain: {d['prom_present']:5.2f} ms  (peor segundo: {d['max_present']:.2f} ms)")
+    else:
+        print(f"  • Presentación Swapchain: {d['prom_present']:5.2f} ms")
     print("-" * 72)
     print("COBERTURA DE EJECUCIÓN (AOT vs INTÉRPRETE):")
     print(f"  • Instrucciones Nativas AOT:  {d['total_nativas']:>12,} ({d['ratio_aot']:5.1f}%)")
     print(f"  • Instrucciones Intérprete:   {d['total_interp']:>12,} ({100.0 - d['ratio_aot']:5.1f}%)")
     print("=" * 72)
+
+    regiones = d.get("regiones") or {}
+    if regiones:
+        print("\nDESGLOSE DE EJECUCIÓN POR REGIÓN DE MEMORIA (acumulado de la sesión):")
+        print(f"{'Región':<8} | {'Pasos intérprete':>18} | {'% del intérprete':>16} | {'Bloques nativos':>15}")
+        print("-" * 68)
+        total_interp_region = sum(v[0] for v in regiones.values())
+        for nombre in ("rom", "iwram", "ewram", "bios"):
+            if nombre not in regiones:
+                continue
+            pasos, nativos = regiones[nombre]
+            pct = (pasos / total_interp_region * 100.0) if total_interp_region > 0 else 0.0
+            print(f"{nombre:<8} | {pasos:>18,} | {pct:>15.1f}% | {nativos:>15,}")
+        print("-" * 68)
+        print("Los bloques nativos se cuentan por bloque y los pasos de intérprete por instrucción:")
+        print("la división entre ambos da una fracción de eventos de despacho, no de instrucciones.")
+        print("=" * 72)
+    else:
+        print()
+        print("Aviso: sin líneas `# regiones` en el log (registros anteriores al 2026-10-12).")
+        print("=" * 72)
 
     hotspots = d["hotspots"]
     if hotspots:

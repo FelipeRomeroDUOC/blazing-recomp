@@ -22,7 +22,7 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | [`platform.rs`](#módulo-platformrs) | 1 | Plataforma Android (solo compila con `cfg(target_os = "android")`): |
 | [`storage.rs`](#módulo-storagers) | 14 | Módulo interno del port. |
 | [`runner.rs`](#módulo-runnerrs) | 17 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
-| [`recomp.rs`](#módulo-recomprs) | 15 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
+| [`recomp.rs`](#módulo-recomprs) | 30 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
 | [`fps.rs`](#módulo-fpsrs) | 18 | Contador de FPS y generador de HUD visual en pantalla. |
 
 ---
@@ -906,9 +906,115 @@ pub const ROM_REGION_START: u32
 pub const ROM_REGION_END: u32
 ```
 
+### `Region` (Enum)
+
+Región de memoria ejecutable de Game Boy Advance.
+
+**Firma:**
+```rust
+pub enum Region
+```
+
+### `NAMES` (Constante)
+
+Nombres cortos, en el orden canónico de la telemetría `# regiones`.
+
+**Firma:**
+```rust
+pub const NAMES: [&'static str; 4]
+```
+
+### `index` (Función)
+
+Índice de la región dentro de los arreglos de [`RegionCounters`].
+
+**Firma:**
+```rust
+pub fn index(self) -> usize
+```
+
+### `RegionCounters` (Struct)
+
+Ejecución acumulada por región de memoria desde el arranque de la sesión.
+
+**Firma:**
+```rust
+pub struct RegionCounters
+```
+
+### `is_empty` (Función)
+
+Indica si todavía no se ha registrado ninguna ejecución.
+
+**Firma:**
+```rust
+pub fn is_empty(&self) -> bool
+```
+
+### `to_line` (Función)
+
+Formatea la línea de telemetría `# regiones`, con un par `interprete/nativos` por región.
+
+**Firma:**
+```rust
+pub fn to_line(&self) -> String
+```
+
+### `PpuPathCounters` (Struct)
+
+Reparto acumulado de las líneas de la PPU entre los caminos de la composición.
+
+Las cuatro cuentas suman las líneas dibujadas desde el arranque de la sesión: cada línea cae en
+una sola razón, la primera que impide usar la vía rápida (efectos de color, ventana de sprites o
+sprite translúcido). Es el dato que dice si la vía rápida se ejecuta en juego real y, si no, por
+qué.
+
+**Firma:**
+```rust
+pub struct PpuPathCounters
+```
+
+### `is_empty` (Función)
+
+Indica si todavía no se ha contado ninguna línea.
+
+**Firma:**
+```rust
+pub fn is_empty(&self) -> bool
+```
+
+### `total` (Función)
+
+Total de líneas contadas, que debe cerrar en múltiplos de 160 (las líneas de un fotograma).
+
+**Firma:**
+```rust
+pub fn total(&self) -> u64
+```
+
+### `rectas_pct` (Función)
+
+Porcentaje de líneas que tomaron la vía rápida, redondeado al entero (0 sin líneas contadas).
+
+**Firma:**
+```rust
+pub fn rectas_pct(&self) -> u64
+```
+
+### `to_line` (Función)
+
+Formatea la línea de telemetría `# ppucamino` con las cuatro cuentas, el reparto de los
+efectos y el porcentaje de líneas por la vía rápida.
+
+**Firma:**
+```rust
+pub fn to_line(&self) -> String
+```
+
 ### `record_hotspot` (Función)
 
-Registra una dirección ejecutada en el intérprete de respaldo si pertenece a la ROM.
+Registra una dirección ejecutada en el intérprete de respaldo si pertenece a regiones ejecutables
+(ROM, IWRAM, EWRAM o BIOS).
 
 **Firma:**
 ```rust
@@ -917,11 +1023,58 @@ pub fn record_hotspot(pc: u32)
 
 ### `drain_top_hotspots` (Función)
 
-Extrae las `limit` direcciones de ROM más ejecutadas y reinicia el acumulador.
+Extrae las `limit` direcciones ejecutadas con más frecuencia y **consume solo esas**.
+
+Las direcciones que no entran en el `top` conservan su contador y vuelven a competir en el
+volcado siguiente, de modo que ninguna ejecución registrada se descarta. Un `limit` mayor o
+igual que el número de direcciones registradas deja el acumulador vacío.
 
 **Firma:**
 ```rust
 pub fn drain_top_hotspots(limit: usize) -> Vec<(u32, u64)>
+```
+
+### `add_native_region_ticks` (Función)
+
+Acumula los bloques nativos ejecutados en un fotograma, agrupados por región.
+
+Se invoca una sola vez por fotograma y no una vez por bloque, para no añadir
+sincronización al camino caliente de despacho nativo.
+
+**Firma:**
+```rust
+pub(crate) fn add_native_region_ticks(counts: &[u64; 4])
+```
+
+### `add_ppu_path` (Función)
+
+Acumula el reparto de líneas del fotograma que el motor acaba de medir.
+
+Se invoca una sola vez por fotograma (no una vez por línea) desde el bucle de emulación, así
+que no añade sincronización al camino caliente: el motor cuenta por línea sin bloqueo y aquí
+se vuelca el total del fotograma.
+
+**Firma:**
+```rust
+pub(crate) fn add_ppu_path( rectas: u64, mezcla: u64, ventana: u64, semi: u64, inertes: u64, efecto: u64, efalpha: u64, efbrillo: u64, efoscuro: u64, )
+```
+
+### `ppu_path_counters` (Función)
+
+Devuelve una copia del reparto acumulado de líneas por camino. No reinicia los contadores.
+
+**Firma:**
+```rust
+pub fn ppu_path_counters() -> PpuPathCounters
+```
+
+### `region_counters` (Función)
+
+Devuelve una copia de la ejecución acumulada por región de memoria. No reinicia los contadores.
+
+**Firma:**
+```rust
+pub fn region_counters() -> RegionCounters
 ```
 
 ### `resolve_sibling_library_path` (Función)

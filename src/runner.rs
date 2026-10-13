@@ -33,6 +33,12 @@ pub struct StepTiming {
     pub interpreter_steps: u64,
     /// Milisegundos empleados por la PPU en renderizado de scanlines.
     pub ppu_ms: f64,
+    /// Milisegundos empleados por la PPU en renderizado de fondos.
+    pub ppu_bg_ms: f64,
+    /// Milisegundos empleados por la PPU en rasterizado de sprites.
+    pub ppu_sprite_ms: f64,
+    /// Milisegundos empleados por la PPU en composición de capas y efectos de color.
+    pub ppu_compose_ms: f64,
     /// Milisegundos empleados por el APU en síntesis de audio.
     pub apu_ms: f64,
     /// Cantidad de accesos de lectura a memoria realizados.
@@ -126,7 +132,24 @@ impl GameRunner {
         let ejec_ms = t1.duration_since(t0).as_secs_f64() * 1000.0;
 
         let hw = self.machine.take_perf_counters();
+
+        // Reparto de las líneas de la PPU entre caminos de composición: se vuelca una vez
+        // por fotograma para que el motor no pague sincronización por línea.
+        crate::recomp::add_ppu_path(
+            hw.lineas_rectas,
+            hw.descartes_mezcla,
+            hw.descartes_ventana,
+            hw.descartes_semi,
+            hw.lineas_inertes,
+            hw.lineas_efecto,
+            hw.lineas_efecto_alpha,
+            hw.lineas_efecto_brillo,
+            hw.lineas_efecto_oscuridad,
+        );
         let ppu_ms = (hw.ppu_ns as f64) / 1_000_000.0;
+        let ppu_bg_ms = (hw.bg_ns as f64) / 1_000_000.0;
+        let ppu_sprite_ms = (hw.sprite_ns as f64) / 1_000_000.0;
+        let ppu_compose_ms = (hw.compose_ns as f64) / 1_000_000.0;
         let apu_ms = (hw.apu_ns as f64) / 1_000_000.0;
 
         if self.machine.bus.frame_ready {
@@ -142,6 +165,9 @@ impl GameRunner {
                 native_blocks: native,
                 interpreter_steps: fallback,
                 ppu_ms,
+                ppu_bg_ms,
+                ppu_sprite_ms,
+                ppu_compose_ms,
                 apu_ms,
                 reads: hw.reads,
                 writes: hw.writes,
@@ -157,6 +183,9 @@ impl GameRunner {
                 native_blocks: native,
                 interpreter_steps: fallback,
                 ppu_ms,
+                ppu_bg_ms,
+                ppu_sprite_ms,
+                ppu_compose_ms,
                 apu_ms,
                 reads: hw.reads,
                 writes: hw.writes,

@@ -87,6 +87,11 @@ fn test_runner_screen_kind_switch() {
 
 #[test]
 fn test_runner_supports_block_table_injection() {
+    // Ejecuta un fotograma completo por el intérprete de respaldo, así que escribe en el
+    // acumulador global de hotspots: se serializa con el resto de tests que lo consultan.
+    let _guard = crate::recomp::LOCK_ACUMULADORES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let rom = create_dummy_rom();
     let mut runner = GameRunner::new(rom, None, ScreenKind::Frontlit);
     assert!(runner.block_table.is_none());
@@ -99,6 +104,51 @@ fn test_runner_supports_block_table_injection() {
     let initial_frames = runner.frames_elapsed();
     let _ = runner.step_frame();
     assert_eq!(runner.frames_elapsed(), initial_frames + 1);
+}
+
+/// El reparto de líneas que el motor mide por fotograma tiene que llegar al acumulador del port:
+/// sin este cableado la línea `# ppucamino` de una sesión en Android saldría en cero y no diría
+/// por qué no se está usando la vía rápida. Se mide por diferencia y con el candado de los
+/// acumuladores, porque el resto de tests que avanzan fotogramas escriben en el mismo estado global.
+#[test]
+fn test_runner_vuelca_el_reparto_de_camino_de_la_ppu() {
+    let _guard = crate::recomp::LOCK_ACUMULADORES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+
+    let rom = create_dummy_rom();
+    let mut runner = GameRunner::new(rom, None, ScreenKind::Frontlit);
+
+    let antes = crate::recomp::ppu_path_counters();
+    let _ = runner.step_frame();
+    let despues = crate::recomp::ppu_path_counters();
+
+    let rectas = despues.rectas - antes.rectas;
+    let efectos = (despues.mezcla - antes.mezcla)
+        + (despues.ventana - antes.ventana)
+        + (despues.semi - antes.semi);
+
+    assert!(
+        rectas >= 160,
+        "un fotograma completo (160 líneas) sin efectos de color debe volcarse como líneas rectas \
+         al acumulador del port (obtenido: {rectas})"
+    );
+    assert_eq!(
+        efectos, 0,
+        "un fotograma sin efectos de color no debe contar ningún descarte (obtenido: {efectos})"
+    );
+    // Sin `BLDCNT` activo ninguna línea es "inerte" ni aplica transformación: son las dos
+    // cuentas que distinguen una línea recta normal de una que lo es por un efecto identidad.
+    assert_eq!(
+        despues.inertes - antes.inertes,
+        0,
+        "un fotograma sin efecto de color no puede tener líneas inertes"
+    );
+    assert_eq!(
+        despues.efecto - antes.efecto,
+        0,
+        "un fotograma sin efecto de color no puede aplicar transformaciones"
+    );
 }
 
 #[test]

@@ -8,6 +8,22 @@ verificado: si
 > Log analizado: `backend=OpenGL modo=INT present=AutoVsync alpha=Opaque reloj=747ns`
 > Ventana: **122 segundos** de telemetría (portrait 1200×2000 → landscape 2000×1200)
 
+> [!WARNING]
+> **Estado (2026-10-13): este análisis es histórico y su conclusión ya no describe el port.** Se
+> redactó con `modo=INT`, 13 funciones mapeadas en [`blazing.labels.toml`](../../blazing.labels.toml) y
+> `latency=1`. Hoy el juego corre en AOT —el intérprete quedó reducido al BIOS, con 7.759 pasos en
+> 256 s— y `present` mide 7,15 ms de media, no ~100 ms, así que la espera del compositor ya no es el
+> cuello de botella. El documento se conserva como registro de aquella medición y de su método.
+>
+> Números vigentes:
+> - **Android TV** (sesión 17): `ejec` 13,53 ms, con `ppu` 7,53 (fondos 3,21 + sprites 1,35 +
+>   composición 2,96) y `apu` 1,52.
+> - **Host** (arnés, 7.200 fotogramas, antes → después de la decisión 34): `ppu` 0,536 → 0,367 ms,
+>   `compose` 0,157 → 0,071, `bg` 0,284 → 0,197, con `spr` y `apu` planos.
+>
+> Detalle en [`DECISIONES.md`](DECISIONES.md) §34 y en
+> [`2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md`](../propuestas/2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md).
+
 ---
 
 ## Contexto: Medición en Dispositivo Real
