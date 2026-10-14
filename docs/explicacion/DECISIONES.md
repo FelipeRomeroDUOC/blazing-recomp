@@ -287,6 +287,8 @@ Al compilar las 3 arquitecturas nativas en modo debug con símbolos DWARF, el AP
 #### Decisión e implementación
 En [`scripts/package_apk.ps1`](../../scripts/package_apk.ps1), se incorporó un paso de stripping no destructivo usando `llvm-strip.exe --strip-all` provisto por el Android NDK. El strip se ejecuta únicamente sobre las copias que van dentro del staging del APK (`staging/lib/<abi>/*.so`), manteniendo los archivos originales intactos en `target/<abi>/debug/` para depuración con LLDB/GDB. El tamaño del APK se redujo drásticamente de **340 MB a 39 MB**.
 
+> **Corregido (2026-10-14):** aquella cifra era del APK anterior al C11 recompilado. Con la traducción AOT dentro, el APK de tres ABIs pesa **186,6 MiB** y baja a **~44 MB** al comprimir las bibliotecas nativas (Decisión 32); las seis entradas `lib/**/*.so` son el 92 % del paquete. Ver el hallazgo registrado en `docs/BACKLOG.md`.
+
 #### Alternativas y compromisos
 * **Alternativa descartada:** Configurar `strip = true` global en `Cargo.toml`. Descartada porque mutilaba los archivos de desarrollo local.
 * **Compromiso asumido:** Requiere que el NDK de Android esté presente en la máquina para localizar `llvm-strip.exe`.
@@ -499,8 +501,10 @@ Dispositivos móviles y tablets modernos incorporan paneles de resolución 2K/QH
 A pesar de contar con 17,207 bloques traducidos a C11, la telemetría en runtime (`blazing-perf.txt`) revelaba entre 35,000 y 55,000 pasos de intérprete de respaldo por segundo, manteniendo la ejecución de CPU (`ejec`) en ~12.5 ms por fotograma. Al operar sin un juego completo de labels en `blazing.labels.toml`, ciertas rutinas centrales del juego se saltaban de forma indirecta hacia direcciones no indexadas en la tabla de bloques estática, obligando al bucle de emulación a recurrir a `m.step()` para interpretar dichas instrucciones. Sin embargo, diagnosticar a ciegas qué funciones de la ROM ($0x08000000..0x09FFFFFF$) consumían ese volumen resultaba inviable.
 
 #### Decisión e implementación
-1. **Hotspot Profiler en runtime ([`src/recomp.rs`](../../src/recomp.rs)):** Se implementó un acumulador de frecuencias atómico (`HotspotTracker`, `record_hotspot`, `drain_top_hotspots`) que registra en $O(1)$ cada dirección de PC ejecutada en la rama `None` de `run_frame_native`, normalizando el bit Thumb (`pc & !1`) y filtrando exclusivamente direcciones del cartucho (`ROM_REGION_START..ROM_REGION_END`).
-2. **Volcado periódico en telemetría ([`src/platform.rs`](../../src/platform.rs)):** Cada 5 segundos, el hilo principal extrae las direcciones más ejecutadas y emite una línea `# hotspots top=...` en `blazing-perf.txt`.
+1. **Hotspot Profiler en runtime ([`src/recomp.rs`](../../src/recomp.rs)):** Se implementó un acumulador de frecuencias atómico (`HotspotState`, `record_hotspot`, `drain_top_hotspots`) que registra en $O(1)$ cada dirección de PC ejecutada en la rama `None` de `run_frame_native`, normalizando el bit Thumb (`pc & !1`).
+2. **Volcado periódico en telemetría ([`src/platform.rs`](../../src/platform.rs)):** El hilo principal extrae las direcciones más ejecutadas y emite una línea `# hotspots top=...` en `blazing-perf.txt`.
+
+> **Corregido (2026-10-14).** Dos afirmaciones del punto anterior no describían el código: el filtro **no** es «exclusivamente el cartucho» —`record_hotspot` acepta ROM, IWRAM, EWRAM y BIOS— y el volcado **no** es «cada 5 segundos» sino **cada 2** (`report.second_index % 2 == 0`, [`src/platform.rs:2119`](../../src/platform.rs), donde `second_index` es el índice de segundo). Además, `drain_top_hotspots` **consume solo las direcciones del top** y conserva el resto para el volcado siguiente, que es justo lo que buscaba [`docs/propuestas/2026-10-12_drain-hotspots-sin-perdida.md`](../propuestas/2026-10-12_drain-hotspots-sin-perdida.md): que ninguna ejecución registrada se descarte.
 3. **Mapeo a labels de Fire Emblem ([`blazing.labels.toml`](../../blazing.labels.toml)):** El profiler identificó de inmediato funciones críticas no etiquetadas:
    - `0x08019120` (`Unit_GetStruct`): Bucle de 7 instrucciones que busca punteros a unidades en RAM (más de 58,000 ejecuciones por ventana).
    - `0x08026060` (`Battle_MapScanUnits`): Bucle que recorre las 191 unidades en mapa invocando la función anterior.
@@ -779,6 +783,161 @@ en [`2026-10-13_ppu-efectos-inertes-y-camino-especializado.md`](../propuestas/20
   alpha, por lo que el modo 1 se conservó en el camino general.
 * **Alternativa descartada: Tablas precalculadas de color por `EVY`.** Añadir 64 KB de estado sin
   medir previamente en el dispositivo físico no se justificó frente al camino por tramos.
+
+---
+
+### 36. El alpha real de la PPU por tramos: componer sin buscar la segunda capa en cada píxel
+
+#### Contexto
+Las líneas con alpha real (`BLDCNT` modo 1 con segundos objetivos) eran el último bloque grande del camino
+general: 186 de los 353 segundos de la sesión 20 con las ~160 líneas de cada fotograma por el camino de mezcla,
+`comp` en 3,67 ms y 88 s por debajo de 60 fps. La Decisión 35 había aplazado el modo 1 con un argumento
+correcto —en ARM64 el producto de mezcla por canal cuesta un ciclo y el coste dominante es la búsqueda
+obligatoria de las dos capas—, y la consecuencia que faltaba era la obvia: si el coste es la búsqueda, se puede
+buscar una vez por tramo en vez de una vez por píxel. Se planificó en
+[`2026-10-13_alpha-real-por-tramos.md`](../propuestas/2026-10-13_alpha-real-por-tramos.md).
+
+#### Decisión e implementación
+1. **La pareja de capas se resuelve por subtramo ([`../gba-recomp/crates/gba-core/src/ppu.rs`](../../../gba-recomp/crates/gba-core/src/ppu.rs)):**
+   `compose_alpha_tramos` recorre los tramos de control de ventana que ya calculaba el camino recto y los parte
+   en subtramos de clave constante. `clave_de_tramo` resume por píxel lo único que `top_two_layers` necesita de
+   `x`: qué capas habilitadas son opacas (bits 0-3) y qué prioridad tiene el sprite que tapa (bits 8-15). Dentro
+   de un subtramo la pareja (capa de arriba, segunda capa) es la misma, así que se resuelve una sola vez.
+2. **La mezcla usa la misma regla y el mismo código que el camino general:** `componer_tramo` decide una vez por
+   subtramo con `control & 0x20`, `BLDCNT & (1 << arriba)` y `BLDCNT & (0x100 << segunda)`, y aplica
+   `alpha_blend`. La pareja de dos fondos se compone en un bucle sin índices; las parejas con sprite o fondo de
+   pantalla caen en un bucle genérico.
+3. **Las líneas con sprite translúcido no cambian de camino:** el resultado de un píxel translúcido depende de
+   `obj.semi`, que solo mira el camino general, así que el camino nuevo exige `razon_camino == 1 && !obj_semi`.
+   Las líneas que adoptan el camino siguen contándose en `descartes_mezcla` y el reparto sigue sumando 160
+   líneas por fotograma.
+4. **El contador `BUSQUEDAS_DOS_CAPAS` es por hilo** (`Cell<u64>` en vez de `AtomicU64`, solo bajo
+   `#[cfg(test)]`): los tests corren en paralelo y una cuenta global mezclaba las búsquedas de la línea de un
+   test con las de otro (se vio como 248 en lugar de 240), lo que hacía no determinista la aserción exacta del
+   escenario 1.
+5. **Verificación:** diferencial de píxel contra el camino general forzado (los 240 píxeles de la línea) con y
+   sin sprite translúcido y con varias combinaciones de objetivos y de `EVA`/`EVB`; los dos hashes guardianes de
+   7.200 fotogramas; el arnés de fotogramas dorados (5 de 5 anclas); el reparto de líneas; y los mutantes M1
+   (volver a buscar por píxel), M2 (ignorar el borde del sprite) y M3 (aplicar el camino a las líneas
+   translúcidas), que mueren.
+
+#### Medición (host, 7.200 fotogramas con la entrada del banco, 3 pares intercalados, `RECOMP_PPU_STATS=1`)
+
+| | referencia | camino por tramos |
+|---|---|---|
+| `compose` | 0,230 ms/fotograma | **0,144** |
+| `ppu` | 0,625 | 0,538 |
+| `bg` / `spr` | 0,231 / 0,164 | 0,231 / 0,163 |
+| lecturas / escrituras | 5.042 / 4.184 por fotograma | idénticas |
+| tiempo de muro | — | −713 ms (−7,13 %), 3 de 3 pares negativos |
+| hash / bloques nativos | `ee7dc7ef514b5a3f` / 11.018.334 | idénticos |
+
+El techo medido de este cambio —una composición que no busca la segunda capa en absoluto— era 0,085
+ms/fotograma: el recorrido de claves cuesta 0,059 (el 41 % del premium) y la ganancia realizada es el 59 %.
+
+#### Alternativas y compromisos
+* **Revierte la alternativa del modo 1 de la Decisión 35.** El alpha real ya no se conserva entero en el camino
+  general: allí solo quedan las líneas con algún sprite translúcido y las que usan la ventana de sprites.
+* **Alternativa descartada: materializar los cortes de la línea** (un arreglo con la unión de bordes de ventana,
+  de sprite y de transparencia). El recorrido por clave hace ese mismo trabajo por píxel sin memoria intermedia
+  y llega al objetivo, así que el arreglo no se implementó.
+* **Compromiso asumido: `descartes_mezcla` pasa a leerse mal.** Ahora cuenta «líneas con alpha real», no «líneas
+  descartadas de la vía rápida». Renombrar el campo es un cambio de telemetría, con propuesta propia.
+* **Compromiso asumido: el dispositivo sigue sin medir.** El escenario de telemetría del APK (`comp` de 3,67 a
+  ≤1,5 ms y `ejec` de 14,33 a ≤12,5 ms) queda pendiente de una sesión con la misma escena.
+
+---
+
+### 37. La imagen del procesador es el corazón del C generado, pero localizarla no ahorra
+
+#### Contexto
+El código nativo que corre en el teléfono trabaja sobre la imagen de los dieciséis registros en memoria (`uint32_t c[17]`): cada operando es una carga y cada resultado un almacén. La intuición era que mantenerlos en variables locales del bloque —que el compilador del dispositivo pueda tener en registros de máquina— bajaría el coste de `ejec`.
+
+#### Decisión e implementación
+Se midió **antes** de tocar el emisor, con el censo de ensamblado (el host no tiene `cc`/`gcc`/`clang`, así que la fase en ejecución se resolvió con ensamblado del clang del NDK). Ocho grupos reales de [`src-c/`](../../src-c/), a `-O0`, `-O1` y `-O2`.
+
+| grupo | base ins/acc | forma con locales | desvío |
+|---|---|---|---|
+| 0804da3b | 57.794 / 18.033 | 48.242 / 12.325 | −16,5 % / −31,7 % |
+| 0806fe91 | 48.168 / 15.161 | 41.143 / 9.300 | −14,6 % / −38,7 % |
+| 089f2d69 | 81.424 / 23.799 | 104.867 / 43.350 | **+28,8 % / +82,2 %** |
+| **total (8 grupos)** | **412.555 / 128.485** | **408.958 / 127.555** | **−0,9 % / −0,7 %** |
+
+**Decisión: no se toca el emisor.** El agregado es un empate y hay grupos peores.
+
+#### Por qué (el mecanismo)
+El registro en memoria **sí** cuesta —el **31,1 % de las instrucciones generadas** son carga o almacén sobre la imagen del procesador—, pero localizarlos no baja el total: el modelo de bloques del emisor obliga a volver a escribir la imagen completa en **cada salida de bloque** (el despachador y el bloque siguiente leen `c[]`). El ahorro dentro del tramo recto lo devuelve el volcado de frontera, y en los grupos con muchas salidas (089f2d69: 5.256 `goto` y 1.518 puertas de cadena) el volcado domina.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: volcar antes de cada llamada de bus («full»).** Medida: **+73,2 %** de instrucciones.
+* **Alternativa viva, no ejecutada: volcado parcial** (solo los registros vivos, decidido por el analizador de flujo). Si se retoma, el techo debe calcularse sobre el número de salidas por bloque.
+* **Compromiso asumido:** el 31,1 % de carga/almacén sobre la imagen del procesador queda como un hecho medido del perfil del juego, no como una palanca disponible.
+
+---
+
+### 38. La frontera entre bloques no es una palanca
+
+#### Contexto
+Cerrada la vía de los registros, la sospecha cayó en la frontera: cada bloque nativo termina volviendo al despachador, y el censo estático decía 5.540 grupos, 196.461 `goto` internos, 19.894 puertas de cadena y 81.572 `return`. Faltaba el dato que decide: **cuántas veces se cruza esa frontera por fotograma**.
+
+#### Decisión e implementación
+Se contaron las puertas de bucle dentro de `rt_chain_gate` (contador estático, activado con `RECOMP_PUERTAS`, coste del instrumento **+0,5 %** con pares intercalados). Resultado en 7.200 fotogramas:
+
+| magnitud | total | por fotograma |
+|---|---|---|
+| vueltas al despachador (`native_blocks`) | 11.018.334 | **1.530,3** |
+| puertas de bucle (`puertas`) | 1.896.786 | **263,4** |
+| puertas que mandan volver | 22.765 | **3,16** (1,2 %) |
+
+**Decisión: la frontera queda cerrada como palanca.** Atacarla rescataría como mucho el 1-2 % del fotograma, y la puerta de bucle es casi siempre un no-op: en el arranque mandó volver 7 veces en 21.600 fotogramas.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: deducirlo del censo estático.** El censo no pesa por frecuencia de ejecución, como demostró esta misma medición (las puertas por fotograma caen de 263 a 90 según la escena).
+* **Alternativa descartada: instrumentar el APK.** El contador vive en una corrida de laboratorio, no en un fotograma de 16,67 ms.
+* **Compromiso asumido:** el instrumento se retiró y el motor quedó restaurado byte a byte; los números viven en la propuesta.
+
+---
+
+### 39. El reloj por instrucción tampoco es palanca, y el fotograma duerme
+
+#### Contexto
+El censo de llamadas del C generado puso a `a->tick` como el **32,1 %** de todas las llamadas emitidas (400.767), por delante de la lectura y la escritura de memoria, y la propuesta anterior lo señaló como sospechoso. Antes de atacarlo se acotó su techo.
+
+#### Decisión e implementación
+Contador en `rt_tick` (encendible en caliente con `RECOMP_TICK`, coste mediano **+0,80 %**) más un micro-banco que llama por la misma tabla `RT_API` **en memoria**, con el puntero opaco al optimizador.
+
+| magnitud | menú/arranque | avance (`--input`) |
+|---|---|---|
+| peticiones de reloj por fotograma | 2.210,4 | 7.134,8 |
+| ciclos pedidos por fotograma | 14.577 | 46.710 |
+| coste por petición (camino completo) | **9,55 ns** | ídem |
+| **techo del fotograma** | **0,13 %** | **0,41 %** |
+
+**Decisión: descartado como palanca.** Es 7-23 veces menos que el 3 % que ya descartó la Decisión 33, y el emisor **ya coalesce** los ciclos (media 9,22 ciclos por petición; solo el 0,2 % lleva 1 ciclo), así que no había nada que agrupar.
+
+#### El hallazgo: el fotograma duerme
+Solo **14.577 y 46.710 de los 280.896 ciclos** que dura un fotograma pasan por `a->tick` (5,2 % y 16,6 %). El resto lo avanza `skip_to_next_event` mientras la CPU está detenida esperando el VBlank. Y `fallback_steps: 0` **no** significa que el juego no se detenga: `run_frame_native` llama a `m.step()` en el estado *halted* sin contarlo.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: coalescer más los ciclos.** Ya está hecho en el emisor (`Ctx::cycles` + `flush_ticks`).
+* **Alternativa descartada: A/B con `rt_tick` en no-op.** Altera lo medido: sin reloj, el juego cambia de comportamiento.
+* **Compromiso asumido:** el 83-95 % del reloj del fotograma sigue sin atribuir entre *halt* y los shells de `interp_one` (BIOS), que avanzan el reloj sin pasar por `rt_tick`. Es el hueco más grande del presupuesto y la siguiente pregunta del proyecto.
+* **Compromiso asumido:** el despacho indirecto por la tabla `RtApi` resultó **gratuito** en el host (−0,01 ns frente a una llamada directa), lo que relativiza la Decisión 33: allí la diferencia de 2,8× era el *trabajo* del accesor, no el salto indirecto.
+
+---
+
+### 40. La calibración de presentación se reabre para el televisor
+
+#### Contexto
+La Decisión 25 y la propuesta del arranque multihilo retiraron el barrido de calibración: en la tablet, solo la reducción de resolución bajaba el coste de `present` (51,4 ms → 2,9 ms), y eso choca con la nitidez nativa, que es una decisión de producto. El mecanismo (`src/present.rs`) se conservó entero para poder reabrir la decisión.
+
+#### Decisión e implementación
+Se reactiva el barrido de arranque (`CALIBRAR_PRESENTACION = true` en [`src/platform.rs`](../../src/platform.rs)) **como experimento**, con su guardián actualizado en el mismo cambio para que la decisión siga siendo explícita y comprobable: poner la constante a `false` hace fallar el test.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: dejarlo desactivado y no medir.** El resultado de la tablet no tiene por qué trasladarse al Android TV, cuyo SoC y compositor son distintos; sin medirlo, la decisión se apoya en un solo dispositivo.
+* **Compromiso asumido: cada arranque gasta 12-15 s** de mediciones y una sonda a media resolución mientras dure el experimento.
+* **Compromiso asumido: la confirmación exige el televisor.** Si el resultado de la tablet se traslada, la constante vuelve a `false` y se anota; la sonda a media resolución sigue siendo **sonda**, nunca adoptable.
 
 ---
 

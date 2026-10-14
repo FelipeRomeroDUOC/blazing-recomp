@@ -100,9 +100,17 @@ El repositorio cuenta con skills locales en [`.agents/skills/`](.agents/skills/)
 - **Propósito:** Diseño y mantenimiento de documentación técnica en español bajo el estándar Diátaxis, manteniendo estricta separación entre los cuatro cuadrantes para no mezclar necesidades del lector.
 - **Estructura en `docs/`:**
   - **Tutoriales (`docs/tutoriales/`):** Aprendizaje guiado paso a paso para recién llegados.
+    *(Cuadrante aún vacío: el directorio no existe todavía. El `<nav>` del validador Diátaxis no lo
+    enlaza, así que cualquier página que se añada ahí debe nacer con su propio índice enlazado.
+    No se crea la carpeta vacía sin contenido.)*
   - **Guías prácticas (`docs/guias/`):** Pasos directos para tareas concretas (ej. compilación cruzada con NDK, integración JNI, generación del APK).
   - **Referencia ([`docs/referencia/`](docs/referencia/README.md)):** Especificaciones técnicas puras (APIs nativas, flags de `pack.toml`, comandos).
   - **Explicación ([`docs/explicacion/`](docs/explicacion/DECISIONES.md)):** Decisiones de diseño, arquitectura del port Android y compromisos técnicos.
+  - **Propuestas ([`docs/propuestas/`](docs/propuestas/README.md)):** Propuestas formales de Nivel 2
+    (no es un cuadrante Diátaxis: es el registro del flujo `propuesta-verificable`). Cada archivo
+    declara su estado en el bloque `>` de cabecera (`Estado:` / `Resultado:`).
+  - **Prototipos (`docs/prototipos/`):** Bocetos HTML de trabajo referenciados desde las propuestas
+    de overlay; material efímero, no documentación Diátaxis versionada como página de lectura.
 - **Activación:** Siempre que se solicite documentar el proyecto, crear guías de instalación o despliegue para Android, documentar interfaces nativas, actualizar docs tras cambios de código o estructurar la carpeta `docs/`.
 
 ### 3. `explicar-codigo-documento`
@@ -208,7 +216,7 @@ Todo agente que vaya a modificar, crear o refactorizar código en este repositor
 
 - **Checklist Obligatorio de Pre-Commit Gatekeeper:**
   Antes de proponer o ejecutar un `git commit` y `git push`, el agente debe verificar sin excepción los siguientes 5 criterios:
-  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (124 tests actuales: 109 en `src/lib.rs` + 15 en `tests/packaging_tests.rs`).
+  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (131 tests actuales: 109 en los módulos satélite de `src/` + 18 en `tests/packaging_tests.rs` + 4 en `tests/golden_frame_tests.rs`).
   2. **Validación Diátaxis sin errores:** `python .agents/skills/diataxis-docs/scripts/validar_docs.py .` devuelve `0 error(es), 0 aviso(s)`.
   3. **Especificaciones de API sincronizadas:** `python scripts/extraer_referencias.py --check` sale con código de éxito 0.
   4. **Auditoría de labels AOT aprobada:** `python scripts/diagnostico/auditar_labels.py` sale con código de éxito 0.

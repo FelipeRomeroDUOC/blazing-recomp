@@ -23,7 +23,7 @@ flowchart LR
 ```
 
 ### Separación de Responsabilidades
-* **Código C (`src-c/`)**: Modela **únicamente** la lógica aritmética y de control de la CPU (las 17,207 funciones de bloques del juego).
+* **Código C (`src-c/`)**: Modela **únicamente** la lógica aritmética y de control de la CPU (los 144.875 bloques C11 de la lógica del juego).
 * **Runtime en Rust (`gba-core`)**: Modela el **hardware físico de la consola** (sincronización de ciclos, dibujo de líneas de pantalla del PPU, mezcla de audio APU/M4A, transferencias DMA y bus de memoria).
 
 ---
@@ -35,7 +35,7 @@ Debido al volumen de instrucciones (más de 115,000 instrucciones descubiertas),
 | Archivo Generado | Tamaño Estimado | Líneas Aprox. | Función en el sistema |
 | :--- | :--- | :--- | :--- |
 | `1575 - Fire Emblem (E)(Independent)-bios.0.c` | 17.7 MB | ~640,000 | Definición de `RtApi`, macros de banderas (`f_nz`, `op_adds`) y primeros ~13,000 bloques de código del juego. |
-| `1575 - Fire Emblem (E)(Independent)-bios.1.c` | 6.4 MB | ~160,000 | Bloques restantes y **tabla maestra de despacho**: el arreglo `rcg_blocks[]` con las 17,207 entradas y `rcg_block_count`. |
+| `1575 - Fire Emblem (E)(Independent)-bios.1.c` | 6.4 MB | ~160,000 | Bloques restantes y **tabla maestra de despacho**: el arreglo `rcg_blocks[]` con las 144.875 entradas (`rcg_block_count = 144875`). |
 | `1575 - Fire Emblem (E)(Independent)-bios.def` | 89 B | 6 | Archivo de exportaciones para el linker (`rcg_block_count` y `rcg_blocks`). |
 
 ---

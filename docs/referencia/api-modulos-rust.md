@@ -46,9 +46,8 @@ La lógica geométrica de entrada vive en [`crate::input`] (pura,
 testeable en host, sin dependencias de Android). Todo lo que toca
 JNI, NativeActivity o Logcat está tras `cfg(target_os = "android")`.
 
-La emulación aún no produce fotogramas: la presentación muestra el
-estado actual del búfer (negro de panel hasta conectar el bucle del
-motor `gba-core`).
+El motor `gba-core` ejecuta la lógica del juego y compone cada fotograma
+en la PPU; la presentación lo muestra con la sincronía del panel.
 
 *No expone símbolos públicos directos fuera de declaraciones de submódulos.*
 

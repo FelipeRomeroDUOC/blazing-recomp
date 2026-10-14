@@ -83,7 +83,7 @@ flowchart TD
 ### 2.4. Plataforma Android y Ciclo de Vida (`src/platform.rs`)
 * **Propósito:** Orquestar el ciclo de vida de la aplicación Android, la superficie gráfica y los eventos de hardware.
 * **Componentes principales:**
-  * **`Compositor`:** Encapsula la instancia `wgpu::Device`, `wgpu::Queue` y la `Surface` configurada sobre la ventana `ANativeWindow`. Gestiona una latencia de swapchain estricta a 1 fotograma (`desired_maximum_frame_latency: 1`).
+  * **`Compositor`:** Encapsula la instancia `wgpu::Device`, `wgpu::Queue` y la `Surface` configurada sobre la ventana `ANativeWindow`. Gestiona una latencia de swapchain de **2 fotogramas** (`desired_maximum_frame_latency: 2`, triple buffering real desde la Decisión 24) y puede ajustarla en caliente si la calibración de presentación lo justifica.
   * **Bucle de eventos no bloqueante:** Procesa eventos del sistema (`InitWindow`, `WindowResized`, `Pause`, `Resume`) mediante `poll_events`, drena los lotes de eventos táctiles en `input_events_iter()` y presenta el fotograma una sola vez por ráfaga de entrada para eliminar latencias perceptibles.
   * **Subsistema háptico (`Haptics`):** Conecta con el `VibratorService` de Android vía JNI nativo. Utiliza `VibrationEffect.createOneShot(35, -1)` (API 26+) con fallback al método legado `vibrate(long)` y purga de excepciones (`exception_clear`).
 

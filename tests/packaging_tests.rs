@@ -425,6 +425,68 @@ fn test_reference_docs_in_sync_with_code() {
     }
 }
 
+/// Cada propuesta de `docs/propuestas/` declara un estado del vocabulario cerrado.
+///
+/// El estado es la unica senal de en que punto esta una propuesta, y hasta el 2026-10-14 se habian
+/// colado tres variantes que ni los scripts ni los agentes saben leer: dos propuestas con
+/// `**Estado:**` en negritas (plantilla anterior) y una con `completada`, que no existe. Las fichas
+/// se normalizaron y este guardian impide que la firma vuelva a divergir; el vocabulario esta
+/// especificado en `docs/propuestas/README.md`.
+#[test]
+fn test_propuestas_declaran_estado_valido() {
+    const VOCABULARIO: [&str; 8] = [
+        "pendiente",
+        "aprobada",
+        "modificada",
+        "descartada",
+        "verificada por agente",
+        "revisada por humano",
+        "discrepada",
+        "cerrada",
+    ];
+
+    let dir = repo_root().join("docs").join("propuestas");
+    assert!(dir.is_dir(), "docs/propuestas debe existir");
+
+    let mut propuestas = 0usize;
+    for entrada in fs::read_dir(&dir).expect("docs/propuestas debe poder leerse") {
+        let ruta = entrada.expect("entrada legible").path();
+        if ruta.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let nombre = ruta
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("<sin nombre>")
+            .to_string();
+        if nombre == "README.md" {
+            continue;
+        }
+        propuestas += 1;
+
+        let texto = fs::read_to_string(&ruta).expect("la propuesta debe poder leerse");
+        let estado = texto
+            .lines()
+            .find(|linea| linea.starts_with("Estado:"))
+            .map(|linea| linea.trim_start_matches("Estado:").trim())
+            .unwrap_or("");
+
+        assert!(
+            !estado.is_empty(),
+            "{nombre}: falta la linea propia `Estado:` (el estado en negritas no vale: ver docs/propuestas/README.md)"
+        );
+        assert!(
+            VOCABULARIO.iter().any(|valido| estado.starts_with(valido)),
+            "{nombre}: estado `{estado}` fuera del vocabulario {VOCABULARIO:?}"
+        );
+    }
+
+    assert!(
+        propuestas >= 50,
+        "se esperaban las 57 propuestas de docs/propuestas, se leyeron {propuestas}"
+    );
+}
+
 #[test]
 fn test_manifest_declares_storage_permissions() {
     let manifest_path = repo_root().join("android").join("AndroidManifest.xml");
@@ -545,5 +607,103 @@ fn test_packaging_script_respects_single_abi_flag() {
     assert!(
         guardado,
         "El bucle de ABIs adicionales debe estar condicionado por `if ($AllAbis)` para que -AllAbis:$false produzca un APK de un solo ABI"
+    );
+}
+
+/// Documentos que describen el estado **actual** del proyecto.
+///
+/// Las propuestas (`docs/propuestas/`) quedan fuera a proposito: son registro historico y citan
+/// cifras viejas dentro de su medicion. `test_guardian_ignora_el_registro_historico` fija esa
+/// exclusion y comprueba que no es letra muerta.
+const DOCS_ESTADO_ACTUAL: [&str; 6] = [
+    "src/lib.rs",
+    "docs/referencia/api-modulos-rust.md",
+    "docs/explicacion/arquitectura-c-recompilado.md",
+    "AGENTS.md",
+    "docs/BACKLOG.md",
+    "CHANGELOG.md",
+];
+
+/// Frases que el codigo ya desmiente y que no pueden reaparecer en un documento de estado actual.
+///
+/// Origen de cada una (catastro del 2026-10-14):
+/// - `La emulacion aun no produce fotogramas`: la PPU compone fotogramas y el juego corre a 60 FPS.
+/// - `17,207 entradas`: `rcg_block_count = 144875` en `src-c/...-bios.11.c`.
+/// - `128 tests`: la suite tiene 131 (109 en los satelites de `src/`, 18 aqui y 4 en golden).
+/// - `53 funciones verificadas`: `blazing.labels.toml` tiene 36.966 claves name/address.
+const FRASES_CADUCAS: [&str; 4] = [
+    "La emulación aún no produce fotogramas",
+    "17,207 entradas",
+    "128 tests",
+    "53 funciones verificadas",
+];
+
+/// Ningun documento de estado actual afirma algo que el codigo contradice.
+///
+/// El caso real: `src/lib.rs` declaraba que la emulacion no dibujaba (y la frase viajaba al
+/// documento generado), `arquitectura-c-recompilado.md` atribuia a `rcg_blocks` un numero de
+/// entradas que no es el suyo, y los conteos de tests y funciones se habian quedado atras.
+/// Este guardian impide que cualquiera de las cuatro frases vuelva a colarse.
+#[test]
+fn test_documentos_sin_afirmaciones_caducas() {
+    for ruta_rel in DOCS_ESTADO_ACTUAL {
+        let ruta = repo_root().join(ruta_rel);
+        assert!(ruta.exists(), "{ruta_rel} debe existir");
+        let texto = fs::read_to_string(&ruta).expect("el documento debe poder leerse");
+        for frase in FRASES_CADUCAS {
+            assert!(
+                !texto.contains(frase),
+                "{ruta_rel} contiene una afirmacion caduca: `{frase}`"
+            );
+        }
+    }
+
+    // Y la cifra buena tiene que estar donde toca, no solo ausente la mala.
+    let arquitectura = fs::read_to_string(
+        repo_root()
+            .join("docs")
+            .join("explicacion")
+            .join("arquitectura-c-recompilado.md"),
+    )
+    .expect("arquitectura-c-recompilado.md debe poder leerse");
+    assert!(
+        arquitectura.contains("rcg_block_count = 144875"),
+        "arquitectura-c-recompilado.md debe nombrar el conteo real de bloques (`rcg_block_count = 144875`)"
+    );
+}
+
+/// El guardian de frases caducas ignora el registro historico, y esa exclusion importa.
+///
+/// Si alguien anadiera `docs/propuestas/` a la lista, el guardian empezaria a morder las
+/// mediciones que citan las cifras viejas a proposito. Este test lo impide y, ademas, comprueba
+/// que hoy hay al menos una propuesta que cita una de esas frases (si no, la exclusion seria una
+/// precaucion sin efecto).
+#[test]
+fn test_guardian_ignora_el_registro_historico() {
+    for ruta_rel in DOCS_ESTADO_ACTUAL {
+        assert!(
+            !ruta_rel.starts_with("docs/propuestas/"),
+            "{ruta_rel} es registro historico: no puede entrar en DOCS_ESTADO_ACTUAL"
+        );
+    }
+
+    let dir = repo_root().join("docs").join("propuestas");
+    assert!(dir.is_dir(), "docs/propuestas debe existir");
+
+    let mut propuestas_con_frase_caduca = 0usize;
+    for entrada in fs::read_dir(&dir).expect("docs/propuestas debe poder leerse") {
+        let ruta = entrada.expect("entrada legible").path();
+        if ruta.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let texto = fs::read_to_string(&ruta).expect("la propuesta debe poder leerse");
+        if FRASES_CADUCAS.iter().any(|frase| texto.contains(frase)) {
+            propuestas_con_frase_caduca += 1;
+        }
+    }
+
+    assert!(
+        propuestas_con_frase_caduca >= 1,
+        "se esperaba al menos una propuesta que cite una frase caduca dentro de su medicion; si ya no queda ninguna, revisar si la exclusion de docs/propuestas/ sigue teniendo efecto"
     );
 }
