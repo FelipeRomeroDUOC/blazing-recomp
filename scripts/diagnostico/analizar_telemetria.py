@@ -3,8 +3,10 @@
 analizar_telemetria.py — Analizador y comparador de registros de telemetría de Blazing Recomp.
 
 Procesa la salida de métricas emitida por el motor en Android (Vulkan / GBA Core)
-y genera un informe de rendimiento con percentiles de fotogramas, tiempos de GPU/CPU
-y el ranking de los hotspots más demandantes del intérprete de emulación.
+y genera un informe de rendimiento con percentiles de fotogramas, tiempos de GPU/CPU,
+el desglose de ejecución por región de memoria, el reparto de las líneas de la PPU entre
+los caminos de composición (`# ppucamino`) y el ranking de los hotspots más demandantes
+del intérprete de emulación.
 Incluye soporte para contrastar dos sesiones (--comparar) para verificar mejoras AOT.
 """
 
@@ -32,6 +34,9 @@ def parsear_telemetria(ruta_o_stream):
     # Acumulado por región de memoria: la última línea `# regiones` del archivo contiene
     # los totales de la sesión, así que cada lectura sobrescribe la anterior.
     regiones = {}
+    # Reparto de las líneas de la PPU entre caminos de composición (`# ppucamino`), con la
+    # misma regla: la última línea del archivo contiene los acumulados de la sesión.
+    camino_ppu = {}
 
     lineas = ruta_o_stream.readlines() if hasattr(ruta_o_stream, "readlines") else []
 
@@ -48,6 +53,14 @@ def parsear_telemetria(ruta_o_stream):
         elif linea.startswith("# regiones"):
             for nombre, interp, nativos in re.findall(r"(\w+)=(\d+)/(\d+)", linea):
                 regiones[nombre.lower()] = (int(interp), int(nativos))
+
+        elif linea.startswith("# ppucamino"):
+            # La cola `(rectas=NN%)` repite la clave `rectas` con un porcentaje, así que
+            # se corta antes de parsear: si no, el conteo se perdería quedándose el tanto por ciento.
+            cuerpo = linea.split("(")[0]
+            campos = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", cuerpo)}
+            if campos:
+                camino_ppu = campos
 
         elif linea.startswith("t="):
             m = re.search(
@@ -132,6 +145,7 @@ def parsear_telemetria(ruta_o_stream):
         "ratio_aot": ratio_aot,
         "hotspots": hotspots,
         "regiones": regiones,
+        "camino_ppu": camino_ppu,
     }
 
 
@@ -180,6 +194,33 @@ def imprimir_informe(d, top_n=20, titulo="INFORME DE TELEMETRÍA — BLAZING REC
     else:
         print()
         print("Aviso: sin líneas `# regiones` en el log (registros anteriores al 2026-10-12).")
+        print("=" * 72)
+
+    camino = d.get("camino_ppu") or {}
+    if camino:
+        total_lineas = sum(camino.get(k, 0) for k in ("rectas", "mezcla", "ventana", "semi"))
+        print("\nREPARTO DE LÍNEAS DE LA PPU POR CAMINO DE COMPOSICIÓN (acumulado de la sesión):")
+        print(f"{'Camino':<10} | {'Líneas':>12} | {'% del total':>12}")
+        print("-" * 40)
+        for nombre in ("rectas", "mezcla", "ventana", "semi"):
+            if nombre not in camino:
+                continue
+            valor = camino[nombre]
+            pct = (valor / total_lineas * 100.0) if total_lineas > 0 else 0.0
+            print(f"{nombre:<10} | {valor:>12,} | {pct:>11.1f}%")
+        print("-" * 40)
+        print(f"líneas contadas en la sesión: {total_lineas:,}")
+        efectos = [
+            (nombre, camino[nombre])
+            for nombre in ("inertes", "efecto", "efalpha", "efbrillo", "efoscuro")
+            if nombre in camino
+        ]
+        if efectos:
+            print("Efectos de color, sobre las líneas contadas:")
+            for nombre, valor in efectos:
+                pct = (valor / total_lineas * 100.0) if total_lineas > 0 else 0.0
+                print(f"  • {nombre:<9} {valor:>12,} ({pct:5.1f}% de las líneas)")
+        print("`rectas` es la vía rápida; el resto son líneas que necesitaron la segunda capa.")
         print("=" * 72)
 
     hotspots = d["hotspots"]

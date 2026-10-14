@@ -7,7 +7,15 @@ Herramientas auxiliares y CLI para auditar el rendimiento en Android, inspeccion
 ## 1. Herramientas Disponibles
 
 ### `analizar_telemetria.py`
-Procesa las líneas emitidas por el arnés de rendimiento del motor (`fps=... ejec=... interprete=...`) y genera un informe estructurado con el ranking de *hotspots*.
+Procesa las líneas emitidas por el arnés de rendimiento del motor (`fps=... ejec=... interprete=...`) y genera un informe estructurado con:
+
+- el ranking de *hotspots* del intérprete (`# hotspots top=...`),
+- el desglose de ejecución por región de memoria (`# regiones`, desde el 2026-10-12),
+- el reparto de las líneas de la PPU entre caminos de composición (`# ppucamino`, desde el
+  2026-10-13): vía rápida (`rectas`) frente a las que necesitaron la segunda capa
+  (`mezcla`, `ventana`, `semi`), más el desglose de efectos de color inerte, alfa, brillo y oscuro.
+
+Un log anterior a esas fechas no trae las líneas y el informe avisa u omite la sección.
 
 ```bash
 # Analizar un archivo de log específico mostrando los 15 hotspots principales:
@@ -47,3 +55,43 @@ Automatiza la ejecución del recompilador estático `gba-recomp`, forzando la pr
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/diagnostico/compilar_recomp_aot.ps1
 ```
+
+---
+
+### `fotogramas_dorados.py`
+Arnés de fotogramas dorados por escena para detectar regresiones de píxel de la PPU.
+A diferencia de un hash global de sesión, localiza el cambio en espacio (columna, fila, caja, rejilla de tiles 8×8) y en tiempo (escena y fotograma ancla).
+
+**Tres subcomandos con el mismo contrato de códigos de salida (0 sin diferencias, 1 diferencias de píxel, 2 entrada inválida / dorados desactualizados):**
+
+```bash
+# Comparar dos PPM directamente
+python scripts/diagnostico/fotogramas_dorados.py diferenciar a.ppm b.ppm --mapa m.png
+
+# Capturar los dorados de las escenas del manifiesto
+python scripts/diagnostico/fotogramas_dorados.py capturar \
+    --bin <recomp.exe> --rom <rom.gba> --bios <bios.bin>
+
+# Comparar un binario candidato contra los dorados
+python scripts/diagnostico/fotogramas_dorados.py comparar \
+    --bin <recomp.exe> --rom <rom.gba> --bios <bios.bin>
+```
+
+**Manifiesto de escenas versionado** (`scripts/diagnostico/escenas_doradas.toml`):
+```toml
+version = 1
+
+[[escena]]
+nombre = "entrada-avance"
+script = "entrada_avance.input"
+anclas = [600, 1800, 3600, 5400, 7200]
+```
+
+**Dorados locales** en `out/doradas/` (no versionados, cubiertos por `/out/` en `.gitignore`):
+- `entrada-avance_<k>.ppm` — fotograma ancla
+- `manifesto.json` — hashes de ROM, BIOS, guion, biblioteca y anclas
+- `entrada-avance_<k>.diff.png` — mapa de diferencias si `comparar` falla
+
+**Blindaje por mutación** (M1 — `alpha_blend`, M2 — `in_window_range`): mutar el motor,
+reconstruir, y el arnés debe salir con código 1 nombrando un píxel. Los archivos del
+motor se restauran en un bloque `finally`, sin comandos destructivos de Git.

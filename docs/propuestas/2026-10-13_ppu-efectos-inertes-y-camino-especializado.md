@@ -2,7 +2,7 @@
 
 Fecha: 2026-10-13
 Nivel: 2
-Estado: completada
+Estado: cerrada
 
 ## Propuesta (la escribe el agente antes de editar)
 
