@@ -1,0 +1,21 @@
+# Manifiesto de escenas del arnés de fotogramas dorados.
+#
+# Cada tabla `[[escena]]` nombra un guion de entrada (`gba-input v1`) y los fotogramas
+# ancla que se capturan como dorados. `script` es una ruta relativa a esta carpeta.
+#
+# Lo que hay aquí son datos, no píxeles: los dorados viven en `out/doradas/` (cubierto
+# por `/out/` en `.gitignore`) porque son material derivado de la ROM. Editar esta lista
+# no requiere propuesta; cambiar qué pantallas se protegen es una decisión de la persona.
+#
+# Uso:
+#   python scripts/diagnostico/fotogramas_dorados.py capturar --bin <motor> --rom <rom> --bios <bios>
+#   python scripts/diagnostico/fotogramas_dorados.py comparar --bin <motor> --rom <rom> --bios <bios>
+
+version = 1
+
+[[escena]]
+# Recorrido de banco: sale del título y llega a escenas con efectos de color, que es
+# donde la PPU compone con alpha y donde un cambio de píxel es más probable.
+nombre = "entrada-avance"
+script = "entrada_avance.input"
+anclas = [600, 1800, 3600, 5400, 7200]
