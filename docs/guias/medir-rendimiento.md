@@ -127,13 +127,14 @@ al 2026-10-12 (sin líneas `# regiones`) el analizador lo avisa y omite esa secc
 
 ### Líneas de calibración de presentación
 
-La calibración de presentación está **desactivada por defecto**: la medición en tablet mostró que solo la
-reducción de resolución baja el coste de `present` (51,4 ms → 2,9 ms; 18 → 53-60 FPS) y se decidió
-preservar la nitidez nativa, así que el barrido no tenía nada que adoptar y se retiró del arranque
-(constante `CALIBRAR_PRESENTACION` en `src/platform.rs`). Con la calibración **activada**, los primeros
-~12-15 s de sesión recorren configuraciones del *swapchain* (latencia de fotogramas, modo de presentación
-y una sonda de resolución reducida). Esas líneas empiezan por `#` y acompañan a las ventanas `t=` que
-describen: las líneas `t=` que siguen a un `# tramo` pertenecen a esa configuración.
+La calibración de presentación está **activa** mientras dure el experimento
+[`2026-10-14_reactivar-la-calibracion-de-presentacion.md`](../propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md)
+(constante `CALIBRAR_PRESENTACION` en `src/platform.rs`); fuera de él queda **desactivada por defecto**,
+porque la medición en tablet mostró que solo la reducción de resolución baja el coste de `present`
+(51,4 ms → 2,9 ms; 18 → 53-60 FPS) y se decidió preservar la nitidez nativa. Con la calibración activa,
+los primeros ~12-15 s de sesión recorren configuraciones del *swapchain* (latencia de fotogramas, modo de
+presentación y una sonda de resolución reducida). Esas líneas empiezan por `#` y acompañan a las ventanas
+`t=` que describen: las líneas `t=` que siguen a un `# tramo` pertenecen a esa configuración.
 
 | Línea | Significado |
 | :--- | :--- |
@@ -191,6 +192,65 @@ descartar una idea antes de empaquetar el APK. La comparación solo vale si es *
    fotograma de este arnés—. Una diferencia medida en host con la feature encendida **incluye ese reloj**, y
    no es lo que paga el APK de `arm64-v8a`.
 
-Por debajo de un 5 % de diferencia este arnés no concluye: para eso está la telemetría del dispositivo.
-Y si lo que se quiere medir es el coste del cronómetro del motor en el objetivo real, este arnés no sirve:
-para eso está la sonda de [`2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md`](../propuestas/2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md).
+Por debajo de un 5 % de diferencia este arnés no concluye: para eso está la telemetría del dispositivo.Y si lo que se quiere medir es el coste del cronómetro del motor en el objetivo real, este arnés no sirve: para eso está la sonda de [`2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md`](../propuestas/2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md).
+
+---
+
+## Fotogramas dorados: regresiones de píxel de la PPU por escena
+
+El arnés de fotogramas dorados (`scripts/diagnostico/fotogramas_dorados.py`) detecta **qué píxel cambió**, **en qué escena y fotograma**, y **qué región de la pantalla** ocupó, en lugar de solo indicar que un hash global difiere. Es la red de fidelidad que el arnés de rendimiento no tiene.
+
+### Uso en tres pasos
+
+```bash
+# 1. Capturar los dorados de las escenas del manifiesto (se ejecuta una vez por binario de confianza)
+python scripts/diagnostico/fotogramas_dorados.py capturar \
+    --bin ../gba-recomp/target/release/recomp.exe \
+    --rom "roms/1575 - Fire Emblem (E)(Independent).gba" \
+    --bios roms/gba_bios.bin
+
+# 2. Hacer el cambio en la PPU, reconstruir, y comparar contra los doradosnpython scripts/diagnostico/fotogramas_dorados.py comparar \
+    --bin ../gba-recomp/target/release/recomp.exe \
+    --rom "roms/1575 - Fire Emblem (E)(Independent).gba" \
+    --bios roms/gba_bios.bin
+
+# 3. Si falla, el informe dice cuántos píxeles, en qué columna/fila, qué caja ocupan,
+#    y escribe un PNG `entrada-avance_<k>.diff.png` con las diferencias en rojo.
+```
+n### Contrato de códigos de salida (los tres subcomandos)
+
+| Código | Significado |
+| :--- | :--- |
+| 0 | Sin diferencias (o captura correcta) |
+| 1 | **Diferencias de píxel: es una regresión** |
+| 2 | Entrada inválida o dorados desactualizados (ROM/BIOS/guion cambiaron); **no hay veredicto** |
+n### Qué informa `comparar` cuando falla
+
+```text
+escena entrada-avance
+  ancla 600: OK (ec8c6a01f9add6ff)
+  ancla 1800: DIFIERE 93 px | primero columna=119 fila=12 | caja x0-239 y12-23 | filas 12-23 | tiles 8x8 afectados 28/600 | mapa: out/doradas/entrada-avance_1800.diff.png
+  ...
+
+4 ancla(s) difieren, 311 píxeles en total: entrada-avance@1800 (93 px), ...
+```
+n### Manifiesto de escenas (`scripts/diagnostico/escenas_doradas.toml`)
+nVersionado y editable sin propuesta; solo lista `nombre`, `script` (relativo a la carpeta) y `anclas`:
+```toml
+version = 1
+
+[[escena]]
+nombre = "entrada-avance"
+script = "entrada_avance.input"
+anclas = [600, 1800, 3600, 5400, 7200]
+```
+n### Blindaje por mutación (se ejecuta antes de cerrar cualquier propuesta que toque la PPU)
+nM1 — `alpha_blend` (`+8` → `+7`): **detecta 311 píxeles en 4 anclas** (600 OK; 1800/3600/5400/7200 difieren).
+M2 — `in_window_range` (rango semiabierto → cerrado): **0 diferencias** (los anclas actuales no ejercitan ventanas).
+nLos archivos del motor se restauran byte a byte en un bloque `finally`, sin comandos destructivos de Git.
+n### Dónde viven los dorados (no versionados)
+n`out/doradas/` (cubierto por `/out/` en `.gitignore`):
+- `entrada-avance_<k>.ppm` — fotograma ancla (PPM P6 240×160)
+- `manifesto.json` — hashes de ROM, BIOS, guion, biblioteca `.dll` y anclas
+- `entrada-avance_<k>.diff.png` — mapa de diferencias si `comparar` falla
+nSolo se versionan la herramienta, `escenas_doradas.toml`, `entrada_avance.input` y los tests.

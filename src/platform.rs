@@ -136,14 +136,20 @@ const PREFERIR_OPENGL_ES: bool = false;
 
 /// Calibración de presentación del arranque.
 ///
-/// `false` por **decisión** (2026-10-10): el barrido en tablet
-/// (`blazing-perf-5.txt`) midió que solo la reducción de resolución baja el
-/// coste de `present` (51,4 ms → 2,9 ms; 18 → 53-60 FPS en retrato) y se decidió
-/// preservar la nitidez nativa. Con el barrido activo cada arranque gastaba
-/// 12-15 s de mediciones y artefactos (3 s a media resolución) para acabar
-/// eligiendo siempre la referencia. El mecanismo (`src/present.rs`) queda
-/// implementado y probado: poner esto a `true` vuelve a medir y adoptar.
-const CALIBRAR_PRESENTACION: bool = false;
+/// **Activa (2026-10-14)** por el experimento
+/// `docs/propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md`: la
+/// decisión que la apagó se midió en una **tablet** (Snapdragon 610,
+/// `blazing-perf-5.txt`) y el objetivo hoy es el **Android TV**, otro SoC y otro
+/// compositor, así que el barrido vuelve a medir y a decidir allí. Al cerrar el
+/// experimento esto vuelve a `false` si no aparece mejora medible.
+///
+/// La decisión de 2026-10-10 sigue vigente en lo suyo: en la tablet solo la
+/// reducción de resolución bajaba el coste de `present` (51,4 ms → 2,9 ms; 18 →
+/// 53-60 FPS en retrato) y se decidió preservar la nitidez nativa, así que el
+/// tramo a media resolución es **sonda** y nunca se adopta. Con el barrido activo
+/// cada arranque gasta 12-15 s de mediciones y artefactos (3 s a media
+/// resolución). El mecanismo (`src/present.rs`) está implementado y probado.
+const CALIBRAR_PRESENTACION: bool = true;
 
 pub use crate::present::calcular_escala_swapchain;
 

@@ -71,7 +71,11 @@ Esto se confirma en el comentario del propio [`present.rs:10-15`](../../src/pres
 El `present_mode` del log dice `AutoVsync`, que es `Fifo` estándar — confirma que ni siquiera se consiguió Mailbox. En Fifo con 2 búferes, cada `present` espera un ciclo completo de VSync + composición de SurfaceFlinger.
 
 > [!IMPORTANT]
-> Con la calibración desactivada ([`CALIBRAR_PRESENTACION: false`](../../src/platform.rs#L148)), la app arranca siempre con `latency=1` + `AutoVsync`, que es el peor escenario para este hardware.
+> Aquel arranque tenía la calibración desactivada ([`CALIBRAR_PRESENTACION`](../../src/platform.rs#L152)) y congelaba `latency=1` + `AutoVsync`, el peor escenario para este hardware.
+>
+> **Actualizado (2026-10-14):** la app fija `latency=2` desde el 2026-10-10 y el barrido está **activo**
+> mientras dure el experimento
+> [`2026-10-14_reactivar-la-calibracion-de-presentacion.md`](../propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md).
 
 ---
 

@@ -399,18 +399,26 @@ fn test_render_escala_bufer_y_wiring_de_calibracion() {
     }
 }
 
-/// Decisiones registradas (2026-10-10): el barrido de calibración de
-/// presentación queda desactivado por defecto (nitidez nativa: la medición
-/// mostró que solo la reducción de resolución baja `present`) y el orden de
-/// backends se decide con una constante explícita, para que el experimento de
-/// presentación (OpenGL ES vs Vulkan) no quede enterrado en el cuerpo de la
-/// función.
+/// Estado registrado del barrido de calibración de presentación, y decisiones
+/// de backends.
+///
+/// El barrido está **activo** por el experimento
+/// `docs/propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md`: la
+/// decisión que lo apagó (2026-10-10) se midió en una tablet y el objetivo hoy
+/// es el Android TV, así que vuelve a medir allí. Esta aserción se actualiza **en
+/// el mismo cambio y en el mismo sentido** que la constante, de modo que su
+/// estado no pueda derivar en silencio: quien lo cambie tendrá que tocar este
+/// test y su motivo. Al cerrar el experimento vuelve a `false`.
+///
+/// La nitidez nativa sigue decidida: la medición mostró que solo la reducción de
+/// resolución baja `present`, así que ese tramo es sonda y no se adopta.
 #[test]
 fn test_decisiones_de_presentacion_declaradas() {
     let platform_src = include_str!("platform.rs");
     assert!(
-        platform_src.contains("const CALIBRAR_PRESENTACION: bool = false;"),
-        "el barrido de calibración debe quedar desactivado por decisión explícita"
+        platform_src.contains("const CALIBRAR_PRESENTACION: bool = true;"),
+        "el barrido está activo por el experimento 2026-10-14_reactivar-la-calibracion-de-presentacion; \
+         al cerrarlo, actualiza esta aserción y su motivo junto con la constante"
     );
     assert!(
         platform_src.contains("const PREFERIR_OPENGL_ES: bool ="),
