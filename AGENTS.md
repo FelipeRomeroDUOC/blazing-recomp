@@ -216,7 +216,7 @@ Todo agente que vaya a modificar, crear o refactorizar código en este repositor
 
 - **Checklist Obligatorio de Pre-Commit Gatekeeper:**
   Antes de proponer o ejecutar un `git commit` y `git push`, el agente debe verificar sin excepción los siguientes 5 criterios:
-  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (131 tests actuales: 109 en los módulos satélite de `src/` + 18 en `tests/packaging_tests.rs` + 4 en `tests/golden_frame_tests.rs`).
+  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (285 tests actuales: 184 en los módulos de `src/` + 101 de integración en `tests/`).
   2. **Validación Diátaxis sin errores:** `python .agents/skills/diataxis-docs/scripts/validar_docs.py .` devuelve `0 error(es), 0 aviso(s)`.
   3. **Especificaciones de API sincronizadas:** `python scripts/extraer_referencias.py --check` sale con código de éxito 0.
   4. **Auditoría de labels AOT aprobada:** `python scripts/diagnostico/auditar_labels.py` sale con código de éxito 0.

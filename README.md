@@ -45,6 +45,7 @@ La documentación del proyecto sigue el estándar Diátaxis y se encuentra organ
   - [Arquitectura del Port Android](docs/explicacion/arquitectura-port-android.md): Modelo de capas, runtime nativo en Rust y subsistemas.
   - [Estrategia de Versionado y Roadmap](docs/explicacion/roadmap-y-versionado.md): Filosofía de versiones y metas hacia la versión 1.0.
   - [Arquitectura de Código C Recompilado](docs/explicacion/arquitectura-c-recompilado.md): Análisis del pipeline AOT y ABI de registros.
+  - [Caminos de Composición de la PPU por Software](docs/explicacion/ppu-caminos-de-composicion.md): Por qué hay dos caminos para dibujar una línea, qué separa al atajo de la ventana de sprites y cómo se prueba el defecto.
 - **Referencia Técnica:**
   - [APIs y Módulos de Rust](docs/referencia/api-modulos-rust.md): Referencia pública extraída automáticamente del código fuente.
   - [Configuración de Manifiesto (`pack.toml`)](docs/referencia/CONFIGURACION_PACK.md): Especificación de claves y parámetros.

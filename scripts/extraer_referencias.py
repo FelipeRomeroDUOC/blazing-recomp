@@ -20,15 +20,15 @@ from pathlib import Path
 def limpiar_doc(lineas):
     """Limpia los prefijos /// de los docstrings."""
     resultado = []
-    for l in lineas:
-        l = l.strip()
-        if l.startswith("///"):
-            contenido = l[3:]
+    for linea_doc in lineas:
+        linea_doc = linea_doc.strip()
+        if linea_doc.startswith("///"):
+            contenido = linea_doc[3:]
             if contenido.startswith(" "):
                 contenido = contenido[1:]
             resultado.append(contenido)
-        elif l.startswith("//!"):
-            contenido = l[3:]
+        elif linea_doc.startswith("//!"):
+            contenido = linea_doc[3:]
             if contenido.startswith(" "):
                 contenido = contenido[1:]
             resultado.append(contenido)
@@ -68,7 +68,7 @@ def parsear_archivo_rust(path_archivo):
             continue
 
         # Constante pública
-        m_const = re.match(r"^pub(?:\([^)]+\))?\s+const\s+([A-Za-z0-9_]+)\s*:\s*([^=]+)\s*=", linea)
+        m_const = re.match(r"^pub(?:\([^)]+\))?\s+const\s+([A-Za-z0-9_]+)\s*:\s*([^=]+)=", linea)
         if m_const:
             nombre = m_const.group(1)
             tipo_const = m_const.group(2).strip()
@@ -241,6 +241,7 @@ def main():
         "runner.rs",
         "recomp.rs",
         "fps.rs",
+        "telemetria.rs",
     ]
 
     modulos = []

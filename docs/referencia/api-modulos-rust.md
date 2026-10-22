@@ -19,11 +19,12 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | [`input.rs`](#módulo-inputrs) | 19 | Entrada táctil ergonómica (Fase 5.1, propuesta |
 | [`overlay.rs`](#módulo-overlayrs) | 12 | Overlay táctil y marco GBA SP (Fase 5.2, propuesta |
 | [`error_screen.rs`](#módulo-error_screenrs) | 4 | Renderizador de pantalla de error por software y blindaje de GPU. |
-| [`platform.rs`](#módulo-platformrs) | 1 | Plataforma Android (solo compila con `cfg(target_os = "android")`): |
+| [`platform.rs`](#módulo-platformrs) | 2 | Plataforma Android (solo compila con `cfg(target_os = "android")`): |
 | [`storage.rs`](#módulo-storagers) | 14 | Módulo interno del port. |
-| [`runner.rs`](#módulo-runnerrs) | 17 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
+| [`runner.rs`](#módulo-runnerrs) | 23 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
 | [`recomp.rs`](#módulo-recomprs) | 30 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
 | [`fps.rs`](#módulo-fpsrs) | 18 | Contador de FPS y generador de HUD visual en pantalla. |
+| [`telemetria.rs`](#módulo-telemetriars) | 13 | Contrato de la línea de segundo (`t=`) de la telemetría de rendimiento. |
 
 ---
 
@@ -495,6 +496,16 @@ Plataforma Android (solo compila con `cfg(target_os = "android")`):
 ciclo de vida NativeActivity, presentación GPU, entrada táctil con
 háptica y logging a Logcat.
 
+### `FORZAR_PPU_SOFTWARE` (Constante)
+
+Permite forzar el renderizado por software en CPU para pruebas comparativas A/B.
+Por defecto `false` (usar GPU PpuShim cuando esté disponible).
+
+**Firma:**
+```rust
+pub const FORZAR_PPU_SOFTWARE: bool
+```
+
 ### `android_main` (Función)
 
 *Sin comentario de documentación en código fuente.*
@@ -733,6 +744,60 @@ Indica si el runner está ejecutando con la tabla nativa AOT cargada.
 **Firma:**
 ```rust
 pub fn is_native(&self) -> bool
+```
+
+### `set_gpu_ppu_enabled` (Función)
+
+Activa o desactiva el renderizado por GPU mediante PPU Shim.
+
+**Firma:**
+```rust
+pub fn set_gpu_ppu_enabled(&mut self, enabled: bool)
+```
+
+### `is_gpu_ppu_enabled` (Función)
+
+Indica si el renderizado PPU Shim en GPU esta activo.
+
+**Firma:**
+```rust
+pub fn is_gpu_ppu_enabled(&self) -> bool
+```
+
+### `vram` (Función)
+
+Referencia a la VRAM de la GBA (96 KB).
+
+**Firma:**
+```rust
+pub fn vram(&self) -> &[u8]
+```
+
+### `oam` (Función)
+
+Referencia a la OAM de la GBA (1 KB).
+
+**Firma:**
+```rust
+pub fn oam(&self) -> &[u8]
+```
+
+### `palette` (Función)
+
+Referencia a la memoria de paletas de la GBA (1 KB).
+
+**Firma:**
+```rust
+pub fn palette(&self) -> &[u8]
+```
+
+### `io` (Función)
+
+Referencia a los registros de I/O de la GBA.
+
+**Firma:**
+```rust
+pub fn io(&self) -> &[u8]
 ```
 
 ### `set_keys` (Función)
@@ -1287,6 +1352,150 @@ Rasteriza el badge con fondo de pastilla translúcida y texto con la tipografía
 **Firma:**
 ```rust
 pub fn render_badge(&mut self, fps_val: u32)
+```
+
+---
+
+## Módulo `telemetria.rs`
+
+Contrato de la línea de segundo (`t=`) de la telemetría de rendimiento.
+
+El contrato vive en [`ESQUEMA_TEXTO`] (`telemetria/esquema.txt`), un fichero de
+texto plano que es el **dueño único** de la lista de campos: lo lee este módulo
+para escribir y `scripts/diagnostico/analizar_telemetria.py` para leer. Añadir
+un campo se hace en el esquema, y los dos lados lo entienden sin tocar código.
+
+Antes de este módulo el contrato estaba escrito cuatro veces (el `format!` de
+`PerfReport::to_line`, el regex posicional de Python, la tabla de la guía y su
+línea de ejemplo) y la deriva entre ellos fallaba en silencio: el regex no casaba,
+el segundo no se contaba y el informe salía con medias sesgadas sin avisar.
+
+El esquema se analiza una vez (`OnceLock`) y un esquema mal formado es un `Err`,
+nunca un pánico: un contrato roto tiene que verse, no tumbar el juego.
+
+### `ESQUEMA_TEXTO` (Constante)
+
+Texto del esquema, embebido en la biblioteca en tiempo de compilación.
+
+Va embebido (`include_str!`) y no como asset: el APK no lo lleva como archivo
+y el módulo no necesita ni sistema de ficheros ni dependencias nuevas.
+
+**Firma:**
+```rust
+pub const ESQUEMA_TEXTO: &str
+```
+
+### `Tipo` (Enum)
+
+Cómo se imprime un campo de la línea de segundo.
+
+**Firma:**
+```rust
+pub enum Tipo
+```
+
+### `nombre` (Función)
+
+Nombre del tipo tal como se declara en el esquema.
+
+**Firma:**
+```rust
+pub fn nombre(&self) -> &'static str
+```
+
+### `desde_texto` (Función)
+
+Interpreta el nombre de un tipo del esquema.
+
+**Firma:**
+```rust
+pub fn desde_texto(texto: &str) -> Option<Tipo>
+```
+
+### `Campo` (Struct)
+
+Un campo declarado en el esquema.
+
+**Firma:**
+```rust
+pub struct Campo
+```
+
+### `Valor` (Enum)
+
+Valor de un campo, ya tipado, listo para imprimirse.
+
+**Firma:**
+```rust
+pub enum Valor
+```
+
+### `Esquema` (Struct)
+
+El contrato analizado: los campos en orden canónico y el sello de versión.
+
+**Firma:**
+```rust
+pub struct Esquema
+```
+
+### `campos` (Función)
+
+Campos del contrato, en el orden canónico en que se escriben.
+
+**Firma:**
+```rust
+pub fn campos(&self) -> &[Campo]
+```
+
+### `sello_clave` (Función)
+
+Clave del sello de versión (`formato`).
+
+**Firma:**
+```rust
+pub fn sello_clave(&self) -> &'static str
+```
+
+### `sello_version` (Función)
+
+Versión del contrato que emite el escritor.
+
+**Firma:**
+```rust
+pub fn sello_version(&self) -> u32
+```
+
+### `campo` (Función)
+
+Busca un campo por su nombre.
+
+**Firma:**
+```rust
+pub fn campo(&self, nombre: &str) -> Option<&Campo>
+```
+
+### `esquema` (Función)
+
+Devuelve el esquema del contrato, analizado la primera vez que se pide.
+
+**Firma:**
+```rust
+pub fn esquema() -> Result<&'static Esquema, String>
+```
+
+### `escribir_linea` (Función)
+
+Escribe una línea de segundo completa a partir de los valores de sus campos.
+
+Recorre el esquema en orden canónico, imprime cada valor con la forma de su
+tipo y remata la línea con el sello (`formato=2`). Falla nombrando el campo en
+los tres casos que puede haber: falta un valor, sobra un valor que el esquema
+no declara, o el valor no encaja con el tipo declarado.
+
+**Firma:**
+```rust
+pub fn escribir_linea(valores: &BTreeMap<&'static str, Valor>) -> Result<String, String>
 ```
 
 ---

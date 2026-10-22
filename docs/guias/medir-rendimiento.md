@@ -41,9 +41,9 @@ O ábrelo directamente en el dispositivo con Files de Google u otro explorador d
 ## Comprobar el resultado
 
 Para validar que la medición se registró correctamente, abre `blazing-perf.txt` y comprueba que contenga:
-1. Una línea de encabezado inicial: `# backend=Vulkan modo=AOT present=Mailbox alpha=Opaque reloj=NNns ppu=recto-1`
+1. Una línea de encabezado inicial: `# backend=Vulkan modo=AOT present=Mailbox alpha=Opaque reloj=NNns ppu=recto-3`
 2. Una línea por cada segundo transcurrido con el siguiente formato:
-   `t=45s fps=60.0 ejec=13.6/21.9 ppu=7.7 ppubg=3.3 ppuspr=1.1 ppucomp=3.3 apu=1.5 lecturas=6581 escrituras=4206 color=1.2/1.3 dibujo=7.0/15.5 espera=0.0/0.0 subida=0.5 codificacion=1.2 present=5.4 presentmax=14.0 nativos=4945 interprete=2 vacias=1 ventana=1280x720`
+   `t=45s fps=60.0 ejec=13.6/21.9 ppu=7.7 ppubg=3.3 ppuspr=1.1 ppucomp=3.3 apu=1.5 lecturas=6581 escrituras=4206 color=1.2/1.3 dibujo=7.0/15.5 espera=0.0/0.0 subida=0.5 codificacion=1.2 present=5.4 presentmax=14.0 nativos=4945 interprete=2 vacias=1 ventana=1280x720 pump=2 pumpm=480 formato=2`
 
 ### Significado de los campos
 Cada par `A/B` representa el **promedio** y el **peor caso (máximo)** en milisegundos:
@@ -70,6 +70,16 @@ Cada par `A/B` representa el **promedio** y el **peor caso (máximo)** en milise
 | `interprete` | entero | Promedio de pasos de instrucción en el intérprete de respaldo por fotograma. |
 | `vacias` | entero | Vueltas del bucle de eventos sin avance de fotograma ni redibujado durante ese segundo. |
 | `ventana` | píxeles | Resolución física de la ventana (`ancho x alto`), distinguiendo portrait de landscape. |
+| `pump` | llamadas | Promedio de llamadas a `pump_audio` por fotograma (bombeo de audio por evento, desde el 2026-10-14). |
+| `pumpm` | muestras | Promedio de muestras de audio generadas por fotograma. |
+| `formato` | versión | Versión del contrato con la que se escribió la línea. Hoy `2`. Es el **sello**, va al final y permite distinguir una línea nueva de una vieja sin adivinar por los campos que trae. |
+
+La lista de campos, sus tipos y su orden **no se mantienen a mano**: los declara
+[`telemetria/esquema.txt`](../../telemetria/esquema.txt), del que beben el motor
+([`src/telemetria.rs`](../../src/telemetria.rs)) y el analizador de Python. Si esta tabla y el
+esquema se desfasan, gana el esquema. El analizador busca cada campo **por clave**, así que el
+orden de la línea deja de importar; y una línea sin sello (las anteriores al 2026-10-14) se lee
+en modo tolerante: usa los campos que encuentra y no echa de menos los que aún no existían.
 
 Sobre `reloj=` del encabezado: es el **coste medido de una lectura de `Instant::now()` del port**
 (promedio de 10.000 lecturas al arrancar, [`src/perf.rs`](../../src/perf.rs)). En estos dispositivos
@@ -77,6 +87,31 @@ ronda 1,4-2,2 µs, tres órdenes de magnitud por encima de lo habitual, y sirve 
 cronometrar la propia telemetría. **No** mide el contador del sistema con el que el motor cronometra
 las fases de la PPU, así que no sirve para comparar el coste de ese reloj entre versiones; medirlo en el dispositivo es el
 objetivo de [`2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md`](../propuestas/2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md).
+
+### Leer el informe del analizador
+
+`python scripts/diagnostico/analizar_telemetria.py --archivo blazing-perf.txt` resume la sesión.
+Con el contrato versión 2, el informe separa dos cosas que antes se confundían en un solo número:
+
+- **peor media de segundo**: el mayor promedio de `ejec` (o de `dibujo`) entre las ventanas de 1 s.
+  Es comparable con la media de la sesión y sirve para ver un segundo entero que fue mal.
+- **peor fotograma**: el mayor de los segundos componentes del par `A/B`. Un pico aislado de un
+  solo fotograma (un tirón del compositor) se ve aquí y no en la media del segundo.
+
+Si el analizador encuentra algo que no encaja con `telemetria/esquema.txt` —un campo que no
+conoce, un valor que no encaja con su tipo o un campo que falta en una línea sellada—, no lo
+descarta: añade una sección `ANOMALÍAS DE FORMATO EN LA LÍNEA DE SEGUNDO` con el motivo y el
+recuento, y la línea sigue contando para las medias. Un campo desconocido suele significar que el
+APK es más nuevo que el script; un campo que falta, que el script es más nuevo que el APK.
+
+Para ver exactamente lo que el lector entendió, `--volcar` emite un TSV con una fila por campo:
+
+```bash
+python scripts/diagnostico/analizar_telemetria.py --archivo blazing-perf.txt --volcar
+```
+
+Es el mismo volcado que usa el test de oro (`tests/telemetria_contrato_tests.rs`) para comprobar,
+campo a campo, que lo que el motor escribió es lo que el analizador leyó.
 
 ### Líneas de perfilado del intérprete
 
@@ -89,6 +124,7 @@ reparte las líneas de la PPU entre los caminos de composición.
 | `# hotspots top=ADDR (N) ...` | Las 6 direcciones de código más ejecutadas en el intérprete desde el volcado anterior, con su número de ejecuciones. |
 | `# regiones rom=I/N iwram=I/N ewram=I/N bios=I/N` | Ejecución **acumulada desde el arranque de la sesión**, por región de memoria. Cada par es `I` = pasos de intérprete y `N` = bloques nativos AOT. |
 | `# ppucamino rectas=N mezcla=N ventana=N semi=N inertes=N efecto=N efalpha=N efbrillo=N efoscuro=N (rectas=X%)` | Líneas de la PPU **acumuladas desde el arranque de la sesión**, repartidas por camino de composición: `rectas` = vía rápida (tramos de control constante), y los descartes por efectos de color que necesitan las dos capas (`mezcla`), ventana de sprites (`ventana`) o sprite translúcido (`semi`). `inertes` y `efecto` desglosan las `rectas`: las que lo son porque el efecto es la identidad, y las que aplicaron un aclarado u oscurecido real. `efalpha`, `efbrillo` y `efoscuro` reparten las líneas con efecto real por modo. |
+| `# ppu_hw gpu=N sw=N modo0=N win=N blend=N spr_total=N spr_8bpp=N spr_afin=N nativa=N` | Censo de **la ventana de 1 s** a la que acompaña: `gpu` = fotogramas dibujados en la GPU, `sw` = fotogramas que ebieron por la subida del framebuffer por software, `modo0`/`win`/`blend` = fotogramas en Modo 0, con ventanas de hardware activas y con efectos de mezcla, `spr_total`/`spr_8bpp`/`spr_afin` = promedios de sprites activos, de 8bpp y afines, y `nativa` = cuántos de esos fotogramas los dibujó la **PPU nativa** (los que fueron por GPU con el shim no cuentan). |
 
 Sobre `# ppucamino`: las **cuatro primeras** cuentas (`rectas`, `mezcla`, `ventana`, `semi`) suman las
 líneas dibujadas y cada línea cae en una sola razón —la primera que impide usar la vía rápida—, así
@@ -101,9 +137,20 @@ líneas consecutivas. Un `rectas=0%` con `mezcla` creciendo significa que la esc
 real (modo 1) y que la vía rápida no se está ejecutando; si en cambio crece `efoscuro` o `efbrillo`
 mientras `rectas` sube, el efecto es un oscurecido o aclarado que la vía rápida sí aplica. Un
 `inertes` creciente con `rectas` subiendo son desvanecidos a nivel cero: efecto configurado que no
-cambia ningún píxel. El campo `ppu=` del encabezado es la marca de compilación de ese camino
+cambia ningún píxel.
+
+La **ventana de sprites** es la primera razón que se mira, antes que el efecto de color: una línea
+con esa ventana activa se dibuja píxel a píxel, porque el atajo solo corta la línea por los bordes de
+WIN0 y WIN1 y no puede aplicar la máscara de la ventana de sprites, que depende de dónde estén los
+sprites ([`2026-10-21_ventana-obj-camino-rapido.md`](../propuestas/2026-10-21_ventana-obj-camino-rapido.md)).
+Por eso, en una escena con la ventana activa `ventana` crece y `mezcla` no: esas líneas se anotan por
+la ventana aunque también tengan un alpha real, y `efalpha` solo cuenta las líneas con alpha real a
+las que la ventana no había descartado antes.
+
+El campo `ppu=` del encabezado es la marca de compilación de ese camino
 (`PPU_CAMINO_VERSION` del motor) y sirve para saber qué renderizador produjo el registro
-(`ppu=recto-2` es el que trae este reparto; `recto-1` no tiene los campos nuevos).
+(`ppu=recto-3` es la versión actual, con la ventana de sprites ya aplicada; `recto-2` trae el mismo
+reparto pero con el atajo sin la ventana; `recto-1` no tiene los campos nuevos).
 
 Sobre `# hotspots top=`: solo se consumen las direcciones que aparecen en la línea; las que no entran
 en el `top` conservan su contador para el volcado siguiente, de forma que la suma de todas las líneas
@@ -156,6 +203,98 @@ La calibración no altera el resto del formato: el encabezado y las líneas `t=`
 El encabezado informa además del backend realmente activo (`backend=Vulkan` o `backend=OpenGL`). Durante el
 experimento de presentación la aplicación prefiere OpenGL ES, así que **solo deben compararse registros
 del mismo backend**: un log con `backend=OpenGL` mide el camino de OpenGL ES, no el de Vulkan.
+
+---
+
+## Probar la PPU nativa en el dispositivo
+
+La **PPU nativa** compone el cuadro píxel a píxel en la GPU, con la aritmética de la PPU
+original de la GBA (mezcla alfa, aclarar, oscurecer y ventanas). Verifica contra la PPU de
+referencia con **0 diferencias de 38.400 píxeles** en los dos cuadros de aceptación
+([`2026-10-19_ppu-nativa-fase-1.md`](../propuestas/2026-10-19_ppu-nativa-fase-1.md)).
+
+Es la ruta de dibujo **por defecto**: un APK recién instalado ya compone con ella, sin tocar
+nada ([`2026-10-21_ppu-nativa-activa-por-defecto.md`](../propuestas/2026-10-21_ppu-nativa-activa-por-defecto.md)).
+Para volver al shim —y comparar A/B en el propio dispositivo— se crea un archivo de marca,
+sin recompilar:
+
+1. Crea un archivo vacío llamado `ppu-nativa-off.flag` en el almacenamiento del dispositivo.
+2. Deja la app en marcha: la marca se relee **una vez por segundo**, así que el cambio se ve
+   sin reiniciar.
+3. Para volver a la PPU nativa, borra el archivo: el control vuelve a ella en el siguiente tick.
+
+> El archivo `ppu-nativa.flag` de las pruebas anteriores **ya no se lee**: encendía la PPU
+> nativa cuando la ruta por defecto era el shim. Si sigue en el almacenamiento, no hace nada.
+
+Rutas candidatas, por orden de búsqueda. La primera es la única que no depende de permisos:
+
+| Ruta | Notas |
+| :--- | :--- |
+| `/sdcard/Android/data/com.blazingrecomp.game/files/ppu-nativa-off.flag` | Directorio externo propio de la app: **siempre** accesible, sin permisos. |
+| `/sdcard/Download/ppu-nativa-off.flag` | Requiere que la app tenga acceso al almacenamiento compartido. |
+| `/storage/emulated/0/Download/ppu-nativa-off.flag` | Idem, ruta emulada. |
+
+La lista completa la fija `resolve_search_directories` en
+[`src/storage.rs`](../../src/storage.rs): a las tres anteriores les siguen la subcarpeta
+`/sdcard/Download/GBA`, las rutas relativas `Download` y `roms` (desarrollo en host), las
+alternativas de emulador (`/mnt/sdcard/Download`, `/storage/self/primary/Download`) y, la última,
+el directorio interno privado de la app.
+
+Con `adb`:
+
+```bash
+# Volver al shim
+adb shell touch /sdcard/Android/data/com.blazingrecomp.game/files/ppu-nativa-off.flag
+# Volver a la PPU nativa
+adb shell rm /sdcard/Android/data/com.blazingrecomp.game/files/ppu-nativa-off.flag
+```
+
+**Cómo se sabe que está activa.** En el Logcat aparece `PPU nativa: ACTIVADA por defecto al
+arrancar` (o `PPU nativa: ACTIVADA (marca de apagado retirada)` si se acaba de borrar el
+archivo), y en `blazing-perf.txt` la línea `# ppu_hw` trae el campo `nativa=`, con los
+fotogramas que dibujó la PPU nativa en esa ventana:
+
+```text
+# ppu_hw gpu=60 sw=0 modo0=0 win=0 blend=1 spr_total=12 spr_8bpp=0 spr_afin=0 nativa=60
+```
+
+`nativa=60` (o cercano a 60) sobre `gpu=60` es la prueba de que la PPU nativa es quien está
+dibujando; con el shim, `nativa` valdría 0. La marca también queda registrada en el archivo
+como `# ppu_nativa=ON` y `# ppu_nativa=OFF` en el momento del cambio.
+
+**Lo que esta prueba NO mide.** La PPU nativa no sustituye al rasterizado por software: el
+motor sigue rasterizando en CPU, así que el **FPS no mejora** por encenderla. Lo que se
+comprueba es la **imagen**: escenas con mezcla alfa, ventanas de hardware y sprites
+translúcidos, que es justo lo que el shim no implementaba.
+
+### Si el dispositivo no puede con la PPU nativa
+
+La construcción del pipeline de la PPU nativa va dentro de un **guardián de errores** de
+`wgpu`: si el dispositivo rechaza algún recurso, la app **no se cae**, lo anota en el Logcat
+y sigue con el shim durante el resto de la sesión:
+
+```text
+PPU nativa: no se pudo construir el pipeline (PPU nativa: Validation Error …); se sigue con el shim
+```
+
+En ese caso la telemetría mostrará `nativa=0` aunque la PPU nativa esté activa por defecto: la
+app vuelve a leer la marca cada segundo, pero no reintenta la construcción (para no pagar dos
+veces el coste por fotograma).
+
+Si en cambio la app muestra «CRASH CRÍTICO» con el mensaje `wgpu error: Validation Error`, el
+error no vino de la construcción de la PPU nativa sino de otro recurso de GPU. La causa más
+frecuente fue la PPU nativa pidiendo un *storage
+buffer* visible en la etapa de vértices, algo que el estándar de OpenGL ES permite no tener
+(`DownlevelFlags(VERTEX_STORAGE)`): el registro del crash lo dice con «Binding N entry is invalid».
+Hoy **ningún** recurso de la PPU nativa exige esa capacidad —la geometría de los sprites viaja
+como atributos de instancia—, así que un dispositivo sin Vulkan (que acaba en OpenGL ES) también
+puede usarla. El arreglo está en
+[`2026-10-21_ppu-nativa-sin-storage-en-vertices.md`](../propuestas/2026-10-21_ppu-nativa-sin-storage-en-vertices.md).
+
+Si el crash persiste, mira primero el backend que está usando el dispositivo: el encabezado de
+`blazing-perf.txt` informa `backend=Vulkan` o `backend=OpenGL`, y el Logcat (`adb logcat -s
+BlazingRecomp`) dice qué backend se inicializó. La ruta de respaldo de Vulkan a OpenGL ES es
+automática (`src/platform.rs`), así que un dispositivo sin Vulkan no debería quedarse sin GPU.
 
 ---
 

@@ -1,0 +1,187 @@
+The Game Boy Advance (GBA) LCD Video Controller details and its key I/O register definitions are structured as follows:
+1. LCD I/O Display Control
+
+    4000000h - DISPCNT - LCD Control (Read/Write)
+        Bits 0-2: BG Mode (0-5 = Video Mode 0-5, 6-7 = Prohibited)
+        Bit 3: Reserved / CGB Mode (0 = GBA, 1 = CGB; set only by BIOS)
+        Bit 4: Display Frame Select (0-1 = Frame 0-1) (for BG Modes 4, 5 only)
+        Bit 5: H-Blank Interval Free (1 = Allow access to OAM during H-Blank)
+        Bit 6: OBJ Character VRAM Mapping (0 = Two-dimensional, 1 = One-dimensional)
+        Bit 7: Forced Blank (1 = Allow FAST access to VRAM, Palette, OAM)
+        Bits 8-11: Screen Display BG0–BG3 (0 = Off, 1 = On)
+        Bit 12: Screen Display OBJ (0 = Off, 1 = On)
+        Bits 13-14: Window 0 & 1 Display Flag (0 = Off, 1 = On)
+        Bit 15: OBJ Window Display Flag (0 = Off, 1 = On)
+
+    4000002h - Green Swap (Read/Write) (Undocumented)
+        Bit 0: Green Swap (0 = Normal, 1 = Swap green intensity of each two pixels)
+        Bits 1-15: Not used
+
+2. LCD I/O Interrupts and Status
+
+    4000004h - DISPSTAT - General LCD Status (Read/Write)
+        Bit 0: V-Blank flag (Read-only) (1 = VBlank active, lines 160–226)
+        Bit 1: H-Blank flag (Read-only) (1 = HBlank active, toggled in all lines 0–227)
+        Bit 2: V-Counter flag (Read-only) (1 = Match with V-Count Setting)
+        Bit 3: V-Blank IRQ Enable (1 = Enable)
+        Bit 4: H-Blank IRQ Enable (1 = Enable)
+        Bit 5: V-Counter IRQ Enable (1 = Enable)
+        Bits 8-15: V-Count Setting (LYC) (0–227)
+
+    4000006h - VCOUNT - Vertical Counter (Read-only)
+        Bits 0-7: Current Scanline (LY) (0–227; values 160–227 indicate V-Blank)
+
+3. LCD I/O BG Control
+
+    4000008h / 400000Ah / 400000Ch / 400000Eh - BG0CNT–BG3CNT - BG Control (Read/Write)
+        Bits 0-1: BG Priority (0-3, 0 = Highest)
+        Bits 2-3: Character Base Block (0-3, in units of 16 KBytes)
+        Bit 6: Mosaic (0 = Disable, 1 = Enable)
+        Bit 7: Colors/Palettes (0 = 16 colors/16 palettes, 1 = 256 colors/1 palette)
+        Bits 8-12: Screen Base Block (0-31, in units of 2 KBytes)
+        Bit 13: BG2/BG3 Display Area Overflow (0 = Transparent, 1 = Wraparound)
+        Bits 14-15: Screen Size (0-3)
+
+4. LCD I/O BG Scrolling
+
+    4000010h / 4000014h / 4000018h / 400001Ch - BG0HOFS–BG3HOFS - BG X-Offset (Write-only)
+        Bits 0-8: Offset (0–511)
+    4000012h / 4000016h / 400001Ah / 400001Eh - BG0VOFS–BG3VOFS - BG Y-Offset (Write-only)
+        Bits 0-8: Offset (0–511)
+
+5. LCD I/O BG Rotation/Scaling
+
+    4000028h / 400002Ch - BG2X / BG2Y - BG2 Reference Point X/Y Coordinate (Write-only)
+        Bits 0-7: Fractional portion (8 bits)
+        Bits 8-26: Integer portion (19 bits)
+        Bit 27: Sign (1 bit)
+    4000020h / 4000022h / 4000024h / 4000026h - BG2PA–BG2PD - BG2 Parameters A–D (Write-only)
+        Bits 0-7: Fractional portion (8 bits)
+        Bits 8-14: Integer portion (7 bits)
+        Bit 15: Sign (1 bit)
+    4000038h / 400003Ch / 4000030h–4000036h - BG3X / BG3Y / BG3PA–BG3PD - BG3 Reference Points & Parameters (Same format as BG2)
+
+6. LCD I/O Window Feature
+
+    4000040h / 4000042h - WIN0H / WIN1H - Window 0 & 1 Horizontal Dimensions (Write-only)
+        Bits 0-7: X2, Rightmost coordinate of window, plus 1
+        Bits 8-15: X1, Leftmost coordinate of window
+    4000044h / 4000046h - WIN0V / WIN1V - Window 0 & 1 Vertical Dimensions (Write-only)
+        Bits 0-7: Y2, Bottom-most coordinate of window, plus 1
+        Bits 8-15: Y1, Top-most coordinate of window
+    4000048h - WININ - Control of Inside of Windows (Read/Write)
+        Bits 0-3 / 8-11: Window 0 / 1 BG0–BG3 Enable Bits (0 = No Display, 1 = Display)
+        Bit 4 / 12: Window 0 / 1 OBJ Enable Bit
+        Bit 5 / 13: Window 0 / 1 Color Special Effect Enable (0 = Disable, 1 = Enable)
+    400004Ah - WINOUT - Control of Outside of Windows & Inside of OBJ Window (Read/Write)
+        Bits 0-3 / 8-11: Outside / OBJ Window BG0–BG3 Enable Bits
+        Bit 4 / 12: Outside / OBJ Window OBJ Enable Bit
+        Bit 5 / 13: Outside / OBJ Window Color Special Effect Enable
+
+7. LCD I/O Mosaic Function
+
+    400004Ch - MOSAIC - Mosaic Size (Write-only)
+        Bits 0-3: BG Mosaic H-Size (minus 1)
+        Bits 4-7: BG Mosaic V-Size (minus 1)
+        Bits 8-11: OBJ Mosaic H-Size (minus 1)
+        Bits 12-15: OBJ Mosaic V-Size (minus 1)
+
+8. LCD I/O Color Special Effects
+
+    4000050h - BLDCNT - Color Special Effects Selection (Read/Write)
+        Bits 0-5: 1st Target Pixel selection (BG0–BG3, OBJ, BD)
+        Bits 6-7: Color Special Effect Mode:
+            0 = None (Special effects disabled)
+            1 = Alpha Blending (1st + 2nd Target mixed)
+            2 = Brightness Increase (1st Target becomes whiter)
+            3 = Brightness Decrease (1st Target becomes blacker)
+        Bits 8-13: 2nd Target Pixel selection (BG0–BG3, OBJ, BD)
+    4000052h - BLDALPHA - Alpha Blending Coefficients (Read/Write)
+        Bits 0-4: EVA Coefficient (1st Target) (0..16 = 0/16..16/16)
+        Bits 8-12: EVB Coefficient (2nd Target) (0..16 = 0/16..16/16)
+    4000054h - BLDY - Brightness Coefficient (Write-only)
+        Bits 0-4: EVY Coefficient (Brightness) (0..16 = 0/16..16/16)
+
+The Game Boy Advance (GBA) graphic modes (BG Modes 0–5) are divided into two main categories: Tile/Map-Based and Bitmap-Based.
+
+Here is the comprehensive overview of these modes:
+A. Tile/Map-Based Modes (Modes 0–2)
+
+These modes use 8x8 pixel tiles arranged in a background map. They share 64 KBytes of VRAM for BG Maps and Tiles.
+BG Mode 0 (Text Mode)
+
+    Type: Tile/Map-based.
+    Rotation/Scaling: No.
+    Background Layers: 4 layers (BG0, BG1, BG2, BG3).
+    Resolutions: 256x256 to 512x512 pixels per background.
+    Colors:
+        4-bit depth (16 colors per palette, up to 16 palettes).
+        8-bit depth (256 colors, 1 palette).
+    Tiles: Up to 1024 unique tiles.
+    Hardware Features: Scrolling, Flip, Mosaic, Alpha Blending, Brightness, Priority.
+    Page/Frame Flipping: Only 1 frame exists. A similar flipping effect can be achieved manually by altering the base addresses of the BG Map and/or BG Character data.
+
+BG Mode 1 (Mixed Mode)
+
+    Type: Tile/Map-based.
+    Rotation/Scaling: Mixed (BG0 & BG1 are Text/No; BG2 is Affine/Yes).
+    Background Layers: 3 layers (BG0, BG1, BG2).
+    Resolutions:
+        BG0, BG1: 256x256 to 512x512 pixels.
+        BG2: 128x128 to 1024x1024 pixels.
+    Colors:
+        BG0, BG1: 16/16 or 256/1 color mode.
+        BG2: 256/1 color mode only.
+    Tiles: Up to 1024 tiles for BG0/BG1; up to 256 tiles for BG2.
+    Hardware Features: Scrolling, Flip (BG0/BG1 only), Mosaic, Alpha Blending, Brightness, Priority.
+    Page/Frame Flipping: Only 1 frame exists.
+
+BG Mode 2 (Rotation/Scaling / Affine Mode)
+
+    Type: Tile/Map-based.
+    Rotation/Scaling: Yes.
+    Background Layers: 2 layers (BG2, BG3).
+    Resolutions: 128x128 to 1024x1024 pixels.
+    Colors: 256 colors / 1 palette (8-bit only).
+    Tiles: Up to 256 unique tiles.
+    Hardware Features: Scrolling (via Reference Point registers), Mosaic, Alpha Blending, Brightness, Priority. (No hardware Flip feature).
+    Page/Frame Flipping: Only 1 frame exists.
+
+B. Bitmap-Based Modes (Modes 3–5)
+
+These modes define the background directly as a bitmap drawn onto BG2 with Rotation/Scaling support. They occupy 80 KBytes of VRAM, leaving only 16 KBytes for OBJ (sprite) tiles. Scrolling in these modes is performed by modifying the BG Rotation/Scaling Reference Point registers.
+BG Mode 3
+
+    Type: Bitmap-based.
+    Rotation/Scaling: Yes.
+    Background Layers: 1 layer (BG2).
+    Resolution: 240x160 pixels (full physical screen resolution).
+    Colors: 32,768 colors (15-bit direct color, 2 bytes per pixel). No palette or transparency.
+    Hardware Features: Mosaic, Alpha Blending, Brightness, Priority.
+    Page/Frame Flipping: Not supported. Only 1 frame exists (occupying 75 KB of VRAM from 0x06000000 to 0x06012BFF). Because it consumes almost all of the 80 KB allocated VRAM, there is not enough memory to store an invisible second frame for page flipping. This mode is best used for still images.
+
+BG Mode 4
+
+    Type: Bitmap-based.
+    Rotation/Scaling: Yes.
+    Background Layers: 1 layer (BG2).
+    Resolution: 240x160 pixels (full physical screen resolution).
+    Colors: 256 colors (8-bit palette-based, color 0 represents transparent).
+    Hardware Features: Mosaic, Alpha Blending, Brightness, Priority.
+    Page/Frame Flipping: Supported. It allows 2 independent frames:
+        Frame 0: Located at 0x06000000–0x060095FF
+        Frame 1: Located at 0x0600A000–0x060135FF
+        Note: You can display one frame (using DISPCNT Bit 4) while drawing/updating the invisible frame in the background to achieve smooth rendering.
+
+BG Mode 5
+
+    Type: Bitmap-based.
+    Rotation/Scaling: Yes.
+    Background Layers: 1 layer (BG2).
+    Resolution: 160x128 pixels (smaller than the physical screen, usually centered).
+    Colors: 32,768 colors (15-bit direct color, 2 bytes per pixel).
+    Hardware Features: Mosaic, Alpha Blending, Brightness, Priority.
+    Page/Frame Flipping: Supported. It allows 2 independent frames:
+        Frame 0: Located at 0x06000000–0x06009FFF
+        Frame 1: Located at 0x0600A000–0x06013FFF
+        Note: One frame can be displayed (selected by DISPCNT Bit 4) while the off-screen frame is updated.

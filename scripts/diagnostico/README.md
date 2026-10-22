@@ -95,3 +95,26 @@ anclas = [600, 1800, 3600, 5400, 7200]
 **Blindaje por mutación** (M1 — `alpha_blend`, M2 — `in_window_range`): mutar el motor,
 reconstruir, y el arnés debe salir con código 1 nombrando un píxel. Los archivos del
 motor se restauran en un bloque `finally`, sin comandos destructivos de Git.
+
+---
+
+### `convertir_arnes.py`, `mutar_arnes.py`, `contrastar_arnes.py`
+Herramientas de la consolidación del arnés común [`examples/comun/`](../../examples/comun/mod.rs)
+(propuesta [2026-10-22](../../docs/propuestas/2026-10-22_arnes-de-experimentos-comun.md)); se conservan
+para repetir la operación si aparecen experimentos nuevos.
+
+```bash
+# Convertir experimentos al arnés común (quita copias locales, añade `mod comun;` y `use`)
+python scripts/diagnostico/convertir_arnes.py --solo shim_bg0_710,ppu_nativa_afin
+python scripts/diagnostico/convertir_arnes.py            # todos los pendientes
+
+# Blindaje por mutación del arnés (los 5 mutantes deben morir contra tests/arnes_experimentos_tests.rs)
+python scripts/diagnostico/mutar_arnes.py
+
+# Capturar y contrastar salida + volcados de experimentos, byte a byte
+python scripts/diagnostico/contrastar_arnes.py capturar <dir>
+python scripts/diagnostico/contrastar_arnes.py           # contrasta contra el directorio dado
+```
+
+`mutar_arnes.py` y `contrastar_arnes.py` respaldan en memoria RAM y restauran en un bloque
+`finally`, sin comandos destructivos de Git.

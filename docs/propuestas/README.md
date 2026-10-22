@@ -42,7 +42,7 @@ Reglas que este vocabulario sostiene:
 - Una propuesta **no se cierra sin `Resultado`**: predicho vs. real, y qué se respetó del contexto.
 - Un estado `verificada por agente` **no** implica verificado en el dispositivo: eso es
   `revisada por humano`. Las que esperan el televisor están listadas en
-  [`docs/BACKLOG.md`](../BACKLOG.md#esperando-el-televisor-28-propuestas-con-revisión-humana-pendiente).
+  [`docs/BACKLOG.md`](../BACKLOG.md#esperando-el-televisor-propuestas-con-revisión-humana-pendiente).
 - Un hallazgo que se descubre y no se arregla **no se borra**: se anota en `### Fuera de alcance` y
   entra en el registro de [`docs/BACKLOG.md`](../BACKLOG.md#registro-de-hallazgos), que audita
   [`scripts/auditar_hallazgos.py`](../../scripts/auditar_hallazgos.py).

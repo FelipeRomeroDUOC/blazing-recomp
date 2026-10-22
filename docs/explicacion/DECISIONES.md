@@ -53,6 +53,7 @@ Este registro documenta de manera exhaustiva y transparente cada decisión de di
 28. [Sincronización Reactiva por Eventos con AndroidAppWaker y Erradicación del Sondeo Inútil en el Hilo Principal](#28-sincronización-reactiva-por-eventos-con-androidappwaker-y-erradicación-del-sondeo-inútil-en-el-hilo-principal)
 29. [Instrumentación de Rendimiento de Hardware en gba-core y Aislamiento del Overhead de Simulación](#29-instrumentación-de-rendimiento-de-hardware-en-gba-core-y-aislamiento-del-overhead-de-simulación)
 30. [Optimización de Desempaquetado Ráfaga 4bpp y Recorte de Sprites en la PPU](#30-optimización-de-desempaquetado-ráfaga-4bpp-y-recorte-de-sprites-en-la-ppu)
+41. [Transición de Emulación de Hardware a Port Nativo Puro con Hardware Shim (feature/hardware-shim)](#41-transición-de-emulación-de-hardware-a-port-nativo-puro-con-hardware-shim-featurehardware-shim)
 
 ---
 
@@ -938,6 +939,26 @@ Se reactiva el barrido de arranque (`CALIBRAR_PRESENTACION = true` en [`src/plat
 * **Alternativa descartada: dejarlo desactivado y no medir.** El resultado de la tablet no tiene por qué trasladarse al Android TV, cuyo SoC y compositor son distintos; sin medirlo, la decisión se apoya en un solo dispositivo.
 * **Compromiso asumido: cada arranque gasta 12-15 s** de mediciones y una sonda a media resolución mientras dure el experimento.
 * **Compromiso asumido: la confirmación exige el televisor.** Si el resultado de la tablet se traslada, la constante vuelve a `false` y se anota; la sonda a media resolución sigue siendo **sonda**, nunca adoptable.
+
+---
+
+### 41. Transición de Emulación de Hardware a Port Nativo Puro con Hardware Shim (feature/hardware-shim)
+
+#### Contexto
+A pesar de que la CPU corre de forma nativa AOT en C11, los dispositivos móviles de gama de entrada sufren para mantener 60 FPS estables (cayendo a 30-45 FPS) debido a que `gba-core` rasteriza por software en CPU 160 líneas de escaneo por fotograma en `render_scanline` (entre 8 y 14 ms por cuadro). Los emuladores comerciales tradicionales alcanzan 60 FPS en estos mismos dispositivos mediante técnicas de *frame-based rendering* y optimización SIMD/NEON. En un port nativo, continuar emulando el silicio de la consola por software resulta ineficiente e innecesario cuando el dispositivo cuenta con GPU moderna (`wgpu`).
+
+#### Decisión e implementación
+1. **Creación de la rama aislada `feature/hardware-shim`:** Se crea una rama dedicada para desarrollar la sustitución del hardware sin alterar la línea base funcional ni la suite de pruebas de `main`.
+2. **Arquitectura del Hardware Shim:** Sustituir el modelo de hardware de `gba-core` por una implementación nativa de la interfaz `RtApi`:
+   - **PPU delegada a GPU:** En lugar de rasterizar 38.400 píxeles por software en CPU, el Shim emite *draw calls* instanciadas en `wgpu` para dibujar las 4 capas de fondos y los 128 sprites de la OAM directamente sobre la pantalla en VBlank.
+   - **Memoria plana contigua:** IWRAM, EWRAM, VRAM, OAM y Palette residen en arreglos contiguos sin simulación de mirrors de bus.
+   - **Retiro de `a->tick`:** La sincronización de ciclos de cuarzo a 16,78 MHz se elimina, y la llamada `VBlankIntrWait` se enlaza directamente a la tasa de refresco del panel.
+3. **Documento de especificación arquitectónica:** Se documenta el diseño completo en [`docs/explicacion/hardware-shim-y-eliminacion-de-emulacion.md`](hardware-shim-y-eliminacion-de-emulacion.md).
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Continuar optimizando micro-rutinas de CPU en `gba-core`.** El techo de ganancia es insuficiente para garantizar 60 FPS en núcleos Cortex-A53/A55 lentos.
+* **Alternativa descartada: Decompilación manual completa de cero.** Descartada por requerir años de ingeniería inversa frente a aprovechar los 144.875 bloques C11 plenamente funcionales.
+* **Compromiso asumido:** El desarrollo se ejecuta por fases incrementales (Fase 1: PPU GPU, Fase 2: Bus & Timing, Fase 3: Audio), validando cada etapa visualmente contra los *golden frames*.
 
 ---
 
