@@ -27,4 +27,16 @@ __pycache__/
 scripts/diagnostico/log_*.txt
 .freebuff/
 
+# Volcados y salidas locales de los experimentos (material de trabajo, no versionado)
+/volcados/
+/volcados-antes-*/
+/logs/
+/telemetria/*.log
+/ppu-*.txt
+/ppu-*.flag
+/ppu-*.csv
+/salida-*.txt
+/gba-dep.txt
+*.out
+
 
