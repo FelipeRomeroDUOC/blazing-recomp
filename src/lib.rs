@@ -30,8 +30,11 @@ pub mod storage;
 pub mod recomp;
 pub mod fps;
 pub mod perf;
+pub mod telemetria;
 pub mod pipeline;
 pub mod present;
+pub mod ppu_shim;
+pub mod ppu_nativa;
 
 
 // ---------------------------------------------------------------------------

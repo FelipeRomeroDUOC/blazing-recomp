@@ -22,10 +22,13 @@ fn test_emulation_bridge_single_slot_transfer() {
             ppu_sprite_ms: 0.5,
             ppu_compose_ms: 0.5,
             apu_ms: 0.5,
+            pump_llamadas: 0,
+            pump_muestras: 0,
             reads: 1000,
             writes: 500,
         },
         is_native: true,
+        ppu_state: None,
     };
 
     bridge.send_frame(packet1);
@@ -88,6 +91,7 @@ fn deposit(bridge: &EmulationBridge, frame_number: u64) {
         frame_number,
         timing: StepTiming::default(),
         is_native: false,
+        ppu_state: None,
     });
 }
 
@@ -203,5 +207,52 @@ fn test_emulation_bridge_waker_invoked_on_send_frame() {
         2,
         "el waker debe invocarse en cada send_frame exitoso"
     );
+}
+
+#[test]
+fn test_ppu_frame_state_pool_recycling() {
+    let bridge = EmulationBridge::new();
+    assert!(!bridge.is_gpu_ppu_enabled());
+
+    bridge.set_gpu_ppu_enabled(true);
+    assert!(bridge.is_gpu_ppu_enabled());
+
+    // Adquirir un estado PPU y depositarlo
+    let mut state = bridge.acquire_ppu_state();
+    state.vram[0] = 0xAA;
+    state.oam[0] = 0xBB;
+    state.palette[0] = 0xCC;
+    state.io[0] = 0xDD;
+
+    let rgba = bridge.acquire_buffer();
+    bridge.send_frame(FramePacket {
+        rgba,
+        frame_number: 1,
+        timing: StepTiming::default(),
+        is_native: true,
+        ppu_state: Some(state),
+    });
+
+    // Depositar un segundo paquete sin consumir el primero: debe desplazar y reciclar
+    let mut state2 = bridge.acquire_ppu_state();
+    state2.vram[0] = 0x11;
+    let rgba2 = bridge.acquire_buffer();
+    bridge.send_frame(FramePacket {
+        rgba: rgba2,
+        frame_number: 2,
+        timing: StepTiming::default(),
+        is_native: true,
+        ppu_state: Some(state2),
+    });
+
+    let received = bridge.try_recv_frame().expect("debe recibir el más reciente");
+    assert_eq!(received.frame_number, 2);
+    let ppu = received.ppu_state.expect("debe tener ppu_state");
+    assert_eq!(ppu.vram[0], 0x11);
+
+    // Al reciclar, el pool no asigna memoria nueva
+    bridge.recycle_ppu_state(ppu);
+    let reused = bridge.acquire_ppu_state();
+    assert_eq!(reused.vram[0], 0x11, "debe ser el búfer reciclado del pool");
 }
 

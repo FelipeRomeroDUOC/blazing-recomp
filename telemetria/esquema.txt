@@ -1,0 +1,57 @@
+# Esquema del contrato de la línea de segundo (`t=`) de blazing-perf.txt.
+#
+# Este archivo es el dueño único de la lista de campos: lo leen el escritor del
+# motor (src/telemetria.rs, con include_str!) y el analizador de Python
+# (scripts/diagnostico/analizar_telemetria.py). Añadir un campo se hace aquí y
+# en ningún otro sitio: el escritor lo escribe y el lector lo entiende.
+#
+# Formato: una fila por dato, celdas separadas por " | ".
+#   version | <n> | hereda: <n|-> | anade: <campo>, <campo> | <descripción>
+#   campo   | <nombre> | <tipo> | <unidad> | <descripción>
+#   sello   | <clave> | <versión> | <descripción>
+#
+# Tipos y su forma impresa:
+#   entero          -> 4945
+#   entero_s        -> 45s        (el sufijo `s` es parte del texto, no de la unidad)
+#   real            -> 60.0
+#   real/real       -> 13.6/21.9  (promedio / máximo de la ventana)
+#   entero_x_entero -> 1280x720
+#
+# La columna `unidad` es documentación: no se imprime nunca. La forma impresa la
+# decide el tipo, y el único tipo con sufijo es `entero_s`.
+#
+# Los bloques `version` van de la más vieja a la más nueva y cada `campo` cuelga
+# del bloque que lo añade. El lector comprueba que los `campo` de un bloque son
+# exactamente los que declara su `anade`, en el mismo orden.
+
+version | 1 | hereda: - | anade: t, fps, ejec, ppu, ppubg, ppuspr, ppucomp, apu, lecturas, escrituras, color, dibujo, espera, subida, codificacion, present, presentmax, nativos, interprete, vacias, ventana | contrato del 2026-10-12: la línea tal como la escribía el motor antes del bombeo de audio por evento
+campo | t | entero_s | s | segundo de la sesión (1 para t=1s)
+campo | fps | real | fotogramas | fotogramas de simulación completados en la ventana de 1 s
+campo | ejec | real/real | ms | tiempo de CPU ejecutando la lógica del juego y el hardware emulado (promedio / peor fotograma)
+campo | ppu | real | ms | tiempo de CPU de la PPU; es la suma de ppubg + ppuspr + ppucomp
+campo | ppubg | real | ms | renderizado de fondos de la PPU
+campo | ppuspr | real | ms | extracción y dibujado de sprites, incluidas las transformaciones afines
+campo | ppucomp | real | ms | composición de la línea: prioridades, ventana, mosaico y mezclas
+campo | apu | real | ms | muestreo de audio de los canales que avanzan en la ventana
+campo | lecturas | entero | accesos | lecturas del bus de memoria por fotograma (promedio)
+campo | escrituras | entero | accesos | escrituras del bus de memoria por fotograma (promedio)
+campo | color | real/real | ms | conversión de color y persistencia LCD (promedio / máximo)
+campo | dibujo | real/real | ms | tiempo total de render en GPU, suma de subida + codificacion + present (promedio / máximo)
+campo | espera | real/real | ms | bloqueo esperando un búfer de presentación del swapchain (promedio / máximo)
+campo | subida | real | ms | subida de la textura de juego y los búferes uniformes a la GPU
+campo | codificacion | real | ms | adquisición de búfer, grabado de los pases y queue.submit
+campo | present | real | ms | frame.present(): espera de VSync y de que el compositor libere un búfer
+campo | presentmax | real | ms | peor present de la ventana, señal de un tirón del compositor
+campo | nativos | entero | bloques | promedio de bloques C11 nativos ejecutados por fotograma
+campo | interprete | entero | pasos | promedio de pasos de instrucción del intérprete de respaldo por fotograma
+campo | vacias | entero | vueltas | vueltas del bucle de eventos sin avance de fotograma en la ventana
+campo | ventana | entero_x_entero | px | resolución física de la ventana (ancho x alto)
+
+version | 2 | hereda: 1 | anade: pump, pumpm | bombeo de audio por evento del 2026-10-14
+campo | pump | entero | llamadas | promedio de llamadas a pump_audio por fotograma
+campo | pumpm | entero | muestras | promedio de muestras de audio generadas por fotograma
+
+# El sello marca con qué versión del contrato se escribió la línea. Va al final
+# de cada línea `t=` y es lo que permite distinguir una línea nueva de una vieja
+# sin adivinar por los campos que trae.
+sello | formato | 2 | versión del contrato con la que se escribió esta línea

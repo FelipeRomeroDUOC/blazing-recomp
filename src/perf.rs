@@ -5,6 +5,8 @@
 //! generando un informe consolidado por segundo para diagnóstico sin
 //! distorsionar el hilo principal.
 
+use crate::telemetria::Valor;
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 /// Medición de las fases de un único fotograma completado.
@@ -38,15 +40,86 @@ pub struct FrameTiming {
     pub ppu_compose_ms: f64,
     /// Tiempo en milisegundos dedicado al APU (síntesis de audio).
     pub apu_ms: f64,
+    /// Llamadas a `pump_audio` durante el fotograma (contador entero).
+    pub pump_llamadas: u64,
+    /// Muestras de audio generadas durante el fotograma.
+    pub pump_muestras: u64,
     /// Accesos de lectura a memoria realizados en este fotograma.
     pub lecturas: u64,
     /// Accesos de escritura a memoria realizados en este fotograma.
     pub escrituras: u64,
 }
 
+/// Muestreo de características de hardware GBA en un fotograma completado.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PpuHwFrameSample {
+    /// Indica si el fotograma se renderizó por hardware en GPU (PpuShim).
+    pub is_gpu: bool,
+    /// Indica si el fotograma lo dibujó la PPU nativa (y no el shim).
+    ///
+    /// Las dos rutas van por GPU, así que `is_gpu` no las distingue: este
+    /// campo es el que dice quién pintó el cuadro.
+    pub ppu_nativa: bool,
+    /// Indica si el modo de pantalla es Modo 0 (mosaicos de texto regulares).
+    pub is_mode0: bool,
+    /// Indica si alguna ventana de hardware (WIN0, WIN1 u OBJWIN) está activa en DISPCNT.
+    pub window_active: bool,
+    /// Indica si algún efecto de mezcla (alfa, brillo u oscuridad) está activo en BLDCNT.
+    pub blend_active: bool,
+    /// Total de sprites visibles/activos en OAM en este fotograma.
+    pub spr_total: u16,
+    /// Sprites activos que usan modo de 256 colores / 8bpp.
+    pub spr_8bpp: u16,
+    /// Sprites activos que usan rotación/escalado afín.
+    pub spr_affine: u16,
+}
+
+/// Estadísticas agregadas de hardware GBA para una ventana de telemetría de 1 segundo.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PpuHwWindowStats {
+    /// Fotogramas completados mediante el pipeline acelerado PpuShim en GPU.
+    pub gpu_frames: u32,
+    /// Fotogramas que requirieron fallback a subida de framebuffer por software.
+    pub sw_frames: u32,
+    /// Fotogramas que dibujó la PPU nativa (en vez del shim).
+    pub nativa_frames: u32,
+    /// Fotogramas que operaron en Modo 0.
+    pub mode0_frames: u32,
+    /// Fotogramas con ventanas de hardware activas (WIN0/WIN1/OBJWIN).
+    pub window_frames: u32,
+    /// Fotogramas con efectos de color o transparencia activos (BLDCNT).
+    pub blend_frames: u32,
+    /// Promedio de sprites activos por fotograma.
+    pub spr_total_avg: u16,
+    /// Promedio de sprites de 256 colores (8bpp) por fotograma.
+    pub spr_8bpp_avg: u16,
+    /// Promedio de sprites afines (rotación/escala) por fotograma.
+    pub spr_affine_avg: u16,
+}
+
+impl PpuHwWindowStats {
+    /// Formatea la línea de telemetría de hardware GBA (`# ppu_hw`).
+    pub fn to_line(&self) -> String {
+        format!(
+            "# ppu_hw gpu={} sw={} modo0={} win={} blend={} spr_total={} spr_8bpp={} spr_afin={} nativa={}",
+            self.gpu_frames,
+            self.sw_frames,
+            self.mode0_frames,
+            self.window_frames,
+            self.blend_frames,
+            self.spr_total_avg,
+            self.spr_8bpp_avg,
+            self.spr_affine_avg,
+            self.nativa_frames,
+        )
+    }
+}
+
 /// Informe de rendimiento consolidado correspondiente a un segundo de ejecución.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PerfReport {
+    /// Estadísticas agregadas de características de hardware GBA en la ventana.
+    pub ppu_hw: PpuHwWindowStats,
     /// Índice del segundo registrado (1 para t=1s, 2 para t=2s, etc.).
     pub second_index: u64,
     /// Fotogramas de simulación completados por segundo.
@@ -65,6 +138,10 @@ pub struct PerfReport {
     pub ppu_compose_avg_ms: f64,
     /// Promedio de milisegundos consumidos por el APU.
     pub apu_avg_ms: f64,
+    /// Promedio de llamadas a `pump_audio` por fotograma.
+    pub pump_llamadas_avg: u64,
+    /// Promedio de muestras de audio generadas por fotograma.
+    pub pump_muestras_avg: u64,
     /// Promedio de lecturas de memoria por fotograma.
     pub lecturas_avg: u64,
     /// Promedio de escrituras de memoria por fotograma.
@@ -100,37 +177,53 @@ pub struct PerfReport {
 }
 
 impl PerfReport {
-    /// Formatea el informe en una única línea de texto estandarizada.
+    /// Formatea el informe en una única línea, guiada por el esquema de [`crate::telemetria`].
+    ///
+    /// Ya no es un `format!` de 28 huecos: los valores se recogen en un mapa y
+    /// `telemetria::escribir_linea` los imprime en el orden canónico del esquema y
+    /// remata la línea con el sello de versión del contrato. La firma no cambia, así
+    /// que `platform.rs` sigue escribiendo el resultado tal cual.
+    ///
+    /// Si el contrato está roto (un campo del esquema sin valor, por ejemplo), devuelve
+    /// una línea `#` con el motivo en vez de entrar en pánico: el fallo se ve en
+    /// `blazing-perf.txt` y no tumba la partida.
     pub fn to_line(&self) -> String {
-        format!(
-            "t={}s fps={:.1} ejec={:.1}/{:.1} ppu={:.1} ppubg={:.1} ppuspr={:.1} ppucomp={:.1} apu={:.1} lecturas={} escrituras={} color={:.1}/{:.1} dibujo={:.1}/{:.1} espera={:.1}/{:.1} subida={:.1} codificacion={:.1} present={:.1} presentmax={:.1} nativos={} interprete={} vacias={} ventana={}x{}",
-            self.second_index,
-            self.fps,
-            self.ejec_avg_ms,
-            self.ejec_max_ms,
-            self.ppu_avg_ms,
-            self.ppu_bg_avg_ms,
-            self.ppu_sprite_avg_ms,
-            self.ppu_compose_avg_ms,
-            self.apu_avg_ms,
-            self.lecturas_avg,
-            self.escrituras_avg,
-            self.color_avg_ms,
-            self.color_max_ms,
-            self.dibujo_avg_ms,
-            self.dibujo_max_ms,
-            self.espera_avg_ms,
-            self.espera_max_ms,
-            self.subida_avg_ms,
-            self.codificacion_avg_ms,
-            self.present_avg_ms,
-            self.present_max_ms,
-            self.nativos_avg,
-            self.interprete_avg,
-            self.vacias,
-            self.ventana.0,
-            self.ventana.1,
-        )
+        match crate::telemetria::escribir_linea(&self.valores_de_linea()) {
+            Ok(linea) => linea,
+            Err(motivo) => format!("# telemetría inválida: {motivo}"),
+        }
+    }
+
+    /// Valores de la línea de segundo, indexados por el nombre de campo del esquema.
+    fn valores_de_linea(&self) -> BTreeMap<&'static str, Valor> {
+        let mut valores = BTreeMap::new();
+        valores.insert("t", Valor::Entero(self.second_index));
+        valores.insert("fps", Valor::Real(self.fps));
+        valores.insert("ejec", Valor::RealReal(self.ejec_avg_ms, self.ejec_max_ms));
+        valores.insert("ppu", Valor::Real(self.ppu_avg_ms));
+        valores.insert("ppubg", Valor::Real(self.ppu_bg_avg_ms));
+        valores.insert("ppuspr", Valor::Real(self.ppu_sprite_avg_ms));
+        valores.insert("ppucomp", Valor::Real(self.ppu_compose_avg_ms));
+        valores.insert("apu", Valor::Real(self.apu_avg_ms));
+        valores.insert("lecturas", Valor::Entero(self.lecturas_avg));
+        valores.insert("escrituras", Valor::Entero(self.escrituras_avg));
+        valores.insert("color", Valor::RealReal(self.color_avg_ms, self.color_max_ms));
+        valores.insert("dibujo", Valor::RealReal(self.dibujo_avg_ms, self.dibujo_max_ms));
+        valores.insert("espera", Valor::RealReal(self.espera_avg_ms, self.espera_max_ms));
+        valores.insert("subida", Valor::Real(self.subida_avg_ms));
+        valores.insert("codificacion", Valor::Real(self.codificacion_avg_ms));
+        valores.insert("present", Valor::Real(self.present_avg_ms));
+        valores.insert("presentmax", Valor::Real(self.present_max_ms));
+        valores.insert("nativos", Valor::Entero(self.nativos_avg));
+        valores.insert("interprete", Valor::Entero(self.interprete_avg));
+        valores.insert("vacias", Valor::Entero(self.vacias));
+        valores.insert(
+            "ventana",
+            Valor::EnteroEntero(self.ventana.0, self.ventana.1),
+        );
+        valores.insert("pump", Valor::Entero(self.pump_llamadas_avg));
+        valores.insert("pumpm", Valor::Entero(self.pump_muestras_avg));
+        valores
     }
 }
 
@@ -140,6 +233,15 @@ pub struct FramePerf {
     seconds_count: u64,
     frames: Vec<FrameTiming>,
     vacias: u64,
+    hw_gpu_frames: u32,
+    hw_sw_frames: u32,
+    hw_nativa_frames: u32,
+    hw_mode0_frames: u32,
+    hw_window_frames: u32,
+    hw_blend_frames: u32,
+    hw_spr_total_sum: u32,
+    hw_spr_8bpp_sum: u32,
+    hw_spr_affine_sum: u32,
 }
 
 impl FramePerf {
@@ -155,6 +257,15 @@ impl FramePerf {
             seconds_count: 0,
             frames: Vec::new(),
             vacias: 0,
+            hw_gpu_frames: 0,
+            hw_sw_frames: 0,
+            hw_nativa_frames: 0,
+            hw_mode0_frames: 0,
+            hw_window_frames: 0,
+            hw_blend_frames: 0,
+            hw_spr_total_sum: 0,
+            hw_spr_8bpp_sum: 0,
+            hw_spr_affine_sum: 0,
         }
     }
 
@@ -168,15 +279,67 @@ impl FramePerf {
         self.frames.push(timing);
     }
 
+    /// Registra el muestreo de características de hardware GBA para el fotograma.
+    pub fn record_ppu_hw(&mut self, sample: PpuHwFrameSample) {
+        if sample.is_gpu {
+            self.hw_gpu_frames += 1;
+        } else {
+            self.hw_sw_frames += 1;
+        }
+        if sample.ppu_nativa {
+            self.hw_nativa_frames += 1;
+        }
+        if sample.is_mode0 {
+            self.hw_mode0_frames += 1;
+        }
+        if sample.window_active {
+            self.hw_window_frames += 1;
+        }
+        if sample.blend_active {
+            self.hw_blend_frames += 1;
+        }
+        self.hw_spr_total_sum += sample.spr_total as u32;
+        self.hw_spr_8bpp_sum += sample.spr_8bpp as u32;
+        self.hw_spr_affine_sum += sample.spr_affine as u32;
+    }
+
     /// Cierra la ventana actual y genera un informe de rendimiento con los datos acumulados.
     pub fn close_window(&mut self, ventana: (u32, u32)) -> PerfReport {
         self.seconds_count += 1;
         let count = self.frames.len();
 
+        let hw_stats = if count == 0 {
+            PpuHwWindowStats {
+                gpu_frames: self.hw_gpu_frames,
+                sw_frames: self.hw_sw_frames,
+                nativa_frames: self.hw_nativa_frames,
+                mode0_frames: self.hw_mode0_frames,
+                window_frames: self.hw_window_frames,
+                blend_frames: self.hw_blend_frames,
+                spr_total_avg: 0,
+                spr_8bpp_avg: 0,
+                spr_affine_avg: 0,
+            }
+        } else {
+            let c = count as f64;
+            PpuHwWindowStats {
+                gpu_frames: self.hw_gpu_frames,
+                sw_frames: self.hw_sw_frames,
+                nativa_frames: self.hw_nativa_frames,
+                mode0_frames: self.hw_mode0_frames,
+                window_frames: self.hw_window_frames,
+                blend_frames: self.hw_blend_frames,
+                spr_total_avg: (self.hw_spr_total_sum as f64 / c).round() as u16,
+                spr_8bpp_avg: (self.hw_spr_8bpp_sum as f64 / c).round() as u16,
+                spr_affine_avg: (self.hw_spr_affine_sum as f64 / c).round() as u16,
+            }
+        };
+
         let report = if count == 0 {
             PerfReport {
                 second_index: self.seconds_count,
                 fps: 0.0,
+                ppu_hw: hw_stats,
                 ejec_avg_ms: 0.0,
                 ejec_max_ms: 0.0,
                 ppu_avg_ms: 0.0,
@@ -184,6 +347,8 @@ impl FramePerf {
                 ppu_sprite_avg_ms: 0.0,
                 ppu_compose_avg_ms: 0.0,
                 apu_avg_ms: 0.0,
+                pump_llamadas_avg: 0,
+                pump_muestras_avg: 0,
                 lecturas_avg: 0,
                 escrituras_avg: 0,
                 color_avg_ms: 0.0,
@@ -223,6 +388,8 @@ impl FramePerf {
             let mut max_present = 0.0f64;
             let mut sum_nativos = 0u64;
             let mut sum_interprete = 0u64;
+            let mut sum_pump_llamadas = 0u64;
+            let mut sum_pump_muestras = 0u64;
 
             for f in &self.frames {
                 sum_ejec += f.ejec_ms;
@@ -246,12 +413,15 @@ impl FramePerf {
                 max_present = max_present.max(f.present_ms);
                 sum_nativos += f.nativos;
                 sum_interprete += f.interprete;
+                sum_pump_llamadas += f.pump_llamadas;
+                sum_pump_muestras += f.pump_muestras;
             }
 
             let c = count as f64;
             PerfReport {
                 second_index: self.seconds_count,
                 fps: c,
+                ppu_hw: hw_stats,
                 ejec_avg_ms: sum_ejec / c,
                 ejec_max_ms: max_ejec,
                 ppu_avg_ms: sum_ppu / c,
@@ -259,6 +429,8 @@ impl FramePerf {
                 ppu_sprite_avg_ms: sum_ppu_sprite / c,
                 ppu_compose_avg_ms: sum_ppu_compose / c,
                 apu_avg_ms: sum_apu / c,
+                pump_llamadas_avg: (sum_pump_llamadas as f64 / c).round() as u64,
+                pump_muestras_avg: (sum_pump_muestras as f64 / c).round() as u64,
                 lecturas_avg: (sum_lecturas as f64 / c).round() as u64,
                 escrituras_avg: (sum_escrituras as f64 / c).round() as u64,
                 color_avg_ms: sum_color / c,
@@ -280,6 +452,15 @@ impl FramePerf {
 
         self.frames.clear();
         self.vacias = 0;
+        self.hw_gpu_frames = 0;
+        self.hw_sw_frames = 0;
+        self.hw_nativa_frames = 0;
+        self.hw_mode0_frames = 0;
+        self.hw_window_frames = 0;
+        self.hw_blend_frames = 0;
+        self.hw_spr_total_sum = 0;
+        self.hw_spr_8bpp_sum = 0;
+        self.hw_spr_affine_sum = 0;
         report
     }
 
@@ -310,6 +491,14 @@ pub fn measure_clock_cost_ns() -> u64 {
     }
     let elapsed = start.elapsed().as_nanos() as u64;
     (elapsed / iters).max(1)
+}
+
+/// Indica si la medicion del coste de audio esta activada: existe el archivo
+/// `perf-audio-timing.flag` en alguno de los directorios de telemetria.
+pub fn audio_timing_flag_enabled(search_dirs: &[std::path::PathBuf]) -> bool {
+    resolve_perf_candidates(search_dirs)
+        .iter()
+        .any(|dir| dir.join("perf-audio-timing.flag").exists())
 }
 
 /// Resuelve la lista ordenada de directorios candidatos para persistir `blazing-perf.txt`,

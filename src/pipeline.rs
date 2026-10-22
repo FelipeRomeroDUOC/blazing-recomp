@@ -22,6 +22,32 @@ pub const GBA_PIXELS: usize = GBA_W * GBA_H;
 /// Duración exacta de un fotograma de GBA a 60 FPS (16.666 ms).
 pub const FRAME_DURATION: Duration = Duration::from_nanos(16_666_667);
 
+/// Estado de memoria de video para renderizado acelerado en GPU (PPU Shim).
+#[derive(Clone)]
+pub struct PpuFrameState {
+    pub vram: Box<[u8; 96 * 1024]>,
+    pub oam: Box<[u8; 1024]>,
+    pub palette: Box<[u8; 1024]>,
+    pub io: Box<[u8; 256]>,
+}
+
+impl PpuFrameState {
+    pub fn new() -> Self {
+        Self {
+            vram: Box::new([0u8; 96 * 1024]),
+            oam: Box::new([0u8; 1024]),
+            palette: Box::new([0u8; 1024]),
+            io: Box::new([0u8; 256]),
+        }
+    }
+}
+
+impl Default for PpuFrameState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Paquete inmutable transferido desde el hilo de emulación al hilo de renderizado.
 #[derive(Clone)]
 pub struct FramePacket {
@@ -33,6 +59,8 @@ pub struct FramePacket {
     pub timing: StepTiming,
     /// Indica si el fotograma ejecutó bloques C recompilados nativamente.
     pub is_native: bool,
+    /// Volcado de memoria de video si el renderizado acelerado en GPU (PpuShim) está activo.
+    pub ppu_state: Option<PpuFrameState>,
 }
 
 /// Puente de sincronización y transporte de fotogramas entre el hilo de emulación y el de UI.
@@ -49,11 +77,14 @@ pub struct EmulationBridge {
     mailbox: Mutex<Option<FramePacket>>,
     /// Pool de búferes RGBA reutilizables (evita `Box::new` por fotograma).
     buffer_pool: Mutex<Vec<Box<[[u8; 4]; GBA_PIXELS]>>>,
+    /// Pool de volcados de memoria PPU reutilizables.
+    ppu_pool: Mutex<Vec<PpuFrameState>>,
     /// Contador de asignaciones reales de búfer (diagnóstico de reutilización).
     buffer_allocs: AtomicU64,
     keys: AtomicU16,
     running: AtomicBool,
     paused: AtomicBool,
+    gpu_ppu: AtomicBool,
     pause_sync: (Mutex<bool>, Condvar),
     /// Notificador opcional para interrumpir la espera del hilo principal.
     waker: Mutex<Option<WakeFn>>,
@@ -70,10 +101,12 @@ impl EmulationBridge {
         Self {
             mailbox: Mutex::new(None),
             buffer_pool: Mutex::new(Vec::with_capacity(2)),
+            ppu_pool: Mutex::new(Vec::with_capacity(2)),
             buffer_allocs: AtomicU64::new(0),
             keys: AtomicU16::new(0x03FF), // Teclas GBA activas en bajo (0x03FF = todas sueltas)
             running: AtomicBool::new(true),
             paused: AtomicBool::new(false),
+            gpu_ppu: AtomicBool::new(false),
             pause_sync: (Mutex::new(false), Condvar::new()),
             waker: Mutex::new(waker),
         }
@@ -112,6 +145,37 @@ impl EmulationBridge {
         }
     }
 
+    /// Adquiere un contenedor de estado PPU reutilizable del pool.
+    pub fn acquire_ppu_state(&self) -> PpuFrameState {
+        if let Ok(mut pool) = self.ppu_pool.lock() {
+            if let Some(state) = pool.pop() {
+                return state;
+            }
+        }
+        PpuFrameState::new()
+    }
+
+    /// Devuelve un contenedor de estado PPU al pool para su reutilización.
+    pub fn recycle_ppu_state(&self, state: PpuFrameState) {
+        if let Ok(mut pool) = self.ppu_pool.lock() {
+            if pool.len() < 4 {
+                pool.push(state);
+            }
+        }
+    }
+
+    /// Consulta si el modo de renderizado acelerado en GPU (PpuShim) está activo.
+    #[inline]
+    pub fn is_gpu_ppu_enabled(&self) -> bool {
+        self.gpu_ppu.load(Ordering::Acquire)
+    }
+
+    /// Activa o desactiva el renderizado acelerado en GPU (PpuShim).
+    #[inline]
+    pub fn set_gpu_ppu_enabled(&self, enabled: bool) {
+        self.gpu_ppu.store(enabled, Ordering::Release);
+    }
+
     /// Deposita el fotograma más reciente en el buzón **sin bloquearse**.
     ///
     /// Si ya había un fotograma pendiente, se descarta y su búfer vuelve al pool:
@@ -123,6 +187,9 @@ impl EmulationBridge {
         };
         if let Some(old) = displaced {
             self.recycle_buffer(old.rgba);
+            if let Some(ppu) = old.ppu_state {
+                self.recycle_ppu_state(ppu);
+            }
         }
         if let Ok(guard) = self.waker.lock() {
             if let Some(ref wake) = *guard {
@@ -264,6 +331,12 @@ impl EmulationWorker {
                     let t_start = Instant::now();
                     let keys = b_clone.read_keys();
                     runner.set_keys(keys);
+
+                    let gpu_ppu = b_clone.is_gpu_ppu_enabled();
+                    if runner.is_gpu_ppu_enabled() != gpu_ppu {
+                        runner.set_gpu_ppu_enabled(gpu_ppu);
+                    }
+
                     runner.step_frame();
 
                     let timing = runner.last_timing();
@@ -273,12 +346,26 @@ impl EmulationWorker {
                     let mut buf = b_clone.acquire_buffer();
                     buf.copy_from_slice(runner.frame_rgba());
 
+                    let ppu_state = if gpu_ppu {
+                        let mut state = b_clone.acquire_ppu_state();
+                        state.vram.copy_from_slice(runner.vram());
+                        state.oam.copy_from_slice(runner.oam());
+                        state.palette.copy_from_slice(runner.palette());
+                        let io_slice = runner.io();
+                        let io_len = io_slice.len().min(256);
+                        state.io[..io_len].copy_from_slice(&io_slice[..io_len]);
+                        Some(state)
+                    } else {
+                        None
+                    };
+
                     frame_count += 1;
                     let packet = FramePacket {
                         rgba: buf,
                         frame_number: frame_count,
                         timing,
                         is_native,
+                        ppu_state,
                     };
 
                     // Depósito no bloqueante: el productor nunca espera a la GPU.
