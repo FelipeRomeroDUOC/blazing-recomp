@@ -1,0 +1,7 @@
+# Secuencia de prueba para ppu_compare. BORRADOR: los tiempos no están medidos todavía.
+# Formato: <cuadros> <botones>   (botones: ninguno, o nombres unidos con +)
+# Nombres: A B Select Start Right Left Up Down R L
+# A 60 cuadros por segundo: 10800 cuadros = 3 minutos.
+300 ninguno
+10 A
+10800 ninguno

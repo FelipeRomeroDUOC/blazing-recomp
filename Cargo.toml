@@ -35,3 +35,198 @@ panic = "unwind"
 
 [patch."https://github.com/JRickey/gba-recomp.git"]
 gba-core = { path = "../gba-recomp/crates/gba-core" }
+
+[features]
+proto = ["gba-core/perf-video"]
+
+[[example]]
+name = "ppu_proto"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_compare"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_capas"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_estado"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_linea"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_capas_linea"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_efectos_ventanas"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_pixeles_obj"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_contenido_bg"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_subcamino"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_afin_y_linea"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_frente_a_frente"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_camino_general"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_tiempos"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_capa_ganadora"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_aportacion"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_capa_x"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_origen_x"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_capa_ninguno"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_sprite_debajo"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_contenido_bg"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_bg0_710"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_vram_bg"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_obj_apagado"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_escanear_obj"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_mezcla_registros"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_bg"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_bg0"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_bldcnt"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_capa"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_desplaz"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_fondos"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_linea"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_mezcla"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_mide"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_scroll"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_sinmezcla"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_sinmezcla2"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_pixeles"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_tiles"
+required-features = ["proto"]
+
+[[example]]
+name = "shim_afin_tapado"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_nativa_compara"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_nativa_afin"
+required-features = ["proto"]
+
+# Estos tres ejemplos no estaban declarados y los construía el descubrimiento
+# automático de Cargo, sin `required-features`. `ppu_banda_nativa` usa
+# `gba_core::ppu::forzar_camino_general`, que solo existe con la feature
+# `perf-video` del motor base: al declararlo con `proto`, `cargo test` deja de
+# fallar al compilarlo. Los otros dos no necesitan la feature, así que se
+# declaran sin ella para que la suite siga compilándolos.
+[[example]]
+name = "ppu_banda_nativa"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_barrido_nativa"
+
+[[example]]
+name = "ppu_nativa_atribuye"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_modo_cuadro"
