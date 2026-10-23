@@ -9,6 +9,11 @@ Este directorio agrupa los documentos conceptuales, análisis de rendimiento y j
 
 Su propósito es responder al *«por qué»* de las decisiones de ingeniería, contrastar alternativas evaluadas y documentar la arquitectura profunda del port nativo de *Fire Emblem: The Blazing Blade* en Android.
 
+> [!NOTE]
+> **Distinción de Ámbito: `docs/explicacion/` frente a `docs/fuentes/`:**
+> - **`docs/explicacion/` (este directorio):** Explica **cómo funciona este proyecto por dentro**: diseño del software, estructura de módulos en Rust y C11, compromisos de ingeniería y el registro de decisiones arquitectónicas del port.
+> - **[`docs/fuentes/`](../fuentes/README.md):** Contiene las especificaciones técnicas del **mundo exterior objetivo**: silicio y temporización de la Game Boy Advance, arquitectura ISA ARMv4T/AArch32, pipelines de GPUs móviles TBDR y subsistemas nativos de Android (AAudio, SAF). Consultar `fuentes/` cuando se requiera conocer las restricciones físicas o estándares oficiales del hardware.
+
 ---
 
 ## Índice de Documentos de Arquitectura y Diseño

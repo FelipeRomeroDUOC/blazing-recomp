@@ -105,13 +105,13 @@ El repositorio cuenta con skills locales en [`.agents/skills/`](.agents/skills/)
     No se crea la carpeta vacía sin contenido.)*
   - **Guías prácticas (`docs/guias/`):** Pasos directos para tareas concretas (ej. compilación cruzada con NDK, integración JNI, generación del APK).
   - **Referencia ([`docs/referencia/`](docs/referencia/README.md)):** Especificaciones técnicas puras (APIs nativas, flags de `pack.toml`, comandos).
-  - **Explicación ([`docs/explicacion/`](docs/explicacion/DECISIONES.md)):** Decisiones de diseño, arquitectura del port Android y compromisos técnicos.
+  - **Explicación ([`docs/explicacion/`](docs/explicacion/README.md)):** Detalla **cómo funciona este proyecto por dentro**: arquitectura interna del port Android, diseño de software, compromisos técnicos (*trade-offs*), lecciones aprendidas sobre nuestro propio código y el registro histórico de decisiones de ingeniería ([`DECISIONES.md`](docs/explicacion/DECISIONES.md)).
   - **Propuestas ([`docs/propuestas/`](docs/propuestas/README.md)):** Propuestas formales de Nivel 2
     (no es un cuadrante Diátaxis: es el registro del flujo `propuesta-verificable`). Cada archivo
     declara su estado en el bloque `>` de cabecera (`Estado:` / `Resultado:`).
   - **Prototipos (`docs/prototipos/`):** Bocetos HTML de trabajo referenciados desde las propuestas
     de overlay; material efímero, no documentación Diátaxis versionada como página de lectura.
-  - **Fuentes (`docs/fuentes/`):** Directorio de lectura donde residen las fuentes de verdad técnicas y teóricas del proyecto en formato Markdown (arquitectura de hardware, especificaciones de ISA, etc.). **Regla estricta:** Es de solo lectura para los agentes de IA, a menos que el desarrollador humano solicite explícitamente redactar o agregar una nueva fuente. No forma parte de los cuatro cuadrantes Diátaxis editables.
+  - **Fuentes ([`docs/fuentes/`](docs/fuentes/README.md)):** Repositorio de consulta de **conocimiento externo y especificaciones técnicas objetivas**: física y arquitectura del hardware de Game Boy Advance, ISA ARMv4T/AArch32, funcionamiento de GPUs móviles TBDR/UMA, subsistemas de audio de bajo nivel (AAudio / MMAP) y almacenamiento en Android (SAF / Scoped Storage). Representa la fuente de verdad técnica externa que agentes y desarrolladores consultan para fundamentar las decisiones de diseño. **Regla estricta:** Es de solo lectura para los agentes de IA, a menos que el desarrollador humano solicite explícitamente redactar o agregar una nueva fuente. No forma parte de los cuatro cuadrantes Diátaxis editables.
 - **Activación:** Siempre que se solicite documentar el proyecto, crear guías de instalación o despliegue para Android, documentar interfaces nativas, actualizar docs tras cambios de código o estructurar la carpeta `docs/`.
 
 ### 3. `explicar-codigo-documento`
