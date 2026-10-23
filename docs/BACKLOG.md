@@ -685,6 +685,20 @@ Son 77 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuel
 - El informe comparativo (`--comparar`) sigue mostrando solo los promedios: no incluye el «peor fotograma» que ahora calcula el lector, así que comparar dos sesiones no dice si el tirón aislado mejoró. — impacto: bajo
 - El conteo de tests del checklist de `AGENTS.md` §6 hay que actualizarlo a mano en cada cambio que añada tests, y así se ha desfasado varias veces (corregido el 2026-10-22 a 285: 184 en `src/` + 101 en `tests/`; el número volverá a desfasarse). — impacto: bajo
 
+
+#### [2026-10-22_sincronizar-referencia-visor-y-temblor.md](propuestas/2026-10-22_sincronizar-referencia-visor-y-temblor.md)
+
+- Corrección de sincronización de scanline / multiplexado en el shader WGSL para efectos de scroll en línea (impacto medio): el visor ahora detecta y explica con precisión matemática en el `.txt` cada caso de vibración o cartel de unidad, pero la renderización por scanlines en la GPU nativa formará parte de una propuesta de renderizado posterior una vez clasificados los patrones observados. — impacto: medio
+
+#### [2026-10-23_optimizacion-subida-diferencial-y-encoder-unico-ppu-nativa.md](propuestas/2026-10-23_optimizacion-subida-diferencial-y-encoder-unico-ppu-nativa.md)
+
+- `src/ppu_nativa.rs`: la subida de sprites (`sprites_buffer` e instancias) no es diferencial; son pocos bytes, impacto: `bajo`. — impacto: sin declarar
+- `src/ppu_nativa.wgsl`: en `fs_comp`, la indexación dinámica `cfg_capa.capas[b]` y `prio[b]` dentro del bucle anidado `4 × 4` sobre una estructura local de `272 bytes` (`ConfigCapa`) fuerza *register spilling* a memoria privada (*stack*) en GPUs móviles como la Mali-G31 (OpenGL ES 3.0 no permite indexar registros con variables no constantes), lo que domina el tiempo de ejecución del fragment shader y bloquea `present` en dos intervalos de VSync (`~31 ms`), impacto: `alto`. — impacto: sin declarar
+
+#### [2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md](propuestas/2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md)
+
+- En el motor base `gba-core` (`crates/gba-core/src/ppu.rs`, línea 976), la clave rápida `clave_de_tramo` calcula `mascara | if prioridad != 0xFF { 0x100 | prioridad as u16 } else { 0 }` sin desplazar `prioridad`, por lo que un sprite con `prioridad = 2` activa el bit 1 (`0x0002`), colisionando con el bit de opacidad de `BG1` en `mascara` durante `compose_alpha_tramos` (causa de los 77 píxeles de diferencia en el bocadillo `¡Aquí! ▼` del `cuadro 9254`, donde la PPU nativa dibuja correctamente el borde del globo encima del retrato y la PPU por software de `gba-core` pisa el borde). No se modifica `gba-core` por la restricción de congelación de `tests/datos/ppu-nativa-hashes-base.txt` (`impacto: bajo`). — impacto: bajo
+
 ## Checklist de Pre-Commit
 
 Los 5 criterios obligatorios antes de un `commit`/`push` están en [`AGENTS.md`](../AGENTS.md) §6. Aquí
