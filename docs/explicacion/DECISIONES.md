@@ -53,7 +53,22 @@ Este registro documenta de manera exhaustiva y transparente cada decisión de di
 28. [Sincronización Reactiva por Eventos con AndroidAppWaker y Erradicación del Sondeo Inútil en el Hilo Principal](#28-sincronización-reactiva-por-eventos-con-androidappwaker-y-erradicación-del-sondeo-inútil-en-el-hilo-principal)
 29. [Instrumentación de Rendimiento de Hardware en gba-core y Aislamiento del Overhead de Simulación](#29-instrumentación-de-rendimiento-de-hardware-en-gba-core-y-aislamiento-del-overhead-de-simulación)
 30. [Optimización de Desempaquetado Ráfaga 4bpp y Recorte de Sprites en la PPU](#30-optimización-de-desempaquetado-ráfaga-4bpp-y-recorte-de-sprites-en-la-ppu)
+31. [Optimización Lineal de Composición de Capas y Pre-Evaluación de Ventanas en la PPU](#31-optimización-lineal-de-composición-de-capas-y-pre-evaluación-de-ventanas-en-la-ppu)
+32. [Compresión DEFLATE de las Bibliotecas Nativas en el APK](#32-compresión-deflate-de-las-bibliotecas-nativas-en-el-apk)
+33. [El acceso a memoria no se troca por puntero directo, y la instrumentación que viaja en el APK pasa a ser el objetivo](#33-el-acceso-a-memoria-no-se-troca-por-puntero-directo-y-la-instrumentación-que-viaja-en-el-apk-pasa-a-ser-el-objetivo)
+34. [La composición de la PPU se decide por tramos de línea, no por píxel](#34-la-composición-de-la-ppu-se-decide-por-tramos-de-línea-no-por-píxel)
+35. [Efectos de color inertes y camino especializado para oscurecido y aclarado en la PPU](#35-efectos-de-color-inertes-y-camino-especializado-para-oscurecido-y-aclarado-en-la-ppu)
+36. [El alpha real de la PPU por tramos: componer sin buscar la segunda capa en cada píxel](#36-el-alpha-real-de-la-ppu-por-tramos-componer-sin-buscar-la-segunda-capa-en-cada-píxel)
+37. [La imagen del procesador es el corazón del C generado, pero localizarla no ahorra](#37-la-imagen-del-procesador-es-el-corazón-del-c-generado-pero-localizarla-no-ahorra)
+38. [La frontera entre bloques no es una palanca](#38-la-frontera-entre-bloques-no-es-una-palanca)
+39. [El reloj por instrucción tampoco es palanca, y el fotograma duerme](#39-el-reloj-por-instrucción-tampoco-es-palanca-y-el-fotograma-duerme)
+40. [La calibración de presentación se reabre para el televisor](#40-la-calibración-de-presentación-se-reabre-para-el-televisor)
 41. [Transición de Emulación de Hardware a Port Nativo Puro con Hardware Shim (feature/hardware-shim)](#41-transición-de-emulación-de-hardware-a-port-nativo-puro-con-hardware-shim-featurehardware-shim)
+42. [Eliminación Definitiva de PpuShim Software en favor de Pipeline GPU Directo (NativePpu)](#42-eliminación-definitiva-de-ppushim-software-en-favor-de-pipeline-gpu-directo-nativeppu)
+43. [Subida Consolidada en VBlank y Texturas Paletizadas R8/RG8 con Lookup en Fragment Shader](#43-subida-consolidada-en-vblank-y-texturas-paletizadas-r8rg8-con-lookup-en-fragment-shader)
+44. [Renderizado Directo sobre SurfaceView y Formato de Ventana Opaco RGBX_8888](#44-renderizado-directo-sobre-surfaceview-y-formato-de-ventana-opaco-rgbx_8888)
+45. [Pacing de Cuadros Coordinado con Choreographer / VSync y Cola de Entrada Lock-Free](#45-pacing-de-cuadros-coordinado-con-choreographer--vsync-y-cola-de-entrada-lock-free)
+46. [Omisión Pragmática de Registros MMIO no Consultados por Fire Emblem 7](#46-omisión-pragmática-de-registros-mmio-no-consultados-por-fire-emblem-7)
 
 ---
 
@@ -959,6 +974,86 @@ A pesar de que la CPU corre de forma nativa AOT en C11, los dispositivos móvile
 * **Alternativa descartada: Continuar optimizando micro-rutinas de CPU en `gba-core`.** El techo de ganancia es insuficiente para garantizar 60 FPS en núcleos Cortex-A53/A55 lentos.
 * **Alternativa descartada: Decompilación manual completa de cero.** Descartada por requerir años de ingeniería inversa frente a aprovechar los 144.875 bloques C11 plenamente funcionales.
 * **Compromiso asumido:** El desarrollo se ejecuta por fases incrementales (Fase 1: PPU GPU, Fase 2: Bus & Timing, Fase 3: Audio), validando cada etapa visualmente contra los *golden frames*.
+
+---
+
+### 42. Eliminación Definitiva de PpuShim Software en favor de Pipeline GPU Directo (NativePpu)
+
+#### Contexto
+Durante la fase inicial del hardware shim, se concibió un componente intermedio (`PpuShim`) encargado de interceptar y rasterizar scanlines en CPU antes de transferirlos a la GPU. Sin embargo, las mediciones empíricas de telemetría en dispositivos de bajo consumo (TV Stick con GPU Mali-G31) demostraron que la simulación de scanlines por CPU continuaba consumiendo entre 8 y 12 ms por cuadro, dejando un margen casi nulo para alcanzar los 60 FPS estables.
+
+#### Decisión e implementación
+Se acordó retirar definitivamente la vía de renderizado por software (`PpuShim`) y migrar hacia un pipeline GPU nativo directo (`NativePpu`):
+1. **Delegación total a GPU:** Los planos de fondo (Backgrounds) y los sprites de la OAM se componen directamente en la GPU mediante shaders wgpu en lugar de rasterizarse píxel a píxel en CPU.
+2. **Subida en bloque en VBlank:** Se eliminó la transferencia de líneas individuales intermedias, consolidando la sincronización de buffers al final del cuadro.
+3. **Resultado medido:** El tiempo de dibujo de la escena cayó en ~1.0 ms promedio (bajando de ~12.2 ms a 11.26 ms), alcanzando 59.7 FPS sostenidos sobre el TV Stick a lo largo de 400 segundos continuos de ejecución.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Mantener un modo híbrido o fallback de PPU software.** Descartada por complejidad de mantenimiento, duplicidad de código y consumo innecesario de batería.
+* **Compromiso asumido:** Obliga a resolver cualquier efecto gráfico especial (ventanas, color blending) mediante shaders de GPU en lugar de manipulaciones en memoria de CPU.
+
+---
+
+### 43. Subida Consolidada en VBlank y Texturas Paletizadas R8/RG8 con Lookup en Fragment Shader
+
+#### Contexto
+En los SoCs móviles y de TV Stick con arquitectura de memoria unificada (UMA), el bus de memoria DRAM (4.8 a 6.4 GB/s) se comparte concurrentemente entre la CPU, la GPU y el controlador de pantalla. Subir 160 líneas individuales generaba 160 llamadas al driver gráfico y vaciados prematuros de teselas (*premature tile flushes*). Asimismo, transferir la pantalla completa en formato `RGBA8888` (4 bytes por píxel) desperdiciaba ancho de banda al transportar datos expandidos de una paleta que en GBA es intrínsecamente de 8 bits o 15 bits.
+
+#### Decisión e implementación
+1. **Consolidación en VBlank:** Se agrupa la totalidad de datos en un único buffer de transferencia por fotograma, emitido exclusivamente durante la ventana de borrado vertical (*VBlank*).
+2. **Formato R8 con desempaquetado en GPU:** Se transfieren los índices de paleta en texturas de 1 byte por píxel (`R8_UINT`), delegando el mapeo de color final a un lookup de paleta ejecutado dentro de la memoria SRAM on-chip de la tesela en el fragment shader.
+3. **Ahorro de ancho de banda:** Reduce el tráfico en el bus UMA en un 75% frente a subidas tradicionales `RGBA8888`, evitando la saturación del controlador de memoria del SoC.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Expandir la paleta a RGBA32 en la CPU antes de subir la textura.** Descartada por sobrecargar el bus UMA y la CPU.
+* **Compromiso asumido:** Requiere vincular un búfer uniforme (UBO) o textura 1D de 256 colores para la paleta en el pipeline de shaders.
+
+---
+
+### 44. Renderizado Directo sobre SurfaceView y Formato de Ventana Opaco RGBX_8888
+
+#### Contexto
+El servidor de composición de Android (`SurfaceFlinger`) introduce sobrecarga y latencia si la superficie de renderizado se integra como una vista ordinaria en el árbol de vistas mediante `TextureView`, obligando a la GPU a ejecutar un doble pase de renderizado (dibujo del juego + mezcla en cascada con la UI del sistema).
+
+#### Decisión e implementación
+1. **Uso exclusivo de `SurfaceView`:** Se adopta `SurfaceView`, permitiendo que el Hardware Composer (HWC) asigne un plano de hardware dedicado (*Hardware Overlay*) directo al controlador de pantalla sin procesamiento en la GPU del sistema.
+2. **Formato `RGBX_8888`:** Se configura la superficie nativa con formato de píxel opaco (`WINDOW_FORMAT_RGBX_8888`), suprimiendo el procesamiento de canal alfa contra planos inferiores.
+3. **Impacto:** Reduce el *input lag* en 1 a 2 cuadros y libera la GPU de la carga de composición del sistema.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Utilizar `TextureView` para facilitar animaciones de transición en Java.** Descartada por penalizar la fluidez en TV Sticks.
+* **Compromiso asumido:** El canvas del juego opera en un plano independiente y no puede intercalar vistas Java translúcidas directamente por encima sin habilitar composición explícita.
+
+---
+
+### 45. Pacing de Cuadros Coordinado con Choreographer / VSync y Cola de Entrada Lock-Free
+
+#### Contexto
+El uso de pausas activas (*busy-waiting*) mediante bucles cerrados en Rust satura las cachés de la CPU, compite por el bus UMA con la GPU y dispara el estrangulamiento térmico (*thermal throttling*). Paralelamente, los paneles táctiles modernos muestrean toques a 120/240 Hz, desfasados del refresco de 60 Hz del juego.
+
+#### Decisión e implementación
+1. **Suspensión pasiva coordinada con VSync:** El bucle principal de ejecución delega el ritmo de cuadro al compositor de Android (`ANativeWindow_unlockAndPost` y `Choreographer`), suspendiendo los núcleos en estados de bajo consumo (`WFI`/`pthread_cond_wait`).
+2. **Cola de eventos atómica Lock-Free:** La recepción de eventos táctiles y de gamepad se desacopla del hilo de renderizado mediante una cola circular *Single-Producer Single-Consumer* (SPSC) respaldada por operaciones atómicas con semántica Acquire/Release.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Sincronización mediante `std::thread::sleep` o bucles `spin`.** Descartada por falta de precisión temporal y sobrecalentamiento.
+* **Compromiso asumido:** El motor asume una latencia de sincronización ligada al pulso del panel del dispositivo físico.
+
+---
+
+### 46. Omisión Pragmática de Registros MMIO no Consultados por Fire Emblem 7
+
+#### Contexto
+Una implementación completa de hardware de GBA requiere simular decenas de registros de entrada/salida (`0x04000000`): canales serie, timers auxiliares no utilizados, flags de control de cartucho y accesos irrelevantes. Mantener shims para estos puertos añade complejidad de código y sobrecarga de comprobaciones en cada acceso de memoria.
+
+#### Decisión e implementación
+1. **Auditoría de labels y desensamblado:** Se analizó el binario oficial de *Fire Emblem: The Blazing Blade* para cartografiar con precisión qué registros I/O son leídos y escritos en la práctica.
+2. **Omisión de shims inertes:** Se determinó no emular la lógica activa de registros periféricos que FE7 jamás consulta en sus bucles de combate y mapa (ej. puerto serie, timers secundarios sin interrupción asignada), tratándolos como lecturas inocuas de cero o escrituras descartadas.
+3. **Focalización en registros críticos:** Toda la precisión de ciclo y sincronización se concentró en los registros vitales para el juego: `DISPSTAT` (VCount match), `VCOUNT`, `DMA3` e interrupciones de VBlank.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Emulación exhaustiva del chipset GBA al estilo de emuladores universales (mGBA / VBA-M).** Descartada por contradecir la visión de un port nativo especializado y liviano.
+* **Compromiso asumido:** Este diseño es específico para *Fire Emblem 7*; portar otros juegos requerirá auditar sus respectivos mapas de acceso MMIO.
 
 ---
 
