@@ -900,3 +900,31 @@ fn deduplicacion_por_linea_conserva_resultado_exacto() {
     EstadoPpuNativa::decodificar_paletas_linea(&paleta_lineas, &mut pal);
     assert_eq!(*pal, *esperado_pal);
 }
+
+#[test]
+fn test_sprites_modificados_detecta_cambios_y_omite_vacios() {
+    let mut sprite_a = SpriteNativa::default();
+    sprite_a.pos_x = 10.0;
+    sprite_a.pos_y = 20.0;
+
+    let mut sprite_b = SpriteNativa::default();
+    sprite_b.pos_x = 15.0;
+    sprite_b.pos_y = 25.0;
+
+    // Caso 1: lista actual vacía -> NUNCA sube a GPU
+    assert!(!sprites_modificados::<SpriteNativa>(true, &[], &[]));
+    assert!(!sprites_modificados(false, &[sprite_a], &[]));
+
+    // Caso 2: primera subida con sprites -> SIEMPRE sube
+    assert!(sprites_modificados(true, &[], &[sprite_a]));
+
+    // Caso 3: cuadro subsecuente con lista idéntica -> NO sube
+    assert!(!sprites_modificados(false, &[sprite_a], &[sprite_a]));
+
+    // Caso 4: cambio de coordenadas o atributos -> SÍ sube
+    assert!(sprites_modificados(false, &[sprite_a], &[sprite_b]));
+
+    // Caso 5: cambio en la cantidad de sprites -> SÍ sube
+    assert!(sprites_modificados(false, &[sprite_a], &[sprite_a, sprite_b]));
+    assert!(sprites_modificados(false, &[sprite_a, sprite_b], &[sprite_a]));
+}

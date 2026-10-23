@@ -1072,6 +1072,24 @@ fn rango_bytes_modificados(previo: &[u8], actual: &[u8]) -> Option<(usize, usize
     Some((inicio, fin.min(n)))
 }
 
+/// Comprueba si los sprites decodificados deben subirse a la GPU.
+///
+/// Si la lista actual está vacía (`actuales.is_empty()`), devuelve `false`
+/// porque no hay geometría que dibujar. En caso contrario, devuelve `true`
+/// si es el primer fotograma (`primera`) o si el contenido/longitud de la
+/// lista difiere del fotograma previo.
+#[inline]
+pub fn sprites_modificados<T: PartialEq>(
+    primera: bool,
+    previos: &[T],
+    actuales: &[T],
+) -> bool {
+    if actuales.is_empty() {
+        return false;
+    }
+    primera || previos != actuales
+}
+
 // ===========================================================================
 // Pipeline de renderizado GPU
 // ===========================================================================
@@ -1138,6 +1156,12 @@ pub struct PpuNativaPipeline {
     palette_previa: Box<[[u32; 512]; 160]>,
     filas_capa_previa: Box<[ConfigCapaGpu; 160]>,
     filas_comp_previa: Box<[ConfigCompGpu; 160]>,
+    oam_previa: Box<[u8; 1024]>,
+    dispcnt_oam_previo: u16,
+    sprites_previos: Box<[SpriteNativa; MAX_SPRITES]>,
+    num_sprites_previo: usize,
+    sprites_ventana_previos: Box<[SpriteNativa; MAX_SPRITES]>,
+    num_sprites_ventana_previo: usize,
     /// Falso hasta la primera subida: fuerza la carga completa inicial.
     gpu_inicializado: bool,
     /// La máscara de la ventana OBJ ya está limpia: se puede omitir su pasada
@@ -1586,6 +1610,12 @@ impl PpuNativaPipeline {
             palette_previa: Box::new([[0u32; 512]; 160]),
             filas_capa_previa: Box::new([ConfigCapaGpu::default(); 160]),
             filas_comp_previa: Box::new([ConfigCompGpu::default(); 160]),
+            oam_previa: Box::new([0u8; 1024]),
+            dispcnt_oam_previo: 0,
+            sprites_previos: Box::new([SpriteNativa::default(); MAX_SPRITES]),
+            num_sprites_previo: 0,
+            sprites_ventana_previos: Box::new([SpriteNativa::default(); MAX_SPRITES]),
+            num_sprites_ventana_previo: 0,
             gpu_inicializado: false,
             obj_ventana_limpia: false,
             staging_palette: Box::new([[0u32; 512]; 160]),
@@ -1658,7 +1688,6 @@ impl PpuNativaPipeline {
 
         // 1. Decodificación del estado del cuadro.
         self.estado.decode_io_regs(io_fin);
-        self.estado.decode_oam(oam);
 
         // 2. Paleta: tabla vertical de 160 líneas x 512 colores RGB555 enmascarados a 15 bits.
         match paleta_lineas {
@@ -1738,48 +1767,86 @@ impl PpuNativaPipeline {
             self.filas_comp_previa[a..=b].copy_from_slice(&self.staging_filas_comp[a..=b]);
         }
 
-        // 5. Sprites.
+        // 5. Sprites: se decodifica y se sube únicamente si la OAM o los bits
+        //    de DISPCNT que afectan a sprites (mapeo 1D y OBJ enable) cambiaron,
+        //    y solo se envían a la GPU los búferes que tengan geometría activa y diferente.
         {
-            let n = self.estado.num_sprites;
-            self.staging_sprites[..n].copy_from_slice(&self.estado.sprites[..n]);
-            queue.write_buffer(
-                &self.sprites_buffer,
-                0,
-                bytemuck::cast_slice(&self.staging_sprites[..n]),
-            );
-            // La geometría que necesita el vértice viaja en un búfer de
-            // instancias, en el mismo orden que la lista: así el índice de
-            // instancia y el índice del sprite en la lista coinciden.
-            for (instancia, sprite) in self.staging_sprites_instancia[..n]
-                .iter_mut()
-                .zip(self.estado.sprites[..n].iter())
-            {
-                *instancia = SpriteInstanciaGpu::de_sprite(sprite);
+            let dispcnt_oam = self.estado.dispcnt & 0x1040;
+            let oam_valida = oam.len() >= 1024;
+            let oam_cambio = primera
+                || !oam_valida
+                || dispcnt_oam != self.dispcnt_oam_previo
+                || (oam_valida && self.oam_previa[..] != oam[..1024]);
+
+            if oam_cambio {
+                if oam_valida {
+                    self.oam_previa.copy_from_slice(&oam[..1024]);
+                }
+                self.dispcnt_oam_previo = dispcnt_oam;
+                self.estado.decode_oam(oam);
+
+                let n = self.estado.num_sprites;
+                let sprites_cambiaron = sprites_modificados(
+                    primera,
+                    &self.sprites_previos[..self.num_sprites_previo],
+                    &self.estado.sprites[..n],
+                );
+                if sprites_cambiaron {
+                    self.staging_sprites[..n].copy_from_slice(&self.estado.sprites[..n]);
+                    queue.write_buffer(
+                        &self.sprites_buffer,
+                        0,
+                        bytemuck::cast_slice(&self.staging_sprites[..n]),
+                    );
+                    for (instancia, sprite) in self.staging_sprites_instancia[..n]
+                        .iter_mut()
+                        .zip(self.estado.sprites[..n].iter())
+                    {
+                        *instancia = SpriteInstanciaGpu::de_sprite(sprite);
+                    }
+                    queue.write_buffer(
+                        &self.sprites_instancia_buffer,
+                        0,
+                        bytemuck::cast_slice(&self.staging_sprites_instancia[..n]),
+                    );
+                    self.sprites_previos[..n].copy_from_slice(&self.estado.sprites[..n]);
+                    self.num_sprites_previo = n;
+                } else if n == 0 {
+                    self.num_sprites_previo = 0;
+                }
+
+                let nv = self.estado.num_sprites_ventana;
+                let sprites_ventana_cambiaron = sprites_modificados(
+                    primera,
+                    &self.sprites_ventana_previos[..self.num_sprites_ventana_previo],
+                    &self.estado.sprites_ventana[..nv],
+                );
+                if sprites_ventana_cambiaron {
+                    self.staging_sprites_ventana[..nv]
+                        .copy_from_slice(&self.estado.sprites_ventana[..nv]);
+                    queue.write_buffer(
+                        &self.sprites_ventana_buffer,
+                        0,
+                        bytemuck::cast_slice(&self.staging_sprites_ventana[..nv]),
+                    );
+                    for (instancia, sprite) in self.staging_sprites_instancia_ventana[..nv]
+                        .iter_mut()
+                        .zip(self.estado.sprites_ventana[..nv].iter())
+                    {
+                        *instancia = SpriteInstanciaGpu::de_sprite(sprite);
+                    }
+                    queue.write_buffer(
+                        &self.sprites_instancia_ventana_buffer,
+                        0,
+                        bytemuck::cast_slice(&self.staging_sprites_instancia_ventana[..nv]),
+                    );
+                    self.sprites_ventana_previos[..nv]
+                        .copy_from_slice(&self.estado.sprites_ventana[..nv]);
+                    self.num_sprites_ventana_previo = nv;
+                } else if nv == 0 {
+                    self.num_sprites_ventana_previo = 0;
+                }
             }
-            queue.write_buffer(
-                &self.sprites_instancia_buffer,
-                0,
-                bytemuck::cast_slice(&self.staging_sprites_instancia[..n]),
-            );
-            let nv = self.estado.num_sprites_ventana;
-            self.staging_sprites_ventana[..nv]
-                .copy_from_slice(&self.estado.sprites_ventana[..nv]);
-            queue.write_buffer(
-                &self.sprites_ventana_buffer,
-                0,
-                bytemuck::cast_slice(&self.staging_sprites_ventana[..nv]),
-            );
-            for (instancia, sprite) in self.staging_sprites_instancia_ventana[..nv]
-                .iter_mut()
-                .zip(self.estado.sprites_ventana[..nv].iter())
-            {
-                *instancia = SpriteInstanciaGpu::de_sprite(sprite);
-            }
-            queue.write_buffer(
-                &self.sprites_instancia_ventana_buffer,
-                0,
-                bytemuck::cast_slice(&self.staging_sprites_instancia_ventana[..nv]),
-            );
         }
 
         // 6. Geometría: constante, se sube una sola vez.

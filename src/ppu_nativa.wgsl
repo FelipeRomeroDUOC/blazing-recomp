@@ -172,38 +172,51 @@ fn rem_euclid(a: i32, b: i32) -> i32 {
 ///   signo euclídeo); sin wrap, fuera del mapa el píxel es transparente.
 /// - El mapa afín tiene una entrada de **1 byte** por tile y los caracteres
 ///   son de 8 bits por píxel; el índice 0 es transparente.
-fn color_capa_afin(c: CapaFondo, px: u32, py: u32) -> u32 {
-    if (c.enabled == 0u) {
+fn color_capa_afin(upy: u32, idx_capa: u32, px: u32, py: u32) -> u32 {
+    let enabled = filas_capa[upy].capas[idx_capa].enabled;
+    if (enabled == 0u) {
         return 0xFFFFu;
     }
 
     // Tamaño del mapa: 16, 32, 64 o 128 tiles por lado (16 << bits 14-15).
-    let size_tiles = 16u << c.screen_size;
+    let screen_size = filas_capa[upy].capas[idx_capa].screen_size;
+    let size_tiles = 16u << screen_size;
     let size_px = i32(size_tiles * 8u);
 
     // Ancla de la línea más el paso por píxel.
     let i = i32(px);
     let linea = i32(py);
-    let fx = c.afin_ref_x + linea * c.afin_pb + i * c.afin_pa;
-    let fy = c.afin_ref_y + linea * c.afin_pd + i * c.afin_pc;
+    let pa = filas_capa[upy].capas[idx_capa].afin_pa;
+    let pb = filas_capa[upy].capas[idx_capa].afin_pb;
+    let pc = filas_capa[upy].capas[idx_capa].afin_pc;
+    let pd = filas_capa[upy].capas[idx_capa].afin_pd;
+    let ref_x = filas_capa[upy].capas[idx_capa].afin_ref_x;
+    let ref_y = filas_capa[upy].capas[idx_capa].afin_ref_y;
+    let wrap = filas_capa[upy].capas[idx_capa].afin_wrap;
+
+    let fx = ref_x + linea * pb + i * pa;
+    let fy = ref_y + linea * pd + i * pc;
 
     var tx = fx >> 8;
     var ty = fy >> 8;
 
-    if (c.afin_wrap != 0u) {
+    if (wrap != 0u) {
         tx = rem_euclid(tx, size_px);
         ty = rem_euclid(ty, size_px);
     } else if (tx < 0 || ty < 0 || tx >= size_px || ty >= size_px) {
         return 0xFFFFu;
     }
 
+    let screen_base = filas_capa[upy].capas[idx_capa].screen_base;
+    let char_base = filas_capa[upy].capas[idx_capa].char_base;
+
     // El mapa afín tiene una entrada de 1 byte por tile.
-    let entrada = c.screen_base + u32(ty / 8) * size_tiles + u32(tx / 8);
+    let entrada = screen_base + u32(ty / 8) * size_tiles + u32(tx / 8);
     if (entrada >= 0x18000u) {
         return 0xFFFFu;
     }
     let tile = vram_byte(entrada);
-    let addr = c.char_base + tile * 64u + u32(ty % 8) * 8u + u32(tx % 8);
+    let addr = char_base + tile * 64u + u32(ty % 8) * 8u + u32(tx % 8);
     if (addr >= 0x10000u) {
         return 0xFFFFu;
     }
@@ -223,29 +236,38 @@ fn color_capa_afin(c: CapaFondo, px: u32, py: u32) -> u32 {
 /// Reproduce `render_text_bg` de la referencia: mismo desplazamiento, mismo
 /// reparto de bloques de pantalla, mismos voltees y mismo límite de 0x10000
 /// para los datos de tile.
-fn color_capa(c: CapaFondo, px: u32, py: u32) -> u32 {
-    if (c.enabled == 0u) {
+fn color_capa(upy: u32, idx_capa: u32, px: u32, py: u32) -> u32 {
+    let enabled = filas_capa[upy].capas[idx_capa].enabled;
+    if (enabled == 0u) {
         return 0xFFFFu;
     }
 
     // Un fondo afín tiene su propio muestreo: no usa el desplazamiento.
-    if (c.es_afin != 0u) {
-        return color_capa_afin(c, px, py);
+    let es_afin = filas_capa[upy].capas[idx_capa].es_afin;
+    if (es_afin != 0u) {
+        return color_capa_afin(upy, idx_capa, px, py);
     }
 
+    let screen_size = filas_capa[upy].capas[idx_capa].screen_size;
     var w_tiles: u32 = 32u;
     var h_tiles: u32 = 32u;
-    if (c.screen_size == 1u) {
+    if (screen_size == 1u) {
         w_tiles = 64u;
-    } else if (c.screen_size == 2u) {
+    } else if (screen_size == 2u) {
         h_tiles = 64u;
-    } else if (c.screen_size == 3u) {
+    } else if (screen_size == 3u) {
         w_tiles = 64u;
         h_tiles = 64u;
     }
 
-    let y = (py + c.scroll_y) & (h_tiles * 8u - 1u);
-    let x = (px + c.scroll_x) & (w_tiles * 8u - 1u);
+    let scroll_y = filas_capa[upy].capas[idx_capa].scroll_y;
+    let scroll_x = filas_capa[upy].capas[idx_capa].scroll_x;
+    let screen_base = filas_capa[upy].capas[idx_capa].screen_base;
+    let char_base = filas_capa[upy].capas[idx_capa].char_base;
+    let is_8bpp = filas_capa[upy].capas[idx_capa].is_8bpp;
+
+    let y = (py + scroll_y) & (h_tiles * 8u - 1u);
+    let x = (px + scroll_x) & (w_tiles * 8u - 1u);
     let ty = y / 8u;
     let tx = x / 8u;
     let fy0 = y % 8u;
@@ -253,14 +275,14 @@ fn color_capa(c: CapaFondo, px: u32, py: u32) -> u32 {
 
     let block = (ty / 32u) * (w_tiles / 32u) + tx / 32u;
     let entry_idx = block * 1024u + (ty % 32u) * 32u + (tx % 32u);
-    let entry = vram_u16(c.screen_base + entry_idx * 2u);
+    let entry = vram_u16(screen_base + entry_idx * 2u);
 
     let tile = entry & 0x3FFu;
     let fx = select(fx0, 7u - fx0, (entry & 0x400u) != 0u);
     let fy = select(fy0, 7u - fy0, (entry & 0x800u) != 0u);
 
-    if (c.is_8bpp != 0u) {
-        let addr = c.char_base + tile * 64u + fy * 8u + fx;
+    if (is_8bpp != 0u) {
+        let addr = char_base + tile * 64u + fy * 8u + fx;
         if (addr >= 0x10000u) {
             return 0xFFFFu;
         }
@@ -271,7 +293,7 @@ fn color_capa(c: CapaFondo, px: u32, py: u32) -> u32 {
         return paleta[py * 512u + idx];
     }
 
-    let addr = c.char_base + tile * 32u + fy * 4u;
+    let addr = char_base + tile * 32u + fy * 4u;
     if (addr + 4u > 0x10000u) {
         return 0xFFFFu;
     }
@@ -559,7 +581,7 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
 
         // BG0
         if (cfg_comp.bg_prio0 == p && (control & 1u) != 0u) {
-            let c0 = color_capa(filas_capa[upy].capas[0u], upx, upy);
+            let c0 = color_capa(upy, 0u, upx, upy);
             if (c0 != 0xFFFFu) {
                 if (!hay_primera) {
                     primera = c0;
@@ -581,7 +603,7 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
 
         // BG1
         if (cfg_comp.bg_prio1 == p && (control & 2u) != 0u) {
-            let c1 = color_capa(filas_capa[upy].capas[1u], upx, upy);
+            let c1 = color_capa(upy, 1u, upx, upy);
             if (c1 != 0xFFFFu) {
                 if (!hay_primera) {
                     primera = c1;
@@ -603,7 +625,7 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
 
         // BG2
         if (cfg_comp.bg_prio2 == p && (control & 4u) != 0u) {
-            let c2 = color_capa(filas_capa[upy].capas[2u], upx, upy);
+            let c2 = color_capa(upy, 2u, upx, upy);
             if (c2 != 0xFFFFu) {
                 if (!hay_primera) {
                     primera = c2;
@@ -625,7 +647,7 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
 
         // BG3
         if (cfg_comp.bg_prio3 == p && (control & 8u) != 0u) {
-            let c3 = color_capa(filas_capa[upy].capas[3u], upx, upy);
+            let c3 = color_capa(upy, 3u, upx, upy);
             if (c3 != 0xFFFFu) {
                 if (!hay_primera) {
                     primera = c3;

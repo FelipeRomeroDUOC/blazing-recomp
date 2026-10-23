@@ -117,6 +117,10 @@ struct Compositor {
     hud_texture: wgpu::Texture,
     hud_params_buffer: wgpu::Buffer,
     fps_counter: crate::fps::FpsCounter,
+    ultimo_game_params: Option<[f32; 8]>,
+    ultimo_hud_params: Option<[f32; 8]>,
+    ultimo_overlay_globals: Option<[f32; 4]>,
+    ultimo_overlay_elems: Option<Box<[f32; 12 * 16]>>,
 }
 
 /// Desglose temporal (ms) de las fases de una presentación completa.
@@ -846,6 +850,10 @@ impl Compositor {
             hud_texture,
             hud_params_buffer,
             fps_counter,
+            ultimo_game_params: None,
+            ultimo_hud_params: None,
+            ultimo_overlay_globals: None,
+            ultimo_overlay_elems: None,
         })
     }
 
@@ -1057,47 +1065,52 @@ impl Compositor {
             0.0,
             0.0,
         ];
-        self.queue.write_buffer(
-            &self.game_params_buffer,
-            0,
-            bytemuck::cast_slice(&game_params),
-        );
-
-        // 3. Parámetros del overlay
-        // En el espacio del búfer de render: proporcional al físico, por lo que
-        // la composición final en pantalla no cambia.
-        let mut globals = build_globals(rw, rh, touch.orientation());
-        globals.shell = if rw < rh { 1.0 } else { 0.0 };
-        let globals_packed = globals.pack();
-        self.queue.write_buffer(
-            &self.overlay_globals_buffer,
-            0,
-            bytemuck::cast_slice(&globals_packed),
-        );
-
-        // Las hitboxes táctiles viven en píxeles físicos; el overlay dibuja en el
-        // espacio del búfer, así que con escala reducida hay que escalar la
-        // geometría (centros, radios y extents). Los atributos (color, glifo,
-        // ángulo, estados) y las proporciones no se tocan.
-        let escala_render = self.scale;
-        let elems: Vec<crate::overlay::ElemParams> = build_elems_with_orientation(
-            touch.areas(),
-            touch.orientation(),
-            |b| touch.is_pressed(b),
-        )
-        .into_iter()
-        .map(|e| e.scaled(escala_render))
-        .collect();
-        let mut elems_packed = [0.0f32; 12 * 16];
-        for (i, elem) in elems.iter().take(12).enumerate() {
-            let p = elem.pack();
-            elems_packed[i * 16..(i + 1) * 16].copy_from_slice(&p);
+        if self.ultimo_game_params != Some(game_params) {
+            self.queue.write_buffer(
+                &self.game_params_buffer,
+                0,
+                bytemuck::cast_slice(&game_params),
+            );
+            self.ultimo_game_params = Some(game_params);
         }
-        self.queue.write_buffer(
-            &self.overlay_elems_buffer,
-            0,
-            bytemuck::cast_slice(&elems_packed),
-        );
+
+        // 3. Parámetros del overlay (solo si la capa táctil está activa)
+        if touch.touch_enabled {
+            let mut globals = build_globals(rw, rh, touch.orientation());
+            globals.shell = if rw < rh { 1.0 } else { 0.0 };
+            let globals_packed = globals.pack();
+            if self.ultimo_overlay_globals != Some(globals_packed) {
+                self.queue.write_buffer(
+                    &self.overlay_globals_buffer,
+                    0,
+                    bytemuck::cast_slice(&globals_packed),
+                );
+                self.ultimo_overlay_globals = Some(globals_packed);
+            }
+
+            let escala_render = self.scale;
+            let elems: Vec<crate::overlay::ElemParams> = build_elems_with_orientation(
+                touch.areas(),
+                touch.orientation(),
+                |b| touch.is_pressed(b),
+            )
+            .into_iter()
+            .map(|e| e.scaled(escala_render))
+            .collect();
+            let mut elems_packed = [0.0f32; 12 * 16];
+            for (i, elem) in elems.iter().take(12).enumerate() {
+                let p = elem.pack();
+                elems_packed[i * 16..(i + 1) * 16].copy_from_slice(&p);
+            }
+            if self.ultimo_overlay_elems.as_deref() != Some(&elems_packed) {
+                self.queue.write_buffer(
+                    &self.overlay_elems_buffer,
+                    0,
+                    bytemuck::cast_slice(&elems_packed),
+                );
+                self.ultimo_overlay_elems = Some(Box::new(elems_packed));
+            }
+        }
 
         // 4. Actualizar telemetría y textura del HUD de FPS
         self.fps_counter.set_native(is_native);
@@ -1133,8 +1146,6 @@ impl Compositor {
 
         // Posición del badge de FPS: márgenes seguros de Safe Area contra esquinas redondeadas y notch
         let (hud_w, hud_h) = self.fps_counter.dimensions();
-        // Márgenes y tamaño del badge en píxeles físicos: se escalan al espacio
-        // del búfer para conservar su sitio en pantalla si la escala es < 1.0.
         let escala_hud = self.scale;
         let margin_x = (if w > h { 96.0f32 } else { 24.0f32 }) * escala_hud;
         let margin_y = (if w > h { 24.0f32 } else { 44.0f32 }) * escala_hud;
@@ -1151,11 +1162,14 @@ impl Compositor {
             0.0,
             0.0,
         ];
-        self.queue.write_buffer(
-            &self.hud_params_buffer,
-            0,
-            bytemuck::cast_slice(&hud_params),
-        );
+        if self.ultimo_hud_params != Some(hud_params) {
+            self.queue.write_buffer(
+                &self.hud_params_buffer,
+                0,
+                bytemuck::cast_slice(&hud_params),
+            );
+            self.ultimo_hud_params = Some(hud_params);
+        }
 
         // Fase 1: subida (upload) de la textura de juego y los búferes uniformes.
         let subida_ms = t_render_start.elapsed().as_secs_f64() * 1000.0;

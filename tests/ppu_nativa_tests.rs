@@ -316,7 +316,8 @@ fn test_shader_indexa_paleta_por_linea_vertical() {
 
 /// El shader no debe contener indexación dinámica de arreglos locales en `fs_comp`
 /// (`capas[b]`, `prio[b]`) para evitar register spilling en Mali-G31, debe leer `tex_obj_ventana`
-/// solo bajo `objwin_on` y debe invocar `necesita_segunda`.
+/// solo bajo `objwin_on`, debe invocar `necesita_segunda`, y `color_capa` debe recibir
+/// las capas por índice para no copiar `CapaFondo` (`64 bytes`) por valor.
 #[test]
 fn test_fs_comp_no_indexa_arreglos_locales_dinamicamente() {
     let m = modulo();
@@ -341,8 +342,12 @@ fn test_fs_comp_no_indexa_arreglos_locales_dinamicamente() {
         "fs_comp debe incluir el atajo necesita_segunda para podar la búsqueda de la 2.ª capa"
     );
     assert!(
-        PPU_NATIVA_WGSL.contains("filas_capa[upy].capas[0u]"),
-        "fs_comp debe acceder a capas con índices constantes"
+        !PPU_NATIVA_WGSL.contains("fn color_capa(c: CapaFondo"),
+        "color_capa no debe recibir CapaFondo (64 bytes) por valor"
+    );
+    assert!(
+        PPU_NATIVA_WGSL.contains("color_capa(upy, 0u, upx, upy)"),
+        "fs_comp debe pasar el índice de capa constante a color_capa"
     );
 }
 
