@@ -188,8 +188,9 @@ Todo agente que vaya a modificar, crear o refactorizar código en este repositor
 
 #### Fase 5: Sincronización Documental y Cierre
 1. **Impacto en documentación (`diataxis-docs`):** Si el cambio altera APIs nativas, flags, arquitectura o guías de compilación Android, actualizar el cuadrante correspondiente en `docs/`.
-2. **Registro de hallazgos fuera de alcance:** Registrar obligatoriamente todo bug o refactor detectado durante la edición en la sección de la propuesta:
-   `### Fuera de alcance (hallazgos que no se arreglaron)` con su nivel de impacto (`bajo | medio`), o en el resumen de cierre del chat (en Nivel 1) para alimentar futuras propuestas.
+2. **Registro de hallazgos fuera de alcance y tareas pendientes:** Registrar obligatoriamente todo bug, refactor o deuda técnica detectada durante la edición en la sección de la propuesta:
+   `### Fuera de alcance (hallazgos que no se arreglaron)` con su nivel de impacto (`bajo | medio`), o en el resumen de cierre del chat (en Nivel 1).
+   - **Regla estricta de filtrado (`docs/PENDIENTES.md` vs `docs/BACKLOG.md`):** Al completar cada propuesta, los hallazgos que constituyan **tareas pendientes reales/accionables** (código por escribir, refactors necesarios, funciones por implementar o bugs reales) deben registrarse o actualizarse en [`docs/PENDIENTES.md`](docs/PENDIENTES.md). Los aprendizajes técnicos, notas de diseño o limitaciones físicas de hardware sin acción de código asociada deben conservarse únicamente en [`docs/BACKLOG.md`](docs/BACKLOG.md) y [`docs/explicacion/DECISIONES.md`](docs/explicacion/DECISIONES.md).
 3. **Reporte final:** Contrastar lo predicho en la propuesta contra el resultado real obtenido (`Predicho vs. real`).
 
 ---

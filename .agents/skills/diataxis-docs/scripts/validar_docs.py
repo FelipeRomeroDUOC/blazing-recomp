@@ -328,7 +328,7 @@ def paginas_markdown(docs_dir):
             continue
         if any(p in {"propuestas", "prototipos", "fuentes"} for p in partes):
             continue
-        if ruta.name.lower() == "backlog.md":
+        if ruta.name.lower() in {"backlog.md", "pendientes.md"}:
             continue
         paginas.append(ruta)
     return paginas
