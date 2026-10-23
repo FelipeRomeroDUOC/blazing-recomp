@@ -39,6 +39,44 @@ La comparación técnica entre el modo ARM de 32 bits y el modo Thumb de 16 bits
   - **Modo Thumb (16 bits):** Minimiza la saturación de los buses de 16 bits, evitando cuellos de botella y manteniendo un flujo contiguo de ejecución.
   - **Modo ARM (32 bits):** Cuando se ejecuta desde regiones con bus de 16 bits, cada instrucción requiere dos accesos consecutivos al bus para completar la lectura de los 32 bits, lo que duplica el tiempo de lectura e introduce un estado de espera obligatorio que devalúa el rendimiento global. Su uso debe restringirse a rutinas matemáticas críticas cargadas en IWRAM.
 
+- **Convención de Llamadas ATPCS / AAPCS32 en ARMv4T:**
+  La interoperabilidad binaria y la estructura de subrutinas en Game Boy Advance se rigen por la norma *ARM/Thumb Procedure Call Standard* (ATPCS):
+  - **Paso de Parámetros y Retorno (`r0-r3`):** Los primeros cuatro argumentos de 32 bits (enteros o punteros) se transmiten en los registros `r0`, `r1`, `r2` y `r3`. Si un valor requiere 64 bits (como un entero de 64 bits `long long`), se transfiere en un par de registros alineado (`r0:r1` o `r2:r3`). Si la función toma más de cuatro parámetros, los argumentos restantes se empujan en la pila (*stack*) en orden inverso mediante el puntero de pila `sp` (`r13`). El valor de retorno de la subrutina se devuelve en `r0` (o en el par `r0:r1` si es de 64 bits).
+  - **Registros Preservados por el Callee (`r4-r11`):** Cualquier función invocada tiene la obligación estricta de preservar el contenido de los registros `r4` hasta `r11`. Si la subrutina necesita utilizarlos como variables de trabajo locales, debe respaldarlos en la pila durante su prólogo (`push {r4-r7, lr}`) y restaurarlos en su epílogo (`pop {r4-r7, pc}` o `pop {r4-r7} / bx lr`).
+  - **Registros Volátiles o Scratch (`r0-r3`, `r12`):** El registro `r12` (*Intra-Procedure-call scratch register*, `ip`), junto con `r0-r3`, puede ser sobrescrito libremente por la función llamada sin necesidad de restauración previa.
+  - **Restricción de Registros en Instrucciones Thumb (LoRegs vs. HiRegs):** A diferencia del modo ARM (donde los 16 registros generales son accesibles simétricamente por casi cualquier instrucción), el espacio de codificación de 16 bits en Thumb solo permite especificar campos de registro de 3 bits. Como consecuencia, las instrucciones de manipulación de datos, cargas y almacenamientos aritméticos solo pueden operar directamente sobre los registros bajos (*LoRegs*, `r0-r7`). El acceso a los registros altos (*HiRegs*, `r8-r12`, `sp`, `lr`, `pc`) queda severamente limitado a un subconjunto restringido de instrucciones (`add`, `cmp`, `mov` y saltos `bx`), obligando al compilador a trasladar continuamente datos entre *LoRegs* y *HiRegs* o utilizar la pila.
+- **Conmutación Interworking ARM-Thumb y el Bit LSB (Bit 0):**
+  Dado que tanto las instrucciones ARM (alineadas a 4 bytes, múltiplos de 4) como las instrucciones Thumb (alineadas a 2 bytes, múltiplos de 2) residen en direcciones con el bit menos significativo en cero (`addr & 1 == 0`), el silicio de la arquitectura ARMv4T aprovecha el bit 0 de los punteros de código como un indicador físico de conmutación de estado (*State Switch Flag*):
+  - **Mecánica del Bit LSB:** En instrucciones de salto indirecto (`bx Rm` o `blx Rm`), el procesador evalúa el valor del bit 0 del registro `Rm`:
+    - Si el bit 0 es **1**, el procesador conmuta el bit `T` (bit 5) del registro de estado `CPSR` a 1 (activando el estado de decodificación Thumb de 16 bits) y transfiere la ejecución a la dirección par resultante de enmascarar el puntero: `target = Rm & ~1`.
+    - Si el bit 0 es **0**, el procesador limpia el bit `T` a 0 (activando el estado de decodificación ARM de 32 bits) y transfiere la ejecución a la dirección de palabra resultante: `target = Rm & ~3`.
+  - **Retornos de Función e Interworking:** Esta propiedad permite enlazar transparentemente funciones compiladas en ARM con funciones compiladas en Thumb. En el prólogo, la función guarda la dirección de retorno en el registro de enlace `lr` (`r14`), el cual ya porta el bit 0 encendido si la llamada se originó desde Thumb. Al retornar mediante la instrucción `bx lr`, el procesador conmuta de regreso al modo del invocador automáticamente. En arquitecturas posteriores (ARMv5+), la instrucción `pop {pc}` actualiza el bit `T` automáticamente; sin embargo, en el procesador ARM7TDMI (ARMv4T) nativo de la GBA, `pop {pc}` no realiza conmutación de modo (*interworking*), requiriendo que las funciones compatibles con ambos modos utilicen explícitamente `pop {rx}; bx rx`.
+- **Patrones de Tablas de Salto (*Jump Tables*) en Thumb y Recompilación AOT:**
+  Al carecer de instrucciones directas para manejar ramas arbitrarias con grandes distancias de salto, el compilador GCC para GBA (habitual en juegos como *Fire Emblem: The Blazing Blade*) implementa las estructuras condicionales densas (`switch / case`) mediante dos patrones idiomáticos de tablas de salto:
+  1. **Salto Relativo mediante Suma Directa al PC (`add pc, rx`):**
+     El compilador evalúa el índice de caso, comprueba los límites superiores con una comparación `cmp`, y utiliza el registro de cómputo para desplazar el contador de programa hacia una tabla contigua de instrucciones de salto relativo `b`:
+     ```thumb
+     cmp   r0, #4           @ Comprobación de límite superior (ej. 5 casos: 0..4)
+     bhi   default_case     @ Rama por defecto si supera el rango
+     lsls  r0, r0, #1       @ Multiplicación por 2 (cada instrucción 'b' Thumb ocupa 2 bytes)
+     add   pc, r0           @ Suma al PC (con pipeline ARMv4T: PC apunta a la instrucción actual + 4)
+     nop                    @ Relleno de alineación / vaciado de pipeline
+     b     case_0           @ r0 = 0 -> Salto a bloque case 0
+     b     case_1           @ r0 = 1 -> Salto a bloque case 1
+     b     case_2           @ r0 = 2 -> Salto a bloque case 2
+     b     case_3           @ r0 = 3 -> Salto a bloque case 3
+     b     case_4           @ r0 = 4 -> Salto a bloque case 4
+     ```
+  2. **Carga Indirecta desde Tabla Literal de Punteros en ROM:**
+     Para saltos a subrutinas distantes o manejadores desacoplados (como el motor de scripts de eventos y combate), GCC coloca una tabla de punteros de 32 bits en la sección literal (*literal pool*), asegurando que cada puntero posea el bit 0 encendido (`0x08xxxxxx | 1`):
+     ```thumb
+     ldr   r1, =jump_table  @ Carga dirección de la tabla de punteros de 32 bits
+     lsls  r0, r0, #2       @ Multiplicación por 4 (punteros de 32 bits)
+     ldr   r0, [r1, r0]     @ Carga la dirección absoluta de destino
+     bx    r0               @ Salto indirecto con conmutación interworking
+     ```
+  - **Implicaciones Críticas en Recompilación AOT:** En herramientas de recompilación estática anticipada (*Ahead-Of-Time*), los patrones de `add pc, rx` representan discontinuidades dinámicas que no pueden traducirse como simples bloques básicos de C estático. El recompilador estático debe identificar el tamaño de la tabla mediante análisis de flujo de control (*CFG*) y emitir un constructo nativo `switch (case_index)` o registrar etiquetas de salto independientes (`labels.toml`) para cada entrada de la tabla; de lo contrario, el flujo de ejecución no resuelto obliga al motor a desviar el control hacia el intérprete de respaldo.
+
 El subsistema DMA proporciona un motor de transferencia de datos por hardware que opera de forma autónoma respecto a la CPU. El controlador integra 4 canales priorizados jerárquicamente: Canal 0 (máxima prioridad, reservado para transferencias críticas en memoria interna), Canal 1 y Canal 2 (optimizados para el flujo de audio hacia las FIFOs de sonido) y Canal 3 (prioridad más baja, destinado a transferencias masivas de datos entre RAM, VRAM y cartucho). Cada canal se configura mediante registros de control de 32 bits (`DMAxSAD` dirección origen, `DMAxDAD` dirección destino, `DMAxCNT_L` recuento de transferencias y `DMAxCNT_H` registro de control a la dirección `0x040000B8` para Canal 3). Sus modos de disparo (*trigger*) se seleccionan en `DMAxCNT_H`: ejecución inmediata, sincronizada con *HBlank*, con *VBlank*, o por solicitud de refresco de FIFO de audio/captura de pantalla.
 
 ```
