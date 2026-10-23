@@ -317,7 +317,7 @@ producirá píxeles distintos donde la referencia no mezcla.
 ### B4. Bits de EVB y saturación a 16 sin especificar (bloqueante, menor)
 
 Ni el paso 3 ni los criterios dicen dónde está EVB. En el GBATEK del repo
-(`docs/referencia/The Game Boy Advance (GBA) LCD Video.txt:101`) y en la
+(`docs/referencia/registros-video-lcd-gba.md`) y en la
 referencia coinciden: EVA en los bits 0-4, **EVB en los bits 8-12** (5-7 sin
 usar), y `17..31 = 16/16`, que es el `.min(16)` de `gba-core`. No es la disposición
 que se suele recordar (EVB en 5-9), así que conviene dejarlo escrito.
