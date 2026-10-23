@@ -2,7 +2,7 @@
 
 Fecha: 2026-10-13
 Nivel: 2
-Estado: aprobada (el usuario aprobó el alcance completo el 2026-10-13: «conservemos el motor,
+Estado: cerrada (obsoleta; superada por la implementacion de la PPU nativa en GPU)
 implementa la propuesta de ppu-software»)
 Ejecución: fases A y B implementadas y verificadas con código; el escenario del dispositivo
 (apartado 8) queda para la persona

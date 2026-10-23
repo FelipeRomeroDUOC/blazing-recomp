@@ -2,7 +2,7 @@
 
 Fecha: 2026-10-16
 Nivel: 2
-Estado: aprobada (el usuario aprobó el alcance el 2026-10-16)
+Estado: cerrada (obsoleta; superada por la implementacion de la PPU nativa en GPU)
 
 <!-- Estados: pendiente | aprobada | modificada | descartada |
      verificada por agente | revisada por humano | discrepada | cerrada -->

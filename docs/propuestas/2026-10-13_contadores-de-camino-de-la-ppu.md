@@ -2,7 +2,7 @@
 
 Fecha: 2026-10-13
 Nivel: 2
-Estado: aprobada (el usuario eligió «Instrumentar el camino» el 2026-10-13, tras revisar la sesión 18)
+Estado: cerrada (obsoleta; superada por la implementacion de la PPU nativa en GPU)
 
 <!-- Estados: pendiente | aprobada | modificada | descartada |
      verificada por agente | revisada por humano | discrepada | cerrada -->

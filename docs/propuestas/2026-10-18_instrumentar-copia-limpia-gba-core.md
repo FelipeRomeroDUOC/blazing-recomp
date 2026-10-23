@@ -2,7 +2,7 @@
 
 Fecha: 2026-10-18
 Nivel: 2
-Estado: pendiente (esperando aprobación)
+Estado: cerrada (obsoleta; superada por la implementacion de la PPU nativa en GPU)
 
 <!-- Estados: pendiente | aprobada | modificada | descartada |
      verificada por agente | revisada por humano | discrepada | cerrada -->
