@@ -157,10 +157,10 @@ Curado a mano a partir del [registro](#registro-de-hallazgos); el registro es la
 
 ## Índice de Propuestas
 
-138 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
+139 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
 propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
-**138 = 87 `verificada por agente` + 13 `cerrada` + 15 `aprobada` + 7 `pendiente` + 9 `discrepada` + 4 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
+**139 = 88 `verificada por agente` + 13 `cerrada` + 15 `aprobada` + 7 `pendiente` + 9 `discrepada` + 4 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
 
 ### Pendientes (7) — sin ejecutar
 
@@ -225,7 +225,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-14_reloj-barato-en-pump-audio.md`](propuestas/2026-10-14_reloj-barato-en-pump-audio.md)
 - [`2026-10-18_buscar-escena-bg0-sprites-decode-oam.md`](propuestas/2026-10-18_buscar-escena-bg0-sprites-decode-oam.md)
 
-### Verificadas por agente (87) — con lo medido dentro; varias esperan el televisor
+### Verificadas por agente (88) — con lo medido dentro; varias esperan el televisor
 
 - [`2026-10-08_controles-tactiles-haptica.md`](propuestas/2026-10-08_controles-tactiles-haptica.md)
 - [`2026-10-08_crate-nativo-android.md`](propuestas/2026-10-08_crate-nativo-android.md)
@@ -312,6 +312,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-21_ppu-nativa-activa-por-defecto.md`](propuestas/2026-10-21_ppu-nativa-activa-por-defecto.md)
 - [`2026-10-21_ppu-nativa-sin-storage-en-vertices.md`](propuestas/2026-10-21_ppu-nativa-sin-storage-en-vertices.md)
 - [`2026-10-21_ventana-obj-camino-rapido.md`](propuestas/2026-10-21_ventana-obj-camino-rapido.md)
+- [`2026-10-22_arnes-comparacion-visual-y-causal.md`](propuestas/2026-10-22_arnes-comparacion-visual-y-causal.md)
 - [`2026-10-22_arnes-de-experimentos-comun.md`](propuestas/2026-10-22_arnes-de-experimentos-comun.md)
 - [`2026-10-22_contrato-de-telemetria.md`](propuestas/2026-10-22_contrato-de-telemetria.md)
 

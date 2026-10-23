@@ -1,8 +1,9 @@
 # Propuesta: La clave de tramo no debe aliase la prioridad del sprite
 
 Fecha: 2026-10-22
+Ejecutada: 2026-10-23
 Nivel: 2
-Estado: pendiente
+Estado: verificada por agente
 
 <!-- Estados: pendiente | aprobada | modificada | descartada |
      verificada por agente | revisada por humano | discrepada | cerrada -->
@@ -188,19 +189,28 @@ explicación se corrigieron con esa medición.
 
 ### Predicho vs. real
 
-- Todavía no se ha ejecutado: la propuesta está pendiente de aprobación.
+| Criterio (§8) | Predicho | Real | Estado |
+| :--- | :--- | :--- | :--- |
+| 1. El camino por tramos dibuja lo mismo que el camino general | 0 píxeles distintos en los 240 píxeles de la escena de colisión | 0 píxeles distintos (exacto) | Cumplido |
+| 2. La escena de la colisión falla en rojo antes del arreglo | Falla en rojo reportando exactamente 8 píxeles distintos | Falló en rojo con `el camino por tramos difiere del general en 8 píxeles: [8, 9, 10, 11, 12, 13, 14, 15]` | Cumplido |
+| 3. La línea con un solo sprite sigue usando un tramo por tramo de clave | Pasa el test existente `alpha_por_tramos_da_los_mismos_pixeles` | 89 tests de `gba-core` pasan al 100% | Cumplido |
+| 4. El motor fijado no cambia de hash | Pasa `test_el_motor_base_y_el_shim_no_cambian` | 14/14 en `tests/ppu_nativa_tests.rs` pasan, hash del upstream fijado intacto | Cumplido |
 
 ### Contexto: ¿se respetó?
 
-- Todavía no se ha ejecutado.
+- Sí. El cambio se aplicó exclusivamente en el parche local (`../gba-recomp/crates/gba-core/src/ppu.rs`), manteniendo el upstream fijado `de4edf59` y sus tests de verificación intactos.
+- La suite completa de `blazing-recomp` (288 tests) y `gba-core` (89 tests unitarios + 10 de integración) pasaron al 100% en verde.
 
 ### Archivos modificados
 
-- Todavía no se ha ejecutado.
+- `../gba-recomp/crates/gba-core/src/ppu.rs`:
+  - En `clave_de_tramo`: se cambió `0x100 | prioridad as u16` por `0x100 | ((prioridad as u16) << 9)`, aislando la prioridad del sprite en los bits 9-10 (lejos de los bits 0-3 de la máscara de fondos).
+  - En tests: se añadió la prueba de regresión `alpha_por_tramos_no_aliase_la_prioridad_del_sprite`.
+- `docs/propuestas/2026-10-22_clave-de-tramo-aliase-la-prioridad.md`: ficha actualizada a `verificada por agente` y sección de resultado documentada.
 
 ### Discrepancias
 
-- Todavía no se ha ejecutado.
+- Ninguna. Lo predicho se cumplió al 100 %.
 
 ### Para la próxima vez
 

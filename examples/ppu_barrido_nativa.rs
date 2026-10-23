@@ -17,6 +17,11 @@
 //! dentro de la máscara de la ventana OBJ, si la línea toca un sprite afín, y
 //! qué registros de ventana había.
 //
+//! Si un fotograma difiere (frente al estado de fin de cuadro o al de cada línea),
+//! escribe una imagen compuesta `volcados/diferencias/cuadro-<N>-<caso>.png` —sin repetir
+//! cuadros consecutivos con la misma firma— e imprime el diagnóstico causal. Con
+//! `--features proto` además nombra qué componente y qué registro cambió dentro del cuadro.
+//
 //! Uso:
 //!   cargo run --release --features proto --example ppu_barrido_nativa -- <ruta.gba> <secuencia.txt> <desde> <hasta> [paso]
 
@@ -25,7 +30,8 @@ use blazing_recomp::ppu_nativa::{EstadoPpuNativa};
 #[path = "comun/mod.rs"]
 mod comun;
 
-use comun::color::{canal_8bit, cerca_pixel};
+use comun::color::{canal_8bit, cerca_pixel, software_a_rgb};
+use comun::diagnostico::{self, EstadoRef, FiltroFirmas, Firma};
 use comun::entrada::leer_secuencia;
 use comun::gpu::{ALTO, ANCHO, Gpu};
 
@@ -169,14 +175,31 @@ fn main() {
 
     let mut m = gba_core::Machine::new(rom.clone());
     let mut cuadro: u32 = 0;
-    let mut n = ANCHO * ALTO;
+    let n = ANCHO * ALTO;
     let mut con_diferencias = 0usize;
     let mut examined = 0usize;
+    let mut filtro = FiltroFirmas::default();
+    let mut capturas_escritas = 0usize;
+    let dir_capturas = std::path::Path::new("volcados/diferencias");
     'secuencia: for (cuadros, presionados) in tramos {
         m.bus.keys = 0x03FF & !presionados;
         for _ in 0..cuadros {
+            let en_rango = cuadro >= desde && cuadro <= hasta && cuadro % paso == 0;
+            // Con `proto` se guarda el estado de cada línea del cuadro, para poder nombrar
+            // qué cambió a mitad de cuadro. Sin la feature, el diagnóstico sigue separando
+            // las dos causas (la imagen por línea es el framebuffer del emulador), pero no
+            // puede decir qué componente cambió.
+            #[cfg(feature = "proto")]
+            if en_rango {
+                m.bus.capturas_linea.clear();
+                m.bus.capturar_linea = true;
+            }
             m.run_frame(5_000_000);
-            if cuadro >= desde && cuadro <= hasta && cuadro % paso == 0 {
+            #[cfg(feature = "proto")]
+            {
+                m.bus.capturar_linea = false;
+            }
+            if en_rango {
                 examined += 1;
                 let vram = m.bus.vram.clone();
                 let oam = m.bus.oam.clone();
@@ -241,6 +264,63 @@ fn main() {
                         u16::from_le_bytes([io[0x54], io[0x55]]),
                     );
                 }
+
+                // Captura visual (una imagen compuesta por caso, sin repetir firmas
+                // consecutivas) y diagnóstico causal de los cuadros que difieren.
+                let sw_fin_rgb = software_a_rgb(&ref_fin);
+                let sw_linea_rgb = software_a_rgb(&m.bus.framebuffer);
+                let bldcnt = u16::from_le_bytes([io[0x50], io[0x51]]);
+                let mut alguno = false;
+                for (caso, sw) in [("fin", &sw_fin_rgb), ("linea", &sw_linea_rgb)] {
+                    let Some(d) = diagnostico::diferencias(sw, &nativa) else {
+                        filtro.reiniciar(caso);
+                        continue;
+                    };
+                    alguno = true;
+                    let firma = Firma { caso: caso.to_string(), caja: d.caja, dispcnt, bldcnt };
+                    if !filtro.capturar(firma) {
+                        println!("cuadro {cuadro}: {caso} repite la firma del cuadro anterior (sin captura)");
+                        continue;
+                    }
+                    match diagnostico::guardar_captura_si_difiere(dir_capturas, cuadro, caso, sw, &nativa) {
+                        Ok(Some(r)) => {
+                            capturas_escritas += 1;
+                            println!("cuadro {cuadro}: captura {caso} {} ({} px)", r.ruta.display(), r.distintos);
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            eprintln!("no se pudo escribir la captura {caso}: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                }
+                if alguno {
+                    let fin_estado = EstadoRef { io: &io, palette: &pal, vram: &vram, oam: &oam };
+                    #[cfg(feature = "proto")]
+                    let lineas_estado: Vec<EstadoRef> = m
+                        .bus
+                        .capturas_linea
+                        .iter()
+                        .map(|c| EstadoRef { io: &c.io, palette: &c.palette, vram: &c.vram, oam: &c.oam })
+                        .collect();
+                    #[cfg(not(feature = "proto"))]
+                    let lineas_estado: Vec<EstadoRef> = Vec::new();
+                    let diag = diagnostico::diagnosticar(
+                        &nativa,
+                        &sw_fin_rgb,
+                        &sw_linea_rgb,
+                        fin_estado,
+                        &lineas_estado,
+                        |_, io_v| {
+                            let nat_v = gpu.renderiza(&vram, &oam, &pal, io_v);
+                            let sw_v = software_a_rgb(&render_software(&rom, &vram, &oam, &pal, io_v, false));
+                            diagnostico::cuenta_distintos(&nat_v, &sw_v)
+                        },
+                    );
+                    for l in diag.informe() {
+                        println!("cuadro {cuadro}:   {l}");
+                    }
+                }
             }
             if cuadro > hasta {
                 break 'secuencia;
@@ -249,4 +329,8 @@ fn main() {
         }
     }
     println!("resumen: {examined} fotogramas examinandos, {con_diferencias} con diferencias");
+    println!(
+        "capturas: {capturas_escritas} escritas en volcados/diferencias, {} omitidas por repetir firma",
+        filtro.omitidas
+    );
 }

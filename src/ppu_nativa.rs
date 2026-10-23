@@ -152,18 +152,16 @@ pub fn construir_con_guardian<T, M: MotorDeErrores>(
 pub const BINDING_VRAM: u32 = 0;
 /// Paleta (512 colores RGB555) como búfer de solo lectura.
 pub const BINDING_PALETA: u32 = 1;
-/// Configuración de la pasada de capas (modo y los cuatro fondos).
-pub const BINDING_CONFIG_CAPA: u32 = 2;
-/// Sprites de color, en una textura de solo lectura.
+/// Tabla de configuración de capas por línea (160 filas) como búfer de solo lectura.
+pub const BINDING_FILAS_CAPA: u32 = 2;
+/// Sprites de color, como búfer de solo lectura en fragmento.
 pub const BINDING_SPRITES: u32 = 3;
-/// Configuración de la pasada de composición.
-pub const BINDING_CONFIG_COMP: u32 = 4;
-/// Texturas del G-buffer de fondos, del 0 al 3.
-pub const BINDING_TEX_CAPA0: u32 = 5;
+/// Tabla de configuración de composición por línea (160 filas) como búfer de solo lectura.
+pub const BINDING_FILAS_COMP: u32 = 4;
 /// Textura del G-buffer de sprites (color, prioridad, semitransparencia).
-pub const BINDING_TEX_OBJ: u32 = 9;
+pub const BINDING_TEX_OBJ: u32 = 5;
 /// Textura de la máscara de la ventana OBJ.
-pub const BINDING_TEX_OBJ_VENTANA: u32 = 10;
+pub const BINDING_TEX_OBJ_VENTANA: u32 = 6;
 
 // ===========================================================================
 // Unidad de mezcla (puro)
@@ -791,20 +789,19 @@ impl EstadoPpuNativa {
         self.ventanas = Ventanas::de_io(io, self.dispcnt);
 
         for bg in 0..4usize {
-            // Modo 0: los cuatro fondos son de texto. Modo 1: BG0 y BG1 de
-            // texto y BG2 afín (lo activa el bit 10 de `DISPCNT`, que en el
-            // modo 0 es el bit de habilitación de BG2). El modo 2 (BG2 y BG3
-            // afines) y los modos bitmap quedan fuera de esta fase.
+            // Modo 0: los cuatro fondos son de texto.
+            // Modo 1: BG0 y BG1 de texto y BG2 afín.
+            // Modo 2: BG2 y BG3 afines.
             let es_texto = match self.modo {
                 0 => bg < 4,
                 1 => bg < 2,
                 _ => false,
             };
-            let es_afin = self.modo == 1 && bg == 2;
+            let es_afin = (self.modo == 1 && bg == 2) || (self.modo == 2 && (bg == 2 || bg == 3));
             let enabled = if es_texto {
                 self.dispcnt & (0x100 << bg) != 0
             } else if es_afin {
-                self.dispcnt & 0x400 != 0
+                self.dispcnt & (0x100 << bg) != 0
             } else {
                 false
             };
@@ -982,6 +979,55 @@ impl EstadoPpuNativa {
             _pad1: 0,
         }
     }
+
+    /// Decodifica las 160 filas de registros I/O en tablas de parámetros para la GPU.
+    pub fn decodificar_lineas(
+        io_lineas: &[[u8; 0x60]; 160],
+    ) -> ([ConfigCapaGpu; 160], [ConfigCompGpu; 160]) {
+        let mut capas = [ConfigCapaGpu::default(); 160];
+        let mut comps = [ConfigCompGpu::default(); 160];
+        let mut estado_temp = EstadoPpuNativa::new();
+
+        for (py, io) in io_lineas.iter().enumerate() {
+            estado_temp.decode_io_regs(io);
+            capas[py] = estado_temp.config_capa();
+            comps[py] = estado_temp.config_comp();
+        }
+
+        (capas, comps)
+    }
+
+    /// Decodifica las 160 paletas por línea para la GPU, enmascarando el bit 15 a 15 bits.
+    pub fn decodificar_paletas_linea(
+        paleta_lineas: &[[u8; 1024]; 160],
+        destino: &mut [[u32; 512]; 160],
+    ) {
+        for (py, pal) in paleta_lineas.iter().enumerate() {
+            for (idx, slot) in destino[py].iter_mut().enumerate() {
+                let off = idx * 2;
+                *slot = (u16::from_le_bytes([pal[off], pal[off + 1]]) & 0x7FFF) as u32;
+            }
+        }
+    }
+
+    /// Decodifica una única paleta uniforme replicándola en las 160 líneas.
+    pub fn decodificar_paleta_uniforme(
+        palette: &[u8],
+        destino: &mut [[u32; 512]; 160],
+    ) {
+        let mut fila = [0u32; 512];
+        for (idx, slot) in fila.iter_mut().enumerate() {
+            let off = idx * 2;
+            *slot = if palette.len() >= off + 2 {
+                (u16::from_le_bytes([palette[off], palette[off + 1]]) & 0x7FFF) as u32
+            } else {
+                0
+            };
+        }
+        for f in destino.iter_mut() {
+            *f = fila;
+        }
+    }
 }
 
 // ===========================================================================
@@ -1005,12 +1051,11 @@ pub const QUAD_VERTICES: [QuadVertex; 6] = [
     QuadVertex { pos: [1.0, 1.0] },
 ];
 
-/// Pipeline de la PPU nativa: capas en G-buffer y composición por píxel.
+/// Pipeline de la PPU nativa: composición directa por píxel y sprites en G-buffer.
 pub struct PpuNativaPipeline {
     /// Estado decodificado del cuadro en curso.
     pub estado: EstadoPpuNativa,
 
-    pub pipeline_capa: wgpu::RenderPipeline,
     pub pipeline_obj: wgpu::RenderPipeline,
     pub pipeline_obj_ventana: wgpu::RenderPipeline,
     pub pipeline_comp: wgpu::RenderPipeline,
@@ -1018,8 +1063,8 @@ pub struct PpuNativaPipeline {
     pub quad_buffer: wgpu::Buffer,
     pub vram_buffer: wgpu::Buffer,
     pub palette_buffer: wgpu::Buffer,
-    pub config_capa_buffer: wgpu::Buffer,
-    pub config_comp_buffer: wgpu::Buffer,
+    pub filas_capa_buffer: wgpu::Buffer,
+    pub filas_comp_buffer: wgpu::Buffer,
     pub sprites_buffer: wgpu::Buffer,
     pub sprites_ventana_buffer: wgpu::Buffer,
     /// Geometría de cada sprite para la etapa de vértices: llega como
@@ -1028,10 +1073,6 @@ pub struct PpuNativaPipeline {
     pub sprites_instancia_buffer: wgpu::Buffer,
     pub sprites_instancia_ventana_buffer: wgpu::Buffer,
 
-    /// Texturas del G-buffer: una por fondo, con el color de 15 bits de cada
-    /// píxel.
-    pub tex_capa: [wgpu::Texture; 4],
-    pub vista_capa: [wgpu::TextureView; 4],
     /// Capa de sprites: color, prioridad, semitransparencia y presencia.
     pub tex_obj: wgpu::Texture,
     pub vista_obj: wgpu::TextureView,
@@ -1044,42 +1085,17 @@ pub struct PpuNativaPipeline {
     pub tex_profundidad: wgpu::Texture,
     pub vista_profundidad: wgpu::TextureView,
 
-    pub grupo_capa: wgpu::BindGroup,
     pub grupo_obj: wgpu::BindGroup,
     pub grupo_obj_ventana: wgpu::BindGroup,
     pub grupo_comp: wgpu::BindGroup,
 
-    staging_palette: Box<[u32; 512]>,
+    staging_palette: Box<[[u32; 512]; 160]>,
+    staging_filas_capa: Box<[ConfigCapaGpu; 160]>,
+    staging_filas_comp: Box<[ConfigCompGpu; 160]>,
     staging_sprites: Box<[SpriteNativa; MAX_SPRITES]>,
     staging_sprites_ventana: Box<[SpriteNativa; MAX_SPRITES]>,
     staging_sprites_instancia: Box<[SpriteInstanciaGpu; MAX_SPRITES]>,
     staging_sprites_instancia_ventana: Box<[SpriteInstanciaGpu; MAX_SPRITES]>,
-}
-
-/// Etiquetas estáticas de las cuatro texturas de capa.
-const ETIQUETAS_CAPA: [&str; 4] = [
-    "ppu-nativa-capa-0",
-    "ppu-nativa-capa-1",
-    "ppu-nativa-capa-2",
-    "ppu-nativa-capa-3",
-];
-
-/// Descriptor de una textura del G-buffer de fondos (un canal de 16 bits).
-fn textura_capa(label: &'static str) -> wgpu::TextureDescriptor<'static> {
-    wgpu::TextureDescriptor {
-        label: Some(label),
-        size: wgpu::Extent3d {
-            width: GBA_SCREEN_W,
-            height: GBA_SCREEN_H,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::R16Uint,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    }
 }
 
 /// Entrada de layout para un búfer de solo lectura.
@@ -1089,20 +1105,6 @@ fn entrada_storage(binding: u32, visibilidad: wgpu::ShaderStages) -> wgpu::BindG
         visibility: visibilidad,
         ty: wgpu::BindingType::Buffer {
             ty: wgpu::BufferBindingType::Storage { read_only: true },
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-        count: None,
-    }
-}
-
-/// Entrada de layout para un búfer uniforme.
-fn entrada_uniforme(binding: u32, visibilidad: wgpu::ShaderStages) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: visibilidad,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Uniform,
             has_dynamic_offset: false,
             min_binding_size: None,
         },
@@ -1124,15 +1126,6 @@ fn entrada_textura(binding: u32) -> wgpu::BindGroupLayoutEntry {
     }
 }
 
-/// Entradas del layout de enlaces de la pasada de capas.
-fn entradas_bgl_capa() -> [wgpu::BindGroupLayoutEntry; 3] {
-    [
-        entrada_storage(BINDING_VRAM, wgpu::ShaderStages::FRAGMENT),
-        entrada_storage(BINDING_PALETA, wgpu::ShaderStages::FRAGMENT),
-        entrada_uniforme(BINDING_CONFIG_CAPA, wgpu::ShaderStages::FRAGMENT),
-    ]
-}
-
 /// Entradas del layout de enlaces de la pasada de sprites.
 ///
 /// La lista de sprites se declara **solo para la etapa de fragmento**: verla
@@ -1143,7 +1136,7 @@ fn entradas_bgl_obj() -> [wgpu::BindGroupLayoutEntry; 4] {
     [
         entrada_storage(BINDING_VRAM, wgpu::ShaderStages::FRAGMENT),
         entrada_storage(BINDING_PALETA, wgpu::ShaderStages::FRAGMENT),
-        entrada_uniforme(BINDING_CONFIG_CAPA, wgpu::ShaderStages::FRAGMENT),
+        entrada_storage(BINDING_FILAS_CAPA, wgpu::ShaderStages::FRAGMENT),
         entrada_storage(BINDING_SPRITES, wgpu::ShaderStages::FRAGMENT),
     ]
 }
@@ -1155,20 +1148,18 @@ fn entradas_bgl_obj() -> [wgpu::BindGroupLayoutEntry; 4] {
 fn entradas_bgl_obj_ventana() -> [wgpu::BindGroupLayoutEntry; 3] {
     [
         entrada_storage(BINDING_VRAM, wgpu::ShaderStages::FRAGMENT),
-        entrada_uniforme(BINDING_CONFIG_CAPA, wgpu::ShaderStages::FRAGMENT),
+        entrada_storage(BINDING_FILAS_CAPA, wgpu::ShaderStages::FRAGMENT),
         entrada_storage(BINDING_SPRITES, wgpu::ShaderStages::FRAGMENT),
     ]
 }
 
 /// Entradas del layout de enlaces de la pasada de composición.
-fn entradas_bgl_comp() -> [wgpu::BindGroupLayoutEntry; 8] {
+fn entradas_bgl_comp() -> [wgpu::BindGroupLayoutEntry; 6] {
     [
+        entrada_storage(BINDING_VRAM, wgpu::ShaderStages::FRAGMENT),
         entrada_storage(BINDING_PALETA, wgpu::ShaderStages::FRAGMENT),
-        entrada_uniforme(BINDING_CONFIG_COMP, wgpu::ShaderStages::FRAGMENT),
-        entrada_textura(BINDING_TEX_CAPA0),
-        entrada_textura(BINDING_TEX_CAPA0 + 1),
-        entrada_textura(BINDING_TEX_CAPA0 + 2),
-        entrada_textura(BINDING_TEX_CAPA0 + 3),
+        entrada_storage(BINDING_FILAS_CAPA, wgpu::ShaderStages::FRAGMENT),
+        entrada_storage(BINDING_FILAS_COMP, wgpu::ShaderStages::FRAGMENT),
         entrada_textura(BINDING_TEX_OBJ),
         entrada_textura(BINDING_TEX_OBJ_VENTANA),
     ]
@@ -1217,13 +1208,7 @@ impl PpuNativaPipeline {
             source: wgpu::ShaderSource::Wgsl(PPU_NATIVA_WGSL.into()),
         });
 
-        // --- Texturas del G-buffer ---
-        let tex_capa: [wgpu::Texture; 4] = std::array::from_fn(|i| {
-            device.create_texture(&textura_capa(ETIQUETAS_CAPA[i]))
-        });
-        let vista_capa: [wgpu::TextureView; 4] =
-            std::array::from_fn(|i| tex_capa[i].create_view(&wgpu::TextureViewDescriptor::default()));
-
+        // --- Texturas del G-buffer de sprites ---
         let tex_obj = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("ppu-nativa-obj"),
             size: wgpu::Extent3d {
@@ -1291,19 +1276,15 @@ impl PpuNativaPipeline {
             })
         };
         let vram_buffer = storage("ppu-nativa-vram", 96 * 1024);
-        let palette_buffer = storage("ppu-nativa-palette", 512 * 4);
-        let config_capa_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("ppu-nativa-config-capa"),
-            size: std::mem::size_of::<ConfigCapaGpu>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let config_comp_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("ppu-nativa-config-comp"),
-            size: std::mem::size_of::<ConfigCompGpu>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let palette_buffer = storage("ppu-nativa-palette", (160 * 512 * 4) as u64);
+        let filas_capa_buffer = storage(
+            "ppu-nativa-filas-capa",
+            (std::mem::size_of::<ConfigCapaGpu>() * 160) as u64,
+        );
+        let filas_comp_buffer = storage(
+            "ppu-nativa-filas-comp",
+            (std::mem::size_of::<ConfigCompGpu>() * 160) as u64,
+        );
         let sprites_buffer = storage(
             "ppu-nativa-sprites",
             (std::mem::size_of::<SpriteNativa>() * MAX_SPRITES) as u64,
@@ -1312,9 +1293,6 @@ impl PpuNativaPipeline {
             "ppu-nativa-sprites-ventana",
             (std::mem::size_of::<SpriteNativa>() * MAX_SPRITES) as u64,
         );
-        // El vértice no puede leer la lista de sprites del *storage buffer* en
-        // dispositivos sin `VERTEX_STORAGE`: su geometría llega en un búfer de
-        // instancias, que es WebGPU básico.
         let sprites_instancia_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("ppu-nativa-sprites-instancia"),
             size: (std::mem::size_of::<SpriteInstanciaGpu>() * MAX_SPRITES) as u64,
@@ -1329,17 +1307,6 @@ impl PpuNativaPipeline {
         });
 
         // --- Layouts de enlaces ---
-        //
-        // Se declaran **explícitamente** en vez de dejar que `wgpu` los deduzca
-        // del shader: la deducción automática hace que cada pasada acepte solo
-        // los enlaces que su punto de entrada menciona, y un desajuste entre
-        // el shader y Rust se manifestaría como un error de validación
-        // confuso. Con el layout explícito, el grupo de enlaces y el shader
-        // dicen lo mismo desde el principio.
-        let bgl_capa = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("ppu-nativa-bgl-capa"),
-            entries: &entradas_bgl_capa(),
-        });
         let bgl_obj = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ppu-nativa-bgl-obj"),
             entries: &entradas_bgl_obj(),
@@ -1353,11 +1320,6 @@ impl PpuNativaPipeline {
             entries: &entradas_bgl_comp(),
         });
 
-        let pl_capa = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("ppu-nativa-pl-capa"),
-            bind_group_layouts: &[&bgl_capa],
-            push_constant_ranges: &[],
-        });
         let pl_obj = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("ppu-nativa-pl-obj"),
             bind_group_layouts: &[&bgl_obj],
@@ -1384,49 +1346,6 @@ impl PpuNativaPipeline {
                 format: wgpu::VertexFormat::Float32x2,
             }],
         };
-
-        let pipeline_capa = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("ppu-nativa-pipeline-capa"),
-            layout: Some(&pl_capa),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_quad"),
-                compilation_options: Default::default(),
-                buffers: &[layout_quad.clone()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_capa"),
-                compilation_options: Default::default(),
-                targets: &[
-                    Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::R16Uint,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }),
-                    Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::R16Uint,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }),
-                    Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::R16Uint,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }),
-                    Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::R16Uint,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }),
-                ],
-            }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
 
         let pipeline_obj = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("ppu-nativa-pipeline-obj"),
@@ -1512,27 +1431,6 @@ impl PpuNativaPipeline {
             cache: None,
         });
 
-        // --- Grupos de enlaces (uno por pipeline: cada uno usa un subconjunto
-        // distinto de los recursos) ---
-        let grupo_capa = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("ppu-nativa-grupo-capa"),
-            layout: &bgl_capa,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: BINDING_VRAM,
-                    resource: vram_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: BINDING_PALETA,
-                    resource: palette_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: BINDING_CONFIG_CAPA,
-                    resource: config_capa_buffer.as_entire_binding(),
-                },
-            ],
-        });
-
         let grupo_obj = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("ppu-nativa-grupo-obj"),
             layout: &bgl_obj,
@@ -1546,8 +1444,8 @@ impl PpuNativaPipeline {
                     resource: palette_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: BINDING_CONFIG_CAPA,
-                    resource: config_capa_buffer.as_entire_binding(),
+                    binding: BINDING_FILAS_CAPA,
+                    resource: filas_capa_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: BINDING_SPRITES,
@@ -1565,8 +1463,8 @@ impl PpuNativaPipeline {
                     resource: vram_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: BINDING_CONFIG_CAPA,
-                    resource: config_capa_buffer.as_entire_binding(),
+                    binding: BINDING_FILAS_CAPA,
+                    resource: filas_capa_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: BINDING_SPRITES,
@@ -1580,28 +1478,20 @@ impl PpuNativaPipeline {
             layout: &bgl_comp,
             entries: &[
                 wgpu::BindGroupEntry {
+                    binding: BINDING_VRAM,
+                    resource: vram_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
                     binding: BINDING_PALETA,
                     resource: palette_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: BINDING_CONFIG_COMP,
-                    resource: config_comp_buffer.as_entire_binding(),
+                    binding: BINDING_FILAS_CAPA,
+                    resource: filas_capa_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
-                    binding: BINDING_TEX_CAPA0,
-                    resource: wgpu::BindingResource::TextureView(&vista_capa[0]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: BINDING_TEX_CAPA0 + 1,
-                    resource: wgpu::BindingResource::TextureView(&vista_capa[1]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: BINDING_TEX_CAPA0 + 2,
-                    resource: wgpu::BindingResource::TextureView(&vista_capa[2]),
-                },
-                wgpu::BindGroupEntry {
-                    binding: BINDING_TEX_CAPA0 + 3,
-                    resource: wgpu::BindingResource::TextureView(&vista_capa[3]),
+                    binding: BINDING_FILAS_COMP,
+                    resource: filas_comp_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: BINDING_TEX_OBJ,
@@ -1616,32 +1506,30 @@ impl PpuNativaPipeline {
 
         Self {
             estado: EstadoPpuNativa::new(),
-            pipeline_capa,
             pipeline_obj,
             pipeline_obj_ventana,
             pipeline_comp,
             quad_buffer,
             vram_buffer,
             palette_buffer,
-            config_capa_buffer,
-            config_comp_buffer,
+            filas_capa_buffer,
+            filas_comp_buffer,
             sprites_buffer,
             sprites_ventana_buffer,
             sprites_instancia_buffer,
             sprites_instancia_ventana_buffer,
-            tex_capa,
-            vista_capa,
             tex_obj,
             vista_obj,
             tex_obj_ventana,
             vista_obj_ventana,
             tex_profundidad,
             vista_profundidad,
-            grupo_capa,
             grupo_obj,
             grupo_obj_ventana,
             grupo_comp,
-            staging_palette: Box::new([0u32; 512]),
+            staging_palette: Box::new([[0u32; 512]; 160]),
+            staging_filas_capa: Box::new([ConfigCapaGpu::default(); 160]),
+            staging_filas_comp: Box::new([ConfigCompGpu::default(); 160]),
             staging_sprites: Box::new([SpriteNativa::default(); MAX_SPRITES]),
             staging_sprites_ventana: Box::new([SpriteNativa::default(); MAX_SPRITES]),
             staging_sprites_instancia: Box::new([SpriteInstanciaGpu::default(); MAX_SPRITES]),
@@ -1649,7 +1537,7 @@ impl PpuNativaPipeline {
         }
     }
 
-    /// Dibuja un cuadro completo en la vista de textura destino.
+    /// Dibuja un cuadro completo en la vista de textura destino usando un único I/O.
     pub fn render_frame(
         &mut self,
         device: &wgpu::Device,
@@ -1660,39 +1548,66 @@ impl PpuNativaPipeline {
         palette: &[u8],
         io: &[u8],
     ) {
+        self.render_frame_lineas(device, queue, target_view, vram, oam, palette, io, None, None);
+    }
+
+    /// Dibuja un cuadro completo en la vista de textura destino, recibiendo opcionalmente
+    /// los registros I/O y las paletas capturadas en cada una de las 160 líneas activas.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_frame_lineas(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target_view: &wgpu::TextureView,
+        vram: &[u8],
+        oam: &[u8],
+        palette: &[u8],
+        io_fin: &[u8],
+        io_lineas: Option<&[[u8; 0x60]; 160]>,
+        paleta_lineas: Option<&[[u8; 1024]; 160]>,
+    ) {
         // 1. Decodificación del estado del cuadro.
-        self.estado.decode_io_regs(io);
+        self.estado.decode_io_regs(io_fin);
         self.estado.decode_oam(oam);
 
-        // 2. Paleta: los 512 colores RGB555, enmascarados a 15 bits como hace
-        //    la referencia al leerlos.
-        {
-            let staging = &mut self.staging_palette;
-            for (i, slot) in staging.iter_mut().enumerate() {
-                let off = i * 2;
-                *slot = if palette.len() >= off + 2 {
-                    u16::from_le_bytes([palette[off], palette[off + 1]]) & 0x7FFF
-                } else {
-                    0
-                } as u32;
+        // 2. Paleta: tabla vertical de 160 líneas x 512 colores RGB555 enmascarados a 15 bits.
+        match paleta_lineas {
+            Some(lineas) => {
+                EstadoPpuNativa::decodificar_paletas_linea(lineas, &mut self.staging_palette);
             }
-            queue.write_buffer(&self.palette_buffer, 0, bytemuck::cast_slice(&staging[..]));
+            None => {
+                EstadoPpuNativa::decodificar_paleta_uniforme(palette, &mut self.staging_palette);
+            }
         }
+        queue.write_buffer(&self.palette_buffer, 0, bytemuck::cast_slice(&self.staging_palette[..]));
 
         // 3. VRAM completa (96 KB).
         let vram_len = (96 * 1024).min(vram.len());
         queue.write_buffer(&self.vram_buffer, 0, bytemuck::cast_slice(&vram[..vram_len]));
 
-        // 4. Configuración de las pasadas.
+        // 4. Configuración de capas y composición por línea (160 filas).
+        match io_lineas {
+            Some(lineas) => {
+                let (capas, comps) = EstadoPpuNativa::decodificar_lineas(lineas);
+                self.staging_filas_capa.copy_from_slice(&capas);
+                self.staging_filas_comp.copy_from_slice(&comps);
+            }
+            None => {
+                let cfg_capa = self.estado.config_capa();
+                let cfg_comp = self.estado.config_comp();
+                self.staging_filas_capa.fill(cfg_capa);
+                self.staging_filas_comp.fill(cfg_comp);
+            }
+        }
         queue.write_buffer(
-            &self.config_capa_buffer,
+            &self.filas_capa_buffer,
             0,
-            bytemuck::bytes_of(&self.estado.config_capa()),
+            bytemuck::cast_slice(&self.staging_filas_capa[..]),
         );
         queue.write_buffer(
-            &self.config_comp_buffer,
+            &self.filas_comp_buffer,
             0,
-            bytemuck::bytes_of(&self.estado.config_comp()),
+            bytemuck::cast_slice(&self.staging_filas_comp[..]),
         );
 
         // 5. Sprites.
@@ -1746,64 +1661,9 @@ impl PpuNativaPipeline {
             label: Some("ppu-nativa-encoder"),
         });
 
-        // 7. Pasada de capas: los cuatro fondos, cada uno a su textura.
+        // 7. Pasada de sprites: se limpia SIEMPRE la textura de color y profundidad.
+        //    Solo dibuja geometría si num_sprites > 0.
         {
-            let attachments = [
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &self.vista_capa[0],
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                }),
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &self.vista_capa[1],
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                }),
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &self.vista_capa[2],
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                }),
-                Some(wgpu::RenderPassColorAttachment {
-                    view: &self.vista_capa[3],
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                }),
-            ];
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("ppu-nativa-pasada-capa"),
-                color_attachments: &attachments,
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_pipeline(&self.pipeline_capa);
-            pass.set_bind_group(0, &self.grupo_capa, &[]);
-            pass.set_vertex_buffer(0, self.quad_buffer.slice(..));
-            pass.draw(0..6, 0..1);
-        }
-
-        // 8. Pasada de sprites: el color del sprite que gana en cada píxel.
-        //    La prueba de profundidad resuelve la prioridad sin depender del
-        //    orden de dibujado: gana el sprite con menor número de prioridad y,
-        //    a igualdad, el de menor índice de OAM.
-        if self.estado.num_sprites > 0 {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ppu-nativa-pasada-obj"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1826,16 +1686,18 @@ impl PpuNativaPipeline {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            pass.set_pipeline(&self.pipeline_obj);
-            pass.set_bind_group(0, &self.grupo_obj, &[]);
-            pass.set_vertex_buffer(0, self.quad_buffer.slice(..));
-            pass.set_vertex_buffer(1, self.sprites_instancia_buffer.slice(..));
-            pass.draw(0..6, 0..self.estado.num_sprites as u32);
+            if self.estado.num_sprites > 0 {
+                pass.set_pipeline(&self.pipeline_obj);
+                pass.set_bind_group(0, &self.grupo_obj, &[]);
+                pass.set_vertex_buffer(0, self.quad_buffer.slice(..));
+                pass.set_vertex_buffer(1, self.sprites_instancia_buffer.slice(..));
+                pass.draw(0..6, 0..self.estado.num_sprites as u32);
+            }
         }
 
-        // 9. Pasada de la ventana OBJ: la máscara de píxeles cubiertos por un
-        //    sprite en modo ventana.
-        if self.estado.num_sprites_ventana > 0 {
+        // 8. Pasada de la ventana OBJ: se limpia SIEMPRE la máscara.
+        //    Solo dibuja geometría si num_sprites_ventana > 0.
+        {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ppu-nativa-pasada-obj-ventana"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1851,14 +1713,17 @@ impl PpuNativaPipeline {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            pass.set_pipeline(&self.pipeline_obj_ventana);
-            pass.set_bind_group(0, &self.grupo_obj_ventana, &[]);
-            pass.set_vertex_buffer(0, self.quad_buffer.slice(..));
-            pass.set_vertex_buffer(1, self.sprites_instancia_ventana_buffer.slice(..));
-            pass.draw(0..6, 0..self.estado.num_sprites_ventana as u32);
+            if self.estado.num_sprites_ventana > 0 {
+                pass.set_pipeline(&self.pipeline_obj_ventana);
+                pass.set_bind_group(0, &self.grupo_obj_ventana, &[]);
+                pass.set_vertex_buffer(0, self.quad_buffer.slice(..));
+                pass.set_vertex_buffer(1, self.sprites_instancia_ventana_buffer.slice(..));
+                pass.draw(0..6, 0..self.estado.num_sprites_ventana as u32);
+            }
         }
 
-        // 10. Pasada de composición: el píxel final.
+        // 9. Pasada de composición: fondos evaluados perezosamente y combinados
+        //    con sprites en una única pasada 2D paralela.
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ppu-nativa-pasada-comp"),

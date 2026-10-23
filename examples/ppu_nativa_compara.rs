@@ -26,7 +26,9 @@
 //!   cuadro 5300), no de la lógica de dibujo. Quedan fuera del alcance de esta
 //!   fase y son el objeto de la fase 1b.
 //!
-//! Escribe `volcados/ppu-nativa-<N>.txt`.
+//! Escribe `volcados/ppu-nativa-<N>.txt`. Si la nativa difiere de alguna de las dos
+//! referencias, escribe además `volcados/diferencias/cuadro-<N>-<fin|linea>.png` (una imagen
+//! compuesta por caso) y cierra el informe con el diagnóstico causal.
 //!
 //! Uso:
 //!   cargo run --release --features proto --example ppu_nativa_compara -- <ruta.gba> <secuencia.txt> <cuadro>
@@ -34,9 +36,26 @@
 #[path = "comun/mod.rs"]
 mod comun;
 
-use comun::color::{canal_8bit, cerca_pixel};
+use comun::color::{canal_8bit, cerca_pixel, software_a_rgb};
+use comun::diagnostico::{self, EstadoRef};
 use comun::entrada::leer_secuencia;
 use comun::gpu::{ALTO, ANCHO, Gpu};
+
+/// Dibuja las 160 líneas con la PPU por software y un mismo estado en todas.
+fn render_estado(rom: &[u8], vram: &[u8], oam: &[u8], pal: &[u8], io: &[u8]) -> Vec<u16> {
+    let mut replay = gba_core::Machine::new(rom.to_vec());
+    replay.bus.palette = pal.to_vec();
+    replay.bus.vram = vram.to_vec();
+    replay.bus.oam = oam.to_vec();
+    replay.bus.io = io.to_vec();
+    let mut img = vec![0u16; ANCHO * ALTO];
+    for l in 0..ALTO {
+        gba_core::ppu::render_scanline(&mut replay.bus, l);
+        let ini = l * ANCHO;
+        img[ini..ini + ANCHO].copy_from_slice(&replay.bus.framebuffer[ini..ini + ANCHO]);
+    }
+    img
+}
 
 fn rgb8(c: u16) -> [u8; 3] {
     [
@@ -173,7 +192,7 @@ fn main() {
     // de dibujo está mal" de "el estado por línea difiere".
     let mut ppu_fin = vec![0u16; n];
     {
-        let mut replay_fin = gba_core::Machine::new(rom);
+        let mut replay_fin = gba_core::Machine::new(rom.clone());
         replay_fin.bus.palette = pal_fin.clone();
         replay_fin.bus.vram = vram_fin.clone();
         replay_fin.bus.oam = oam_fin.clone();
@@ -276,6 +295,57 @@ fn main() {
         "detalle por linea:".to_string(),
     ];
     lineas.extend(detalle);
+
+    // Captura visual bajo demanda: una imagen compuesta por caso, sólo si difiere.
+    let sw_fin_rgb = software_a_rgb(&ppu_fin);
+    let sw_linea_rgb = software_a_rgb(&ppu);
+    let dir_capturas = std::path::Path::new("volcados/diferencias");
+    let mut escritas = Vec::new();
+    for (caso, sw) in [("fin", &sw_fin_rgb), ("linea", &sw_linea_rgb)] {
+        match diagnostico::guardar_captura_si_difiere(dir_capturas, objetivo, caso, sw, &nativa) {
+            Ok(Some(r)) => escritas.push(format!(
+                "  {caso}: {} ({} px, caja x{}-{} y{}-{})",
+                r.ruta.display(),
+                r.distintos,
+                r.caja.0,
+                r.caja.2,
+                r.caja.1,
+                r.caja.3
+            )),
+            Ok(None) => {}
+            Err(e) => {
+                eprintln!("no se pudo escribir la captura {caso}: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+    if escritas.is_empty() {
+        lineas.push("capturas generadas: ninguna (0 diferencias)".to_string());
+    } else {
+        lineas.push("capturas generadas:".to_string());
+        lineas.extend(escritas);
+    }
+
+    // Diagnóstico causal: estado a mitad de cuadro o fallo de dibujo (con ablación).
+    let fin_estado = EstadoRef { io: &io_fin, palette: &pal_fin, vram: &vram_fin, oam: &oam_fin };
+    let lineas_estado: Vec<EstadoRef> = capturas
+        .iter()
+        .map(|c| EstadoRef { io: &c.io, palette: &c.palette, vram: &c.vram, oam: &c.oam })
+        .collect();
+    let diag = diagnostico::diagnosticar(
+        &nativa,
+        &sw_fin_rgb,
+        &sw_linea_rgb,
+        fin_estado,
+        &lineas_estado,
+        |_, io_v| {
+            let nat_v = gpu.renderiza(&vram_fin, &oam_fin, &pal_fin, io_v);
+            let sw_v = software_a_rgb(&render_estado(&rom, &vram_fin, &oam_fin, &pal_fin, io_v));
+            diagnostico::cuenta_distintos(&nat_v, &sw_v)
+        },
+    );
+    lineas.push("diagnostico causal:".to_string());
+    lineas.extend(diag.informe().into_iter().map(|l| format!("  {l}")));
     for l in &lineas {
         println!("{l}");
     }

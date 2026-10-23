@@ -15,6 +15,7 @@
 #![allow(dead_code)]
 
 pub mod color;
+pub mod diagnostico;
 pub mod entrada;
 pub mod gpu;
 pub mod registro;

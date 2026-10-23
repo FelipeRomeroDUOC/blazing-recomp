@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: reescribe-aviso-matricula
+expected_outcome: |
+  Aviso reescrito con la acción y el plazo (matricularse antes del día 15) al inicio, frases cortas, sin fórmulas burocráticas, con todos los datos originales y sin inventar información.

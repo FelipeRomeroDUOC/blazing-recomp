@@ -976,7 +976,7 @@ impl Compositor {
         let is_gpu = if es_nativa {
             let ppu = ppu_state.unwrap();
             let nativa = self.ppu_nativa.as_mut().unwrap();
-            nativa.render_frame(
+            nativa.render_frame_lineas(
                 &self.device,
                 &self.queue,
                 &self.game_texture_view,
@@ -984,6 +984,8 @@ impl Compositor {
                 &ppu.oam[..],
                 &ppu.palette[..],
                 &ppu.io[..],
+                Some(&ppu.io_lineas),
+                Some(&ppu.paleta_lineas),
             );
             true
         } else if use_gpu_shim {
@@ -1682,7 +1684,7 @@ impl AppState {
             None,
             self.waker.clone(),
         );
-        worker.bridge().set_gpu_ppu_enabled(true);
+        worker.bridge().set_gpu_ppu_enabled(self.ppu_nativa_activa && !FORZAR_PPU_SOFTWARE);
         log::info!("Hardware Shim PPU (GPU) activado en EmulationWorker");
         self.worker = Some(worker);
     }
@@ -1813,6 +1815,9 @@ impl AppState {
             return;
         }
         self.ppu_nativa_activa = activa;
+        if let Some(worker) = &self.worker {
+            worker.bridge().set_gpu_ppu_enabled(activa && !FORZAR_PPU_SOFTWARE);
+        }
         if activa {
             log::info!("PPU nativa: ACTIVADA (marca de apagado retirada)");
         } else {

@@ -21,7 +21,7 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | [`error_screen.rs`](#módulo-error_screenrs) | 4 | Renderizador de pantalla de error por software y blindaje de GPU. |
 | [`platform.rs`](#módulo-platformrs) | 2 | Plataforma Android (solo compila con `cfg(target_os = "android")`): |
 | [`storage.rs`](#módulo-storagers) | 14 | Módulo interno del port. |
-| [`runner.rs`](#módulo-runnerrs) | 23 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
+| [`runner.rs`](#módulo-runnerrs) | 25 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
 | [`recomp.rs`](#módulo-recomprs) | 30 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
 | [`fps.rs`](#módulo-fpsrs) | 18 | Contador de FPS y generador de HUD visual en pantalla. |
 | [`telemetria.rs`](#módulo-telemetriars) | 13 | Contrato de la línea de segundo (`t=`) de la telemetría de rendimiento. |
@@ -762,6 +762,24 @@ Indica si el renderizado PPU Shim en GPU esta activo.
 **Firma:**
 ```rust
 pub fn is_gpu_ppu_enabled(&self) -> bool
+```
+
+### `io_lineas` (Función)
+
+Registros de E/S capturados por scanline (0..160).
+
+**Firma:**
+```rust
+pub fn io_lineas(&self) -> &[[u8; 0x60]; 160]
+```
+
+### `paleta_lineas` (Función)
+
+Paleta capturada por scanline (0..160).
+
+**Firma:**
+```rust
+pub fn paleta_lineas(&self) -> &[[u8; 1024]; 160]
 ```
 
 ### `vram` (Función)

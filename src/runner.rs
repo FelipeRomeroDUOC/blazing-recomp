@@ -114,12 +114,26 @@ impl GameRunner {
     #[inline]
     pub fn set_gpu_ppu_enabled(&mut self, enabled: bool) {
         self.gpu_ppu_enabled = enabled;
+        self.machine.bus.omitir_ppu_software = enabled;
+        self.machine.bus.capturar_lut_ligera = enabled;
     }
 
     /// Indica si el renderizado PPU Shim en GPU esta activo.
     #[inline]
     pub fn is_gpu_ppu_enabled(&self) -> bool {
         self.gpu_ppu_enabled
+    }
+
+    /// Registros de E/S capturados por scanline (0..160).
+    #[inline]
+    pub fn io_lineas(&self) -> &[[u8; 0x60]; 160] {
+        &self.machine.bus.io_lineas
+    }
+
+    /// Paleta capturada por scanline (0..160).
+    #[inline]
+    pub fn paleta_lineas(&self) -> &[[u8; 1024]; 160] {
+        &self.machine.bus.paleta_lineas
     }
 
     /// Referencia a la VRAM de la GBA (96 KB).
@@ -197,11 +211,15 @@ impl GameRunner {
         let apu_ms = (hw.apu_ns as f64) / 1_000_000.0;
 
         if self.machine.bus.frame_ready {
-            let t2 = std::time::Instant::now();
-            self.temporal.push(&self.machine.bus.framebuffer, &self.lut);
-            self.temporal.compose(&self.lut, &mut self.rgba);
-            let t3 = std::time::Instant::now();
-            let color_ms = t3.duration_since(t2).as_secs_f64() * 1000.0;
+            let color_ms = if self.gpu_ppu_enabled {
+                0.0
+            } else {
+                let t2 = std::time::Instant::now();
+                self.temporal.push(&self.machine.bus.framebuffer, &self.lut);
+                self.temporal.compose(&self.lut, &mut self.rgba);
+                let t3 = std::time::Instant::now();
+                t3.duration_since(t2).as_secs_f64() * 1000.0
+            };
 
             self.last_timing = StepTiming {
                 ejec_ms,

@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: revisa-correo-vacaciones
+expected_outcome: |
+  Revisión que evalúa los cuatro principios, detecta que falta la fecha de cierre sin inventarla, señala expresiones concretas del texto, propone una versión mejorada con la acción principal al inicio y aclara que aplica los principios sin afirmar conformidad formal.

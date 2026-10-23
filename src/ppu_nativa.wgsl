@@ -78,17 +78,11 @@ struct SpriteNativa {
 
 @group(0) @binding(0) var<storage, read> vram: array<u32>;
 @group(0) @binding(1) var<storage, read> paleta: array<u32>;
-@group(0) @binding(2) var<uniform> config_capa: ConfigCapa;
-// Solo la etapa de fragmento lee esta lista (paleta, mezcla y afín). La
-// geometría que necesita el vértice va en el búfer de instancias.
+@group(0) @binding(2) var<storage, read> filas_capa: array<ConfigCapa>;
 @group(0) @binding(3) var<storage, read> sprites: array<SpriteNativa>;
-@group(0) @binding(4) var<uniform> config_comp: ConfigComp;
-@group(0) @binding(5) var tex_capa0: texture_2d<u32>;
-@group(0) @binding(6) var tex_capa1: texture_2d<u32>;
-@group(0) @binding(7) var tex_capa2: texture_2d<u32>;
-@group(0) @binding(8) var tex_capa3: texture_2d<u32>;
-@group(0) @binding(9) var tex_obj: texture_2d<u32>;
-@group(0) @binding(10) var tex_obj_ventana: texture_2d<u32>;
+@group(0) @binding(4) var<storage, read> filas_comp: array<ConfigComp>;
+@group(0) @binding(5) var tex_obj: texture_2d<u32>;
+@group(0) @binding(6) var tex_obj_ventana: texture_2d<u32>;
 
 // Bandera: sprite que se descarta (solapa con un fondo bitmap).
 const FLAG_HFLIP: u32 = 1u;
@@ -136,9 +130,9 @@ fn alpha_blend(a: u32, b: u32, eva: u32, evb: u32) -> u32 {
 fn brighten(c: u32, evy: u32) -> u32 {
     let x = split6(c);
     return join6(
-        x.r + ((31u - x.r) * evy + 8u) >> 4u,
-        x.g + ((63u - x.g) * evy + 8u) >> 4u,
-        x.b + ((31u - x.b) * evy + 8u) >> 4u,
+        x.r + (((31u - x.r) * evy + 8u) >> 4u),
+        x.g + (((63u - x.g) * evy + 8u) >> 4u),
+        x.b + (((31u - x.b) * evy + 8u) >> 4u),
     );
 }
 
@@ -217,7 +211,7 @@ fn color_capa_afin(c: CapaFondo, px: u32, py: u32) -> u32 {
     if (idx == 0u) {
         return 0xFFFFu;
     }
-    return paleta[idx];
+    return paleta[py * 512u + idx];
 }
 
 // ===========================================================================
@@ -274,7 +268,7 @@ fn color_capa(c: CapaFondo, px: u32, py: u32) -> u32 {
         if (idx == 0u) {
             return 0xFFFFu;
         }
-        return paleta[idx];
+        return paleta[py * 512u + idx];
     }
 
     let addr = c.char_base + tile * 32u + fy * 4u;
@@ -290,7 +284,7 @@ fn color_capa(c: CapaFondo, px: u32, py: u32) -> u32 {
         return 0xFFFFu;
     }
     let pal_base = ((entry >> 12u) & 0x0Fu) * 16u;
-    return paleta[pal_base + nib];
+    return paleta[py * 512u + pal_base + nib];
 }
 
 // ===========================================================================
@@ -346,7 +340,8 @@ fn indice_paleta_obj(s: SpriteNativa, px: i32, py: i32) -> u32 {
     let tile = i32(s.base_tile) + tv * row_tiles + tu * tile_step;
 
     // En los modos bitmap los primeros 512 tiles se solapan con el bitmap.
-    if (config_capa.modo >= 3u && tile < 512) {
+    let py_clamped = u32(clamp(py, 0, 159));
+    if (filas_capa[py_clamped].modo >= 3u && tile < 512) {
         return 0u;
     }
 
@@ -422,28 +417,6 @@ fn vs_obj(
     return out;
 }
 
-// ===========================================================================
-// Pasada de capas
-// ===========================================================================
-
-struct SalidaCapa {
-    @location(0) c0: u32,
-    @location(1) c1: u32,
-    @location(2) c2: u32,
-    @location(3) c3: u32,
-};
-
-@fragment
-fn fs_capa(in: SalidaQuad) -> SalidaCapa {
-    let px = u32(floor(in.clip.x));
-    let py = u32(floor(in.clip.y));
-    var out: SalidaCapa;
-    out.c0 = color_capa(config_capa.capas[0], px, py);
-    out.c1 = color_capa(config_capa.capas[1], px, py);
-    out.c2 = color_capa(config_capa.capas[2], px, py);
-    out.c3 = color_capa(config_capa.capas[3], px, py);
-    return out;
-}
 
 // ===========================================================================
 // Pasada de sprites
@@ -459,7 +432,8 @@ fn fs_obj(in: SalidaObj) -> @location(0) vec4<u32> {
         discard;
     }
     let semi = select(0u, 1u, (s.flags & FLAG_SEMI) != 0u);
-    return vec4<u32>(paleta[pal], s.prioridad, semi, 0xFFFFu);
+    let upy = u32(clamp(py, 0, 159));
+    return vec4<u32>(paleta[upy * 512u + pal], s.prioridad, semi, 0xFFFFu);
 }
 
 @fragment
@@ -491,23 +465,22 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
     let px = i32(floor(in.clip.x));
     let py = i32(floor(in.clip.y));
     let coord = vec2<i32>(px, py);
+    let upy = u32(clamp(py, 0, 159));
+    let upx = u32(clamp(px, 0, 239));
+
+    let cfg_comp = filas_comp[upy];
+    let cfg_capa = filas_capa[upy];
 
     // Pantalla en blanco (DISPCNT bit 7).
-    if ((config_comp.dispcnt & 0x80u) != 0u) {
+    if ((cfg_comp.dispcnt & 0x80u) != 0u) {
         return vec4<f32>(1.0, 1.0, 1.0, 1.0);
     }
 
-    var bg = array<u32, 4>(
-        textureLoad(tex_capa0, coord, 0).r,
-        textureLoad(tex_capa1, coord, 0).r,
-        textureLoad(tex_capa2, coord, 0).r,
-        textureLoad(tex_capa3, coord, 0).r,
-    );
     var prio = array<u32, 4>(
-        config_comp.bg_prio0,
-        config_comp.bg_prio1,
-        config_comp.bg_prio2,
-        config_comp.bg_prio3,
+        cfg_comp.bg_prio0,
+        cfg_comp.bg_prio1,
+        cfg_comp.bg_prio2,
+        cfg_comp.bg_prio3,
     );
 
     let obj = textureLoad(tex_obj, coord, 0);
@@ -518,28 +491,28 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
     let obj_window = textureLoad(tex_obj_ventana, coord, 0).r != 0u;
 
     // --- Máscara de control del píxel ---
-    let win0_on = (config_comp.dispcnt & 0x2000u) != 0u;
-    let win1_on = (config_comp.dispcnt & 0x4000u) != 0u;
-    let objwin_on = (config_comp.dispcnt & 0x8000u) != 0u;
+    let win0_on = (cfg_comp.dispcnt & 0x2000u) != 0u;
+    let win1_on = (cfg_comp.dispcnt & 0x4000u) != 0u;
+    let objwin_on = (cfg_comp.dispcnt & 0x8000u) != 0u;
 
     var control: u32 = 0x3Fu;
     if (win0_on || win1_on || objwin_on) {
         let ux = u32(px);
         let uy = u32(py);
         let en_win0 = win0_on
-            && en_rango((config_comp.win0v >> 8u) & 0xFFu, config_comp.win0v & 0xFFu, uy)
-            && en_rango((config_comp.win0h >> 8u) & 0xFFu, config_comp.win0h & 0xFFu, ux);
+            && en_rango((cfg_comp.win0v >> 8u) & 0xFFu, cfg_comp.win0v & 0xFFu, uy)
+            && en_rango((cfg_comp.win0h >> 8u) & 0xFFu, cfg_comp.win0h & 0xFFu, ux);
         let en_win1 = win1_on
-            && en_rango((config_comp.win1v >> 8u) & 0xFFu, config_comp.win1v & 0xFFu, uy)
-            && en_rango((config_comp.win1h >> 8u) & 0xFFu, config_comp.win1h & 0xFFu, ux);
+            && en_rango((cfg_comp.win1v >> 8u) & 0xFFu, cfg_comp.win1v & 0xFFu, uy)
+            && en_rango((cfg_comp.win1h >> 8u) & 0xFFu, cfg_comp.win1h & 0xFFu, ux);
         if (en_win0) {
-            control = config_comp.winin & 0x3Fu;
+            control = cfg_comp.winin & 0x3Fu;
         } else if (en_win1) {
-            control = (config_comp.winin >> 8u) & 0x3Fu;
+            control = (cfg_comp.winin >> 8u) & 0x3Fu;
         } else if (objwin_on && obj_window) {
-            control = (config_comp.winout >> 8u) & 0x3Fu;
+            control = (cfg_comp.winout >> 8u) & 0x3Fu;
         } else {
-            control = config_comp.winout & 0x3Fu;
+            control = cfg_comp.winout & 0x3Fu;
         }
     }
 
@@ -574,7 +547,7 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
                 break;
             }
             if (prio[b] == p && (control & (1u << b)) != 0u) {
-                let c = bg[b];
+                let c = color_capa(cfg_capa.capas[b], upx, upy);
                 if (c != 0xFFFFu) {
                     if (!hay_primera) {
                         primera = c;
@@ -591,7 +564,7 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
         }
     }
 
-    let backdrop = paleta[0];
+    let backdrop = paleta[upy * 512u];
     if (!hay_primera) {
         primera = backdrop;
         primera_id = 5u;
@@ -602,20 +575,20 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
     }
 
     // --- Unidad de mezcla ---
-    let eva = min(16u, config_comp.bldalpha & 0x1Fu);
-    let evb = min(16u, (config_comp.bldalpha >> 8u) & 0x1Fu);
-    let evy = min(16u, config_comp.bldy & 0x1Fu);
-    let modo = (config_comp.bldcnt >> 6u) & 3u;
+    let eva = min(16u, cfg_comp.bldalpha & 0x1Fu);
+    let evb = min(16u, (cfg_comp.bldalpha >> 8u) & 0x1Fu);
+    let evy = min(16u, cfg_comp.bldy & 0x1Fu);
+    let modo = (cfg_comp.bldcnt >> 6u) & 3u;
     let efectos = (control & 0x20u) != 0u;
     let semi = obj_visible && primera_id == 4u && obj_semi;
 
     var color = primera;
-    if (semi && (config_comp.bldcnt & (0x100u << segunda_id)) != 0u) {
+    if (semi && (cfg_comp.bldcnt & (0x100u << segunda_id)) != 0u) {
         // Un sprite semitransparente fuerza el alfa contra el 2.º objetivo.
         color = alpha_blend(primera, segunda, eva, evb);
-    } else if (efectos && modo != 0u && (config_comp.bldcnt & (1u << primera_id)) != 0u) {
+    } else if (efectos && modo != 0u && (cfg_comp.bldcnt & (1u << primera_id)) != 0u) {
         if (modo == 1u) {
-            if ((config_comp.bldcnt & (0x100u << segunda_id)) != 0u) {
+            if ((cfg_comp.bldcnt & (0x100u << segunda_id)) != 0u) {
                 color = alpha_blend(primera, segunda, eva, evb);
             }
         } else if (modo == 2u) {

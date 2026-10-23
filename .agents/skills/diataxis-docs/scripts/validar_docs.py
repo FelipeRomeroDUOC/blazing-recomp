@@ -326,7 +326,7 @@ def paginas_markdown(docs_dir):
         partes = ruta.relative_to(docs_dir).parts
         if any(p.startswith(".") for p in partes):
             continue
-        if any(p in {"propuestas", "prototipos"} for p in partes):
+        if any(p in {"propuestas", "prototipos", "fuentes"} for p in partes):
             continue
         if ruta.name.lower() == "backlog.md":
             continue

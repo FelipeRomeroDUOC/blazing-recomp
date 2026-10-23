@@ -111,6 +111,7 @@ El repositorio cuenta con skills locales en [`.agents/skills/`](.agents/skills/)
     declara su estado en el bloque `>` de cabecera (`Estado:` / `Resultado:`).
   - **Prototipos (`docs/prototipos/`):** Bocetos HTML de trabajo referenciados desde las propuestas
     de overlay; material efímero, no documentación Diátaxis versionada como página de lectura.
+  - **Fuentes (`docs/fuentes/`):** Directorio de lectura donde residen las fuentes de verdad técnicas y teóricas del proyecto en formato Markdown (arquitectura de hardware, especificaciones de ISA, etc.). **Regla estricta:** Es de solo lectura para los agentes de IA, a menos que el desarrollador humano solicite explícitamente redactar o agregar una nueva fuente. No forma parte de los cuatro cuadrantes Diátaxis editables.
 - **Activación:** Siempre que se solicite documentar el proyecto, crear guías de instalación o despliegue para Android, documentar interfaces nativas, actualizar docs tras cambios de código o estructurar la carpeta `docs/`.
 
 ### 3. `explicar-codigo-documento`
@@ -127,7 +128,17 @@ El repositorio cuenta con skills locales en [`.agents/skills/`](.agents/skills/)
   - **Mutación:** Evaluación de la efectividad y resistencia de la suite de pruebas mediante mutantes.
 - **Activación:** Siempre que se solicite crear, ampliar o auditar pruebas, mejorar la cobertura de tests, diseñar fixtures o evaluar la solidez del sistema ante cambios.
 
-### 5. Pipeline Operativo al Modificar Código
+### 5. `lenguaje-claro-iso-24495` (Directriz Transversal de Comunicación)
+- **Definición:** [`.agents/skills/lenguaje-claro-iso-24495/SKILL.md`](.agents/skills/lenguaje-claro-iso-24495/SKILL.md)
+- **Propósito:** Garantizar que todas las comunicaciones, explicaciones, propuestas, respuestas en el chat y textos en español cumplan los principios de la norma ISO 24495-1 / UNE-ISO 24495-1: contenido pertinente, fácil de encontrar, fácil de comprender y fácil de usar.
+- **Regla transversal:** Aplica de forma obligatoria y predeterminada a toda interacción del agente:
+  - Ir directo al grano al inicio, sin fórmulas de relleno ni rodeos.
+  - Explicar términos técnicos solo cuando sea necesario para la persona lectora, preservando la exactitud del dominio.
+  - Ordenar cronológicamente las acciones y utilizar listas o tablas para facilitar la lectura visual rápida.
+  - Mantener la precisión técnica y el rigor sin sacrificar la claridad.
+- **Activación:** Siempre activa en todas las interacciones, propuestas, reportes y redacción en español.
+
+### 6. Pipeline Operativo al Modificar Código
 
 Todo agente que vaya a modificar, crear o refactorizar código en este repositorio debe ejecutar de forma obligatoria y secuencial este pipeline de 5 fases, encadenando las skills locales:
 
@@ -183,7 +194,7 @@ Todo agente que vaya a modificar, crear o refactorizar código en este repositor
 
 ---
 
-## 6. Notas y Reglas Personalizadas del Usuario
+## 7. Notas y Reglas Personalizadas del Usuario
 
 *(Espacio reservado para preferencias, decisiones de diseño y restricciones añadidas por el usuario durante el desarrollo)*
 

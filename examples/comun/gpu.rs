@@ -30,12 +30,27 @@ impl Backend {
         palette: &[u8],
         io: &[u8],
     ) {
+        self.render_frame_lineas(device, queue, vista, vram, oam, palette, io, None, None)
+    }
+
+    fn render_frame_lineas(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        vista: &wgpu::TextureView,
+        vram: &[u8],
+        oam: &[u8],
+        palette: &[u8],
+        io: &[u8],
+        io_lineas: Option<&[[u8; 0x60]; 160]>,
+        paleta_lineas: Option<&[[u8; 1024]; 160]>,
+    ) {
         match self {
             Backend::Shim(pipeline) => {
                 pipeline.render_frame(device, queue, vista, vram, oam, palette, io)
             }
             Backend::Nativa(pipeline) => {
-                pipeline.render_frame(device, queue, vista, vram, oam, palette, io)
+                pipeline.render_frame_lineas(device, queue, vista, vram, oam, palette, io, io_lineas, paleta_lineas)
             }
         }
     }
@@ -115,8 +130,21 @@ impl Gpu {
 
     /// Dibuja el cuadro con el estado dado y devuelve RGB de 8 bits sin relleno.
     pub fn renderiza(&mut self, vram: &[u8], oam: &[u8], palette: &[u8], io: &[u8]) -> Vec<u8> {
+        self.renderiza_con_lineas(vram, oam, palette, io, None, None)
+    }
+
+    /// Dibuja el cuadro permitiendo capturas de I/O y paleta por línea para la PPU nativa.
+    pub fn renderiza_con_lineas(
+        &mut self,
+        vram: &[u8],
+        oam: &[u8],
+        palette: &[u8],
+        io: &[u8],
+        io_lineas: Option<&[[u8; 0x60]; 160]>,
+        paleta_lineas: Option<&[[u8; 1024]; 160]>,
+    ) -> Vec<u8> {
         self.backend
-            .render_frame(&self.device, &self.queue, &self.vista, vram, oam, palette, io);
+            .render_frame_lineas(&self.device, &self.queue, &self.vista, vram, oam, palette, io, io_lineas, paleta_lineas);
 
         let mut codificador = self
             .device

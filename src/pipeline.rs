@@ -22,13 +22,17 @@ pub const GBA_PIXELS: usize = GBA_W * GBA_H;
 /// Duración exacta de un fotograma de GBA a 60 FPS (16.666 ms).
 pub const FRAME_DURATION: Duration = Duration::from_nanos(16_666_667);
 
-/// Estado de memoria de video para renderizado acelerado en GPU (PPU Shim).
+/// Estado de memoria de video para renderizado acelerado en GPU (PPU Shim y PPU Nativa).
 #[derive(Clone)]
 pub struct PpuFrameState {
     pub vram: Box<[u8; 96 * 1024]>,
     pub oam: Box<[u8; 1024]>,
     pub palette: Box<[u8; 1024]>,
     pub io: Box<[u8; 256]>,
+    /// Registros de vídeo I/O capturados en cada una de las 160 líneas activas.
+    pub io_lineas: Box<[[u8; 0x60]; 160]>,
+    /// Paleta capturada en cada una de las 160 líneas activas (para HBlank DMA sobre paletas).
+    pub paleta_lineas: Box<[[u8; 1024]; 160]>,
 }
 
 impl PpuFrameState {
@@ -38,6 +42,8 @@ impl PpuFrameState {
             oam: Box::new([0u8; 1024]),
             palette: Box::new([0u8; 1024]),
             io: Box::new([0u8; 256]),
+            io_lineas: Box::new([[0u8; 0x60]; 160]),
+            paleta_lineas: Box::new([[0u8; 1024]; 160]),
         }
     }
 }
@@ -343,8 +349,11 @@ impl EmulationWorker {
                     let is_native = runner.is_native();
 
                     // Búfer reciclado del pool: sin asignación dinámica por fotograma.
+                    // Búfer reciclado del pool: sin asignación dinámica por fotograma.
                     let mut buf = b_clone.acquire_buffer();
-                    buf.copy_from_slice(runner.frame_rgba());
+                    if !gpu_ppu {
+                        buf.copy_from_slice(runner.frame_rgba());
+                    }
 
                     let ppu_state = if gpu_ppu {
                         let mut state = b_clone.acquire_ppu_state();
@@ -354,6 +363,8 @@ impl EmulationWorker {
                         let io_slice = runner.io();
                         let io_len = io_slice.len().min(256);
                         state.io[..io_len].copy_from_slice(&io_slice[..io_len]);
+                        state.io_lineas.copy_from_slice(runner.io_lineas());
+                        state.paleta_lineas.copy_from_slice(runner.paleta_lineas());
                         Some(state)
                     } else {
                         None

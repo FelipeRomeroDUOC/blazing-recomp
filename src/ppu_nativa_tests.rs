@@ -714,8 +714,7 @@ fn el_guardian_informa_de_todos_los_errores_recogidos() {
 /// un error de validación de wgpu.
 #[test]
 fn ningun_storage_buffer_es_visible_en_la_etapa_de_vertices() {
-    let layouts: [(&str, Vec<wgpu::BindGroupLayoutEntry>); 4] = [
-        ("capa", super::entradas_bgl_capa().to_vec()),
+    let layouts: [(&str, Vec<wgpu::BindGroupLayoutEntry>); 3] = [
         ("obj", super::entradas_bgl_obj().to_vec()),
         ("obj-ventana", super::entradas_bgl_obj_ventana().to_vec()),
         ("comp", super::entradas_bgl_comp().to_vec()),
@@ -772,4 +771,67 @@ fn el_buffer_de_instancias_lleva_lo_que_el_vertices_necesita() {
     assert_eq!(clave.shader_location, 2);
     assert_eq!(clave.format, wgpu::VertexFormat::Uint32x2);
     assert_eq!(clave.offset, 16);
+}
+
+#[test]
+fn la_lut_vertical_conserva_scroll_y_mezcla_por_linea() {
+    let mut io_lineas = [[0u8; 0x60]; 160];
+
+    // Mitad superior (líneas 0..80): scroll Y = 0, BLDCNT = 0x0041 (mezcla alfa activa en BG0)
+    for io in io_lineas[0..80].iter_mut() {
+        // DISPCNT = 0x0100 (BG0 activo en modo 0)
+        io[0x00..0x02].copy_from_slice(&0x0100u16.to_le_bytes());
+        // BG0VOFS = 0
+        io[0x12..0x14].copy_from_slice(&0u16.to_le_bytes());
+        // BLDCNT = 0x0041
+        io[0x50..0x52].copy_from_slice(&0x0041u16.to_le_bytes());
+        // BLDALPHA = (8 << 8) | 8
+        io[0x52..0x54].copy_from_slice(&((8u16 << 8) | 8u16).to_le_bytes());
+    }
+
+    // Mitad inferior (líneas 80..160): scroll Y = 4, BLDCNT = 0 (sin efectos)
+    for io in io_lineas[80..160].iter_mut() {
+        io[0x00..0x02].copy_from_slice(&0x0100u16.to_le_bytes());
+        io[0x12..0x14].copy_from_slice(&4u16.to_le_bytes());
+        io[0x50..0x52].copy_from_slice(&0u16.to_le_bytes());
+    }
+
+    let (capas, comps) = EstadoPpuNativa::decodificar_lineas(&io_lineas);
+
+    // Verificar línea 20
+    assert_eq!(capas[20].capas[0].scroll_y, 0);
+    assert_eq!(comps[20].bldcnt, 0x0041);
+    assert_eq!(comps[20].bldalpha, (8 << 8) | 8);
+
+    // Verificar línea 120
+    assert_eq!(capas[120].capas[0].scroll_y, 4);
+    assert_eq!(comps[120].bldcnt, 0);
+}
+
+#[test]
+fn la_lut_vertical_de_paleta_conserva_colores_por_linea_y_enmascara_bit_15() {
+    let mut paleta_lineas = [[0u8; 1024]; 160];
+
+    // En la línea 90, el índice 20 vale 0x7AD2 (azul celeste)
+    let off = 20 * 2;
+    paleta_lineas[90][off..off + 2].copy_from_slice(&0x7AD2u16.to_le_bytes());
+
+    // En la línea 110, el índice 20 vale 0xFFFF (blanco con bit 15 activo)
+    paleta_lineas[110][off..off + 2].copy_from_slice(&0xFFFFu16.to_le_bytes());
+
+    let mut destino = Box::new([[0u32; 512]; 160]);
+    EstadoPpuNativa::decodificar_paletas_linea(&paleta_lineas, &mut destino);
+
+    assert_eq!(
+        destino[90][20], 0x7AD2,
+        "la línea 90 debe conservar el azul celeste 0x7AD2"
+    );
+    assert_eq!(
+        destino[110][20], 0x7FFF,
+        "la línea 110 debe enmascarar el bit 15 a 0x7FFF"
+    );
+    assert_eq!(
+        destino[0][20], 0x0000,
+        "otras líneas deben permanecer sin contaminarse"
+    );
 }

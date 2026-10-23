@@ -16,8 +16,8 @@
 
 use blazing_recomp::ppu_nativa::{
     alpha_blend, brighten, darken, CapaFondoGpu, ConfigCapaGpu, ConfigCompGpu, SpriteNativa,
-    BINDING_CONFIG_CAPA, BINDING_CONFIG_COMP, BINDING_PALETA, BINDING_SPRITES,
-    BINDING_TEX_CAPA0, BINDING_TEX_OBJ, BINDING_TEX_OBJ_VENTANA, BINDING_VRAM, PPU_NATIVA_WGSL,
+    BINDING_FILAS_CAPA, BINDING_FILAS_COMP, BINDING_PALETA, BINDING_SPRITES,
+    BINDING_TEX_OBJ, BINDING_TEX_OBJ_VENTANA, BINDING_VRAM, PPU_NATIVA_WGSL,
 };
 
 /// Miembros de una estructura del shader, con su desplazamiento en bytes.
@@ -239,13 +239,9 @@ fn los_bindings_del_shader_coinciden_con_las_constantes_de_rust() {
     let esperado: Vec<(&str, u32)> = vec![
         ("vram", BINDING_VRAM),
         ("paleta", BINDING_PALETA),
-        ("config_capa", BINDING_CONFIG_CAPA),
+        ("filas_capa", BINDING_FILAS_CAPA),
         ("sprites", BINDING_SPRITES),
-        ("config_comp", BINDING_CONFIG_COMP),
-        ("tex_capa0", BINDING_TEX_CAPA0),
-        ("tex_capa1", BINDING_TEX_CAPA0 + 1),
-        ("tex_capa2", BINDING_TEX_CAPA0 + 2),
-        ("tex_capa3", BINDING_TEX_CAPA0 + 3),
+        ("filas_comp", BINDING_FILAS_COMP),
         ("tex_obj", BINDING_TEX_OBJ),
         ("tex_obj_ventana", BINDING_TEX_OBJ_VENTANA),
     ];
@@ -277,7 +273,6 @@ fn el_shader_expone_los_puntos_de_entrada_del_pipeline() {
     for punto in [
         "vs_quad",
         "vs_obj",
-        "fs_capa",
         "fs_obj",
         "fs_obj_ventana",
         "fs_comp",
@@ -287,6 +282,36 @@ fn el_shader_expone_los_puntos_de_entrada_del_pipeline() {
             "falta el punto de entrada {punto}"
         );
     }
+}
+
+/// El shader tiene que indexar la paleta por línea vertical (`512u`) en fondos y sprites.
+#[test]
+fn test_shader_indexa_paleta_por_linea_vertical() {
+    let m = modulo();
+    let mut validator = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    );
+    validator
+        .validate(&m)
+        .expect("el shader con paleta vertical 2D debe validar con naga");
+
+    assert!(
+        PPU_NATIVA_WGSL.contains("paleta[py * 512u + idx]"),
+        "los fondos afines y 8bpp deben indexar la paleta por línea"
+    );
+    assert!(
+        PPU_NATIVA_WGSL.contains("paleta[py * 512u + pal_base + nib]"),
+        "los fondos 4bpp deben indexar la paleta por línea"
+    );
+    assert!(
+        PPU_NATIVA_WGSL.contains("paleta[upy * 512u + pal]"),
+        "los sprites deben indexar la paleta por línea"
+    );
+    assert!(
+        PPU_NATIVA_WGSL.contains("paleta[upy * 512u]"),
+        "el color de fondo (backdrop) debe indexar la paleta por línea"
+    );
 }
 
 // ===========================================================================
@@ -437,6 +462,22 @@ fn test_extremos_de_la_mezcla() {
     assert_eq!(brighten(0x0000, 16), 0x7FFF);
     // Oscurecer el blanco con EVY = 16 da negro.
     assert_eq!(darken(0x7FFF, 16), 0x0000);
+}
+
+/// Aclarar colores no-cero con coeficientes intermedios: la fórmula
+/// `x + (((31 - x) * evy + 8) >> 4)` con precedencia explícita.
+#[test]
+fn test_brighten_wgsl_parentesis_y_no_cero_coinciden() {
+    // Para canal = 10 y evy = 8: 10 + (((31 - 10) * 8 + 8) >> 4) = 10 + (176 >> 4) = 10 + 11 = 21.
+    // Sin paréntesis adecuados en WGSL, la precedencia de operadores causaba underflows o desbordamientos.
+    let color_10 = 10u16 | (10u16 << 5) | (10u16 << 10);
+    let resultado = brighten(color_10, 8);
+    let r = resultado & 31;
+    let g = (resultado >> 5) & 31;
+    let b = (resultado >> 10) & 31;
+    assert_eq!(r, 21, "el canal rojo debe ser 21");
+    assert_eq!(g, 21, "el canal verde debe ser 21");
+    assert_eq!(b, 21, "el canal azul debe ser 21");
 }
 
 /// Lee el informe que escribe `examples/ppu_nativa_compara.rs`.

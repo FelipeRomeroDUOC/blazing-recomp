@@ -36,6 +36,20 @@ panic = "unwind"
 [patch."https://github.com/JRickey/gba-recomp.git"]
 gba-core = { path = "../gba-recomp/crates/gba-core" }
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+] }
+
+[[bin]]
+name = "ppu_doble"
+path = "src/bin/ppu_doble.rs"
+required-features = ["proto"]
+
 [features]
 proto = ["gba-core/perf-video"]
 
