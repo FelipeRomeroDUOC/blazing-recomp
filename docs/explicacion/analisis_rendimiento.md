@@ -9,20 +9,14 @@ verificado: si
 > Ventana: **122 segundos** de telemetría (portrait 1200×2000 → landscape 2000×1200)
 
 > [!WARNING]
-> **Estado (2026-10-13): este análisis es histórico y su conclusión ya no describe el port.** Se
-> redactó con `modo=INT`, 13 funciones mapeadas en [`blazing.labels.toml`](../../blazing.labels.toml) y
-> `latency=1`. Hoy el juego corre en AOT —el intérprete quedó reducido al BIOS, con 7.759 pasos en
-> 256 s— y `present` mide 7,15 ms de media, no ~100 ms, así que la espera del compositor ya no es el
-> cuello de botella. El documento se conserva como registro de aquella medición y de su método.
+> **Estado del análisis:** Este documento es un registro histórico del diagnóstico inicial del proyecto y su conclusión ya no describe el estado actual del port. Se redactó cuando el juego operaba en `modo=INT` (95%+ en el intérprete de respaldo) con solo 13 funciones mapeadas y renderizado de scanlines por CPU en pantalla completa.
 >
-> Números vigentes:
-> - **Android TV** (sesión 17): `ejec` 13,53 ms, con `ppu` 7,53 (fondos 3,21 + sprites 1,35 +
->   composición 2,96) y `apu` 1,52.
-> - **Host** (arnés, 7.200 fotogramas, antes → después de la decisión 34): `ppu` 0,536 → 0,367 ms,
->   `compose` 0,157 → 0,071, `bg` 0,284 → 0,197, con `spr` y `apu` planos.
+> **Evolución y métricas consolidadas:**
+> - **Línea base inicial (Modo INT, 2026-10-09):** ~10 FPS en portrait (105 ms/frame) y ~16 FPS en landscape por saturación del intérprete y cuello de botella en `present`.
+> - **Recompilación AOT (Sesión 17, 2026-10-13):** Con 17.663 bloques en C11, la CPU bajó a 13.53 ms, pero el rasterizador por software (`ppu.rs`) absorbía 7.53 ms en CPU.
+> - **PPU Nativa en GPU (Sesión 30, 2026-10-23):** Con la eliminación definitiva de la PPU software y adopción de `NativePpu` en `wgpu` ([ADR 42](DECISIONES.md#42-eliminación-definitiva-de-ppushim-software-en-favor-de-pipeline-gpu-directo-nativeppu)), el tiempo medio de dibujo se redujo a **11.26 ms** en Android TV (TV Stick), alcanzando **59.7 FPS sostenidos** a lo largo de 400 segundos continuos de juego.
 >
-> Detalle en [`DECISIONES.md`](DECISIONES.md) §34 y en
-> [`2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md`](../propuestas/2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md).
+> El detalle de las fases y decisiones que hicieron posible esta optimización puede consultarse en [`DECISIONES.md`](DECISIONES.md) (ADRs 24 al 46).
 
 ---
 
