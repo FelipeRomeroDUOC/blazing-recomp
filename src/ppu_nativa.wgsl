@@ -460,6 +460,16 @@ fn en_rango(x1: u32, x2: u32, v: u32) -> bool {
     return v >= x1 || v < x2;
 }
 
+fn necesita_segunda(primera_id: u32, obj_visible: bool, obj_semi: bool, efectos: bool, modo: u32, bldcnt: u32) -> bool {
+    if (obj_visible && primera_id == 4u && obj_semi) {
+        return true;
+    }
+    if (efectos && modo == 1u && (bldcnt & (1u << primera_id)) != 0u) {
+        return true;
+    }
+    return false;
+}
+
 @fragment
 fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
     let px = i32(floor(in.clip.x));
@@ -469,26 +479,17 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
     let upx = u32(clamp(px, 0, 239));
 
     let cfg_comp = filas_comp[upy];
-    let cfg_capa = filas_capa[upy];
 
     // Pantalla en blanco (DISPCNT bit 7).
     if ((cfg_comp.dispcnt & 0x80u) != 0u) {
         return vec4<f32>(1.0, 1.0, 1.0, 1.0);
     }
 
-    var prio = array<u32, 4>(
-        cfg_comp.bg_prio0,
-        cfg_comp.bg_prio1,
-        cfg_comp.bg_prio2,
-        cfg_comp.bg_prio3,
-    );
-
     let obj = textureLoad(tex_obj, coord, 0);
     let obj_presente = obj.a != 0u;
     let obj_color = obj.r;
     let obj_prio = obj.g;
     let obj_semi = obj.b != 0u;
-    let obj_window = textureLoad(tex_obj_ventana, coord, 0).r != 0u;
 
     // --- Máscara de control del píxel ---
     let win0_on = (cfg_comp.dispcnt & 0x2000u) != 0u;
@@ -509,12 +510,20 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
             control = cfg_comp.winin & 0x3Fu;
         } else if (en_win1) {
             control = (cfg_comp.winin >> 8u) & 0x3Fu;
-        } else if (objwin_on && obj_window) {
-            control = (cfg_comp.winout >> 8u) & 0x3Fu;
+        } else if (objwin_on) {
+            let obj_window = textureLoad(tex_obj_ventana, coord, 0).r != 0u;
+            if (obj_window) {
+                control = (cfg_comp.winout >> 8u) & 0x3Fu;
+            } else {
+                control = cfg_comp.winout & 0x3Fu;
+            }
         } else {
             control = cfg_comp.winout & 0x3Fu;
         }
     }
+
+    let modo = (cfg_comp.bldcnt >> 6u) & 3u;
+    let efectos = (control & 0x20u) != 0u;
 
     // --- Las dos capas más altas ---
     let obj_visible = obj_presente && (control & 0x10u) != 0u;
@@ -535,30 +544,103 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
                 primera = obj_color;
                 primera_id = 4u;
                 hay_primera = true;
+                if (!necesita_segunda(primera_id, obj_visible, obj_semi, efectos, modo, cfg_comp.bldcnt)) {
+                    corte = true;
+                    break;
+                }
             } else {
                 segunda = obj_color;
                 segunda_id = 4u;
                 hay_segunda = true;
                 corte = true;
-            }
-        }
-        for (var b: u32 = 0u; b < 4u; b = b + 1u) {
-            if (corte) {
                 break;
             }
-            if (prio[b] == p && (control & (1u << b)) != 0u) {
-                let c = color_capa(cfg_capa.capas[b], upx, upy);
-                if (c != 0xFFFFu) {
-                    if (!hay_primera) {
-                        primera = c;
-                        primera_id = b;
-                        hay_primera = true;
-                    } else {
-                        segunda = c;
-                        segunda_id = b;
-                        hay_segunda = true;
+        }
+
+        // BG0
+        if (cfg_comp.bg_prio0 == p && (control & 1u) != 0u) {
+            let c0 = color_capa(filas_capa[upy].capas[0u], upx, upy);
+            if (c0 != 0xFFFFu) {
+                if (!hay_primera) {
+                    primera = c0;
+                    primera_id = 0u;
+                    hay_primera = true;
+                    if (!necesita_segunda(primera_id, obj_visible, obj_semi, efectos, modo, cfg_comp.bldcnt)) {
                         corte = true;
+                        break;
                     }
+                } else {
+                    segunda = c0;
+                    segunda_id = 0u;
+                    hay_segunda = true;
+                    corte = true;
+                    break;
+                }
+            }
+        }
+
+        // BG1
+        if (cfg_comp.bg_prio1 == p && (control & 2u) != 0u) {
+            let c1 = color_capa(filas_capa[upy].capas[1u], upx, upy);
+            if (c1 != 0xFFFFu) {
+                if (!hay_primera) {
+                    primera = c1;
+                    primera_id = 1u;
+                    hay_primera = true;
+                    if (!necesita_segunda(primera_id, obj_visible, obj_semi, efectos, modo, cfg_comp.bldcnt)) {
+                        corte = true;
+                        break;
+                    }
+                } else {
+                    segunda = c1;
+                    segunda_id = 1u;
+                    hay_segunda = true;
+                    corte = true;
+                    break;
+                }
+            }
+        }
+
+        // BG2
+        if (cfg_comp.bg_prio2 == p && (control & 4u) != 0u) {
+            let c2 = color_capa(filas_capa[upy].capas[2u], upx, upy);
+            if (c2 != 0xFFFFu) {
+                if (!hay_primera) {
+                    primera = c2;
+                    primera_id = 2u;
+                    hay_primera = true;
+                    if (!necesita_segunda(primera_id, obj_visible, obj_semi, efectos, modo, cfg_comp.bldcnt)) {
+                        corte = true;
+                        break;
+                    }
+                } else {
+                    segunda = c2;
+                    segunda_id = 2u;
+                    hay_segunda = true;
+                    corte = true;
+                    break;
+                }
+            }
+        }
+
+        // BG3
+        if (cfg_comp.bg_prio3 == p && (control & 8u) != 0u) {
+            let c3 = color_capa(filas_capa[upy].capas[3u], upx, upy);
+            if (c3 != 0xFFFFu) {
+                if (!hay_primera) {
+                    primera = c3;
+                    primera_id = 3u;
+                    hay_primera = true;
+                    if (!necesita_segunda(primera_id, obj_visible, obj_semi, efectos, modo, cfg_comp.bldcnt)) {
+                        corte = true;
+                        break;
+                    }
+                } else {
+                    segunda = c3;
+                    segunda_id = 3u;
+                    hay_segunda = true;
+                    corte = true;
+                    break;
                 }
             }
         }
@@ -578,8 +660,6 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
     let eva = min(16u, cfg_comp.bldalpha & 0x1Fu);
     let evb = min(16u, (cfg_comp.bldalpha >> 8u) & 0x1Fu);
     let evy = min(16u, cfg_comp.bldy & 0x1Fu);
-    let modo = (cfg_comp.bldcnt >> 6u) & 3u;
-    let efectos = (control & 0x20u) != 0u;
     let semi = obj_visible && primera_id == 4u && obj_semi;
 
     var color = primera;

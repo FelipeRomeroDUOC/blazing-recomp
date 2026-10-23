@@ -314,6 +314,38 @@ fn test_shader_indexa_paleta_por_linea_vertical() {
     );
 }
 
+/// El shader no debe contener indexación dinámica de arreglos locales en `fs_comp`
+/// (`capas[b]`, `prio[b]`) para evitar register spilling en Mali-G31, debe leer `tex_obj_ventana`
+/// solo bajo `objwin_on` y debe invocar `necesita_segunda`.
+#[test]
+fn test_fs_comp_no_indexa_arreglos_locales_dinamicamente() {
+    let m = modulo();
+    let mut validator = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::all(),
+    );
+    validator
+        .validate(&m)
+        .expect("el shader optimizado sin register spilling debe validar con naga");
+
+    assert!(
+        !PPU_NATIVA_WGSL.contains("capas[b]"),
+        "fs_comp no debe indexar capas dinámicamente: fuerza spilling a RAM en Mali"
+    );
+    assert!(
+        !PPU_NATIVA_WGSL.contains("prio[b]"),
+        "fs_comp no debe indexar prio dinámicamente: fuerza spilling a RAM en Mali"
+    );
+    assert!(
+        PPU_NATIVA_WGSL.contains("necesita_segunda("),
+        "fs_comp debe incluir el atajo necesita_segunda para podar la búsqueda de la 2.ª capa"
+    );
+    assert!(
+        PPU_NATIVA_WGSL.contains("filas_capa[upy].capas[0u]"),
+        "fs_comp debe acceder a capas con índices constantes"
+    );
+}
+
 // ===========================================================================
 // Criterios de aceptación de la fase 1
 // ===========================================================================

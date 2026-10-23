@@ -989,6 +989,15 @@ impl EstadoPpuNativa {
         let mut estado_temp = EstadoPpuNativa::new();
 
         for (py, io) in io_lineas.iter().enumerate() {
+            // Deduplicación vertical: la decodificación depende solo de los
+            // bytes de la línea, así que si son idénticos a los de la anterior
+            // (lo habitual: los registros cambian en pocas líneas) se reutiliza
+            // la fila ya decodificada. El resultado es bit a bit el mismo.
+            if py > 0 && *io == io_lineas[py - 1] {
+                capas[py] = capas[py - 1];
+                comps[py] = comps[py - 1];
+                continue;
+            }
             estado_temp.decode_io_regs(io);
             capas[py] = estado_temp.config_capa();
             comps[py] = estado_temp.config_comp();
@@ -1003,6 +1012,13 @@ impl EstadoPpuNativa {
         destino: &mut [[u32; 512]; 160],
     ) {
         for (py, pal) in paleta_lineas.iter().enumerate() {
+            // Deduplicación vertical: misma paleta que la línea anterior, misma
+            // fila decodificada (copia en vez de 512 conversiones).
+            if py > 0 && *pal == paleta_lineas[py - 1] {
+                let anterior = destino[py - 1];
+                destino[py] = anterior;
+                continue;
+            }
             for (idx, slot) in destino[py].iter_mut().enumerate() {
                 let off = idx * 2;
                 *slot = (u16::from_le_bytes([pal[off], pal[off + 1]]) & 0x7FFF) as u32;
@@ -1028,6 +1044,32 @@ impl EstadoPpuNativa {
             *f = fila;
         }
     }
+}
+
+/// Primer y último índice donde `previo` y `actual` difieren, o `None` si son
+/// idénticos. Acota qué filas hay que volver a subir a la GPU.
+pub fn rango_filas_modificadas<T: PartialEq>(previo: &[T], actual: &[T]) -> Option<(usize, usize)> {
+    let n = previo.len().min(actual.len());
+    let primero = (0..n).find(|&i| previo[i] != actual[i])?;
+    let ultimo = (0..n)
+        .rev()
+        .find(|&i| previo[i] != actual[i])
+        .unwrap_or(primero);
+    Some((primero, ultimo))
+}
+
+/// Rango de bytes `[inicio, fin)` donde `previo` y `actual` difieren, ensanchado a
+/// múltiplos de 4 (`wgpu::COPY_BUFFER_ALIGNMENT`), o `None` si son idénticos.
+fn rango_bytes_modificados(previo: &[u8], actual: &[u8]) -> Option<(usize, usize)> {
+    let n = previo.len().min(actual.len());
+    let primero = (0..n).find(|&i| previo[i] != actual[i])?;
+    let ultimo = (0..n)
+        .rev()
+        .find(|&i| previo[i] != actual[i])
+        .unwrap_or(primero);
+    let inicio = primero & !3;
+    let fin = ((ultimo + 1) + 3) & !3;
+    Some((inicio, fin.min(n)))
 }
 
 // ===========================================================================
@@ -1088,6 +1130,19 @@ pub struct PpuNativaPipeline {
     pub grupo_obj: wgpu::BindGroup,
     pub grupo_obj_ventana: wgpu::BindGroup,
     pub grupo_comp: wgpu::BindGroup,
+
+    /// Último contenido subido a la GPU de cada búfer grande: permite subir solo
+    /// lo que cambió entre cuadros (la subida de ~475 KB por cuadro dominaba
+    /// `subida` en GPUs móviles como la Mali-G31).
+    vram_previa: Box<[u8; 96 * 1024]>,
+    palette_previa: Box<[[u32; 512]; 160]>,
+    filas_capa_previa: Box<[ConfigCapaGpu; 160]>,
+    filas_comp_previa: Box<[ConfigCompGpu; 160]>,
+    /// Falso hasta la primera subida: fuerza la carga completa inicial.
+    gpu_inicializado: bool,
+    /// La máscara de la ventana OBJ ya está limpia: se puede omitir su pasada
+    /// mientras no haya sprites de ventana.
+    obj_ventana_limpia: bool,
 
     staging_palette: Box<[[u32; 512]; 160]>,
     staging_filas_capa: Box<[ConfigCapaGpu; 160]>,
@@ -1527,6 +1582,12 @@ impl PpuNativaPipeline {
             grupo_obj,
             grupo_obj_ventana,
             grupo_comp,
+            vram_previa: Box::new([0u8; 96 * 1024]),
+            palette_previa: Box::new([[0u32; 512]; 160]),
+            filas_capa_previa: Box::new([ConfigCapaGpu::default(); 160]),
+            filas_comp_previa: Box::new([ConfigCompGpu::default(); 160]),
+            gpu_inicializado: false,
+            obj_ventana_limpia: false,
             staging_palette: Box::new([[0u32; 512]; 160]),
             staging_filas_capa: Box::new([ConfigCapaGpu::default(); 160]),
             staging_filas_comp: Box::new([ConfigCompGpu::default(); 160]),
@@ -1553,6 +1614,11 @@ impl PpuNativaPipeline {
 
     /// Dibuja un cuadro completo en la vista de textura destino, recibiendo opcionalmente
     /// los registros I/O y las paletas capturadas en cada una de las 160 líneas activas.
+    ///
+    /// Sube lo que cambió y envía los pases con un `CommandEncoder` propio. El
+    /// compositor de Android usa por separado [`Self::subir_buffers_lineas`] y
+    /// [`Self::grabar_pases`] para compartir un único `CommandEncoder` y un solo
+    /// `queue.submit()` con el pase de pantalla.
     #[allow(clippy::too_many_arguments)]
     pub fn render_frame_lineas(
         &mut self,
@@ -1566,6 +1632,30 @@ impl PpuNativaPipeline {
         io_lineas: Option<&[[u8; 0x60]; 160]>,
         paleta_lineas: Option<&[[u8; 1024]; 160]>,
     ) {
+        self.subir_buffers_lineas(queue, vram, oam, palette, io_fin, io_lineas, paleta_lineas);
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("ppu-nativa-encoder"),
+        });
+        self.grabar_pases(&mut encoder, target_view);
+        queue.submit(std::iter::once(encoder.finish()));
+    }
+
+    /// Decodifica el cuadro y sube a la GPU **solo lo que cambió** desde el
+    /// cuadro anterior (VRAM, paleta por línea y tablas de capas/composición por
+    /// línea); la geometría del quad se sube una única vez.
+    #[allow(clippy::too_many_arguments)]
+    pub fn subir_buffers_lineas(
+        &mut self,
+        queue: &wgpu::Queue,
+        vram: &[u8],
+        oam: &[u8],
+        palette: &[u8],
+        io_fin: &[u8],
+        io_lineas: Option<&[[u8; 0x60]; 160]>,
+        paleta_lineas: Option<&[[u8; 1024]; 160]>,
+    ) {
+        let primera = !self.gpu_inicializado;
+
         // 1. Decodificación del estado del cuadro.
         self.estado.decode_io_regs(io_fin);
         self.estado.decode_oam(oam);
@@ -1579,11 +1669,31 @@ impl PpuNativaPipeline {
                 EstadoPpuNativa::decodificar_paleta_uniforme(palette, &mut self.staging_palette);
             }
         }
-        queue.write_buffer(&self.palette_buffer, 0, bytemuck::cast_slice(&self.staging_palette[..]));
+        let filas_pal = if primera {
+            Some((0, 159))
+        } else {
+            rango_filas_modificadas(&self.palette_previa[..], &self.staging_palette[..])
+        };
+        if let Some((a, b)) = filas_pal {
+            queue.write_buffer(
+                &self.palette_buffer,
+                (a * 512 * 4) as u64,
+                bytemuck::cast_slice(&self.staging_palette[a..=b]),
+            );
+            self.palette_previa[a..=b].copy_from_slice(&self.staging_palette[a..=b]);
+        }
 
-        // 3. VRAM completa (96 KB).
+        // 3. VRAM completa (96 KB), solo el tramo que cambió.
         let vram_len = (96 * 1024).min(vram.len());
-        queue.write_buffer(&self.vram_buffer, 0, bytemuck::cast_slice(&vram[..vram_len]));
+        let tramo_vram = if primera {
+            Some((0, vram_len))
+        } else {
+            rango_bytes_modificados(&self.vram_previa[..vram_len], &vram[..vram_len])
+        };
+        if let Some((ini, fin)) = tramo_vram {
+            queue.write_buffer(&self.vram_buffer, ini as u64, &vram[ini..fin]);
+            self.vram_previa[ini..fin].copy_from_slice(&vram[ini..fin]);
+        }
 
         // 4. Configuración de capas y composición por línea (160 filas).
         match io_lineas {
@@ -1599,16 +1709,34 @@ impl PpuNativaPipeline {
                 self.staging_filas_comp.fill(cfg_comp);
             }
         }
-        queue.write_buffer(
-            &self.filas_capa_buffer,
-            0,
-            bytemuck::cast_slice(&self.staging_filas_capa[..]),
-        );
-        queue.write_buffer(
-            &self.filas_comp_buffer,
-            0,
-            bytemuck::cast_slice(&self.staging_filas_comp[..]),
-        );
+        let filas_capa = if primera {
+            Some((0, 159))
+        } else {
+            rango_filas_modificadas(&self.filas_capa_previa[..], &self.staging_filas_capa[..])
+        };
+        if let Some((a, b)) = filas_capa {
+            let tam = std::mem::size_of::<ConfigCapaGpu>();
+            queue.write_buffer(
+                &self.filas_capa_buffer,
+                (a * tam) as u64,
+                bytemuck::cast_slice(&self.staging_filas_capa[a..=b]),
+            );
+            self.filas_capa_previa[a..=b].copy_from_slice(&self.staging_filas_capa[a..=b]);
+        }
+        let filas_comp = if primera {
+            Some((0, 159))
+        } else {
+            rango_filas_modificadas(&self.filas_comp_previa[..], &self.staging_filas_comp[..])
+        };
+        if let Some((a, b)) = filas_comp {
+            let tam = std::mem::size_of::<ConfigCompGpu>();
+            queue.write_buffer(
+                &self.filas_comp_buffer,
+                (a * tam) as u64,
+                bytemuck::cast_slice(&self.staging_filas_comp[a..=b]),
+            );
+            self.filas_comp_previa[a..=b].copy_from_slice(&self.staging_filas_comp[a..=b]);
+        }
 
         // 5. Sprites.
         {
@@ -1654,13 +1782,21 @@ impl PpuNativaPipeline {
             );
         }
 
-        // 6. Geometría.
-        queue.write_buffer(&self.quad_buffer, 0, bytemuck::cast_slice(&QUAD_VERTICES));
+        // 6. Geometría: constante, se sube una sola vez.
+        if primera {
+            queue.write_buffer(&self.quad_buffer, 0, bytemuck::cast_slice(&QUAD_VERTICES));
+            self.gpu_inicializado = true;
+        }
+    }
 
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("ppu-nativa-encoder"),
-        });
-
+    /// Graba en `encoder` los tres pases de la PPU nativa (sprites, ventana OBJ y
+    /// composición) sobre `target_view`. Requiere haber llamado antes a
+    /// [`Self::subir_buffers_lineas`] con los datos del cuadro.
+    pub fn grabar_pases(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        target_view: &wgpu::TextureView,
+    ) {
         // 7. Pasada de sprites: se limpia SIEMPRE la textura de color y profundidad.
         //    Solo dibuja geometría si num_sprites > 0.
         {
@@ -1695,9 +1831,12 @@ impl PpuNativaPipeline {
             }
         }
 
-        // 8. Pasada de la ventana OBJ: se limpia SIEMPRE la máscara.
-        //    Solo dibuja geometría si num_sprites_ventana > 0.
-        {
+        // 8. Pasada de la ventana OBJ: limpia la máscara y dibuja sprites de
+        //    ventana. Se omite si no hay sprites de ventana y la máscara ya
+        //    estaba limpia del cuadro anterior (ahorra un cambio de framebuffer
+        //    por cuadro en GPUs de teselas).
+        let omitir_ventana = self.estado.num_sprites_ventana == 0 && self.obj_ventana_limpia;
+        if !omitir_ventana {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("ppu-nativa-pasada-obj-ventana"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -1721,6 +1860,7 @@ impl PpuNativaPipeline {
                 pass.draw(0..6, 0..self.estado.num_sprites_ventana as u32);
             }
         }
+        self.obj_ventana_limpia = self.estado.num_sprites_ventana == 0;
 
         // 9. Pasada de composición: fondos evaluados perezosamente y combinados
         //    con sprites en una única pasada 2D paralela.
@@ -1745,8 +1885,6 @@ impl PpuNativaPipeline {
             pass.set_vertex_buffer(0, self.quad_buffer.slice(..));
             pass.draw(0..6, 0..1);
         }
-
-        queue.submit(std::iter::once(encoder.finish()));
     }
 }
 

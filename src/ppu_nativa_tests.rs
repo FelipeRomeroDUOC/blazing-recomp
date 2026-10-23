@@ -835,3 +835,68 @@ fn la_lut_vertical_de_paleta_conserva_colores_por_linea_y_enmascara_bit_15() {
         "otras líneas deben permanecer sin contaminarse"
     );
 }
+
+// ===========================================================================
+// Subida diferencial y deduplicación por línea
+// ===========================================================================
+
+#[test]
+fn rango_filas_modificadas_detecta_identicos_y_acota_subrango() {
+    let base = vec![0u32; 160];
+    assert_eq!(rango_filas_modificadas(&base, &base.clone()), None);
+
+    let mut una = base.clone();
+    una[42] = 7;
+    assert_eq!(rango_filas_modificadas(&base, &una), Some((42, 42)));
+
+    let mut dos = base.clone();
+    dos[80] = 1;
+    dos[115] = 2;
+    assert_eq!(rango_filas_modificadas(&base, &dos), Some((80, 115)));
+
+    // Bordes: primera y ultima fila.
+    let mut bordes = base.clone();
+    bordes[0] = 9;
+    bordes[159] = 9;
+    assert_eq!(rango_filas_modificadas(&base, &bordes), Some((0, 159)));
+}
+
+#[test]
+fn deduplicacion_por_linea_conserva_resultado_exacto() {
+    // Tramos: 0..50 iguales, 50..120 distintos entre si, 120..160 iguales.
+    let mut io_lineas = [[0u8; 0x60]; 160];
+    let mut paleta_lineas = [[0u8; 1024]; 160];
+    for py in 0..160 {
+        let tramo = if py < 50 { 0u8 } else if py < 120 { py as u8 } else { 200u8 };
+        io_lineas[py][0] = tramo; // DISPCNT bajo
+        io_lineas[py][0x50] = tramo; // BLDCNT bajo
+        io_lineas[py][0x54] = tramo & 0x1F; // BLDY
+        paleta_lineas[py][0] = tramo;
+        paleta_lineas[py][1] = 0xFF; // bit 15 activo: debe enmascararse
+        paleta_lineas[py][1023] = tramo;
+    }
+
+    // Referencia ingenua: decodificar cada linea de forma independiente.
+    let mut esperado_capas = [ConfigCapaGpu::default(); 160];
+    let mut esperado_comps = [ConfigCompGpu::default(); 160];
+    let mut esperado_pal = Box::new([[0u32; 512]; 160]);
+    for py in 0..160 {
+        let mut e = EstadoPpuNativa::new();
+        e.decode_io_regs(&io_lineas[py]);
+        esperado_capas[py] = e.config_capa();
+        esperado_comps[py] = e.config_comp();
+        for idx in 0..512 {
+            let off = idx * 2;
+            esperado_pal[py][idx] =
+                (u16::from_le_bytes([paleta_lineas[py][off], paleta_lineas[py][off + 1]]) & 0x7FFF) as u32;
+        }
+    }
+
+    let (capas, comps) = EstadoPpuNativa::decodificar_lineas(&io_lineas);
+    assert_eq!(capas, esperado_capas);
+    assert_eq!(comps, esperado_comps);
+
+    let mut pal = Box::new([[0u32; 512]; 160]);
+    EstadoPpuNativa::decodificar_paletas_linea(&paleta_lineas, &mut pal);
+    assert_eq!(*pal, *esperado_pal);
+}

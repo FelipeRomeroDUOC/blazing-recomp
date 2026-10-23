@@ -976,10 +976,11 @@ impl Compositor {
         let is_gpu = if es_nativa {
             let ppu = ppu_state.unwrap();
             let nativa = self.ppu_nativa.as_mut().unwrap();
-            nativa.render_frame_lineas(
-                &self.device,
+            // Solo sube lo que cambió; los pases de la PPU nativa se graban más
+            // abajo en el mismo `CommandEncoder` que el pase de pantalla, para
+            // enviar un único `queue.submit()` por fotograma.
+            nativa.subir_buffers_lineas(
                 &self.queue,
-                &self.game_texture_view,
                 &ppu.vram[..],
                 &ppu.oam[..],
                 &ppu.palette[..],
@@ -1180,6 +1181,11 @@ impl Compositor {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        if es_nativa {
+            if let Some(nativa) = self.ppu_nativa.as_mut() {
+                nativa.grabar_pases(&mut encoder, &self.game_texture_view);
+            }
+        }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("compositor-pass"),
