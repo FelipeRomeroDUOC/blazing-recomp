@@ -3,12 +3,8 @@
 #
 # Formato: <identificador> <sha256 en minúsculas>
 #
-# El shim actual queda congelado durante la fase: su borrado (paso 8) solo
-# puede ocurrir cuando todos los demás criterios de aceptación se hayan
-# cumplido.
-src/ppu_shim.rs cf72f683c8f7529aa75975ee2b226d9801d30eccbabcf671ff582ed291b81ee3
-src/ppu_shim.wgsl 44de2ede6d3c675ebe2242402747a2fd1256ec10417b2f147ffbb2c024fdb9fe
-src/ppu_shim_tests.rs 35ecbd2c363d44e876c24efa20619824af81e3927a7b5a39bc043ba3e67b7148
+# El shim histórico fue eliminado definitivamente conforme a ADR 42 y la
+# propuesta docs/propuestas/2026-10-23_eliminacion-del-ppu-shim.md.
 #
 # Motor base en el rev fijado de4edf59 de gba-recomp. El identificador es
 # <crate>:<rev corto>:<ruta dentro del repo del motor>.

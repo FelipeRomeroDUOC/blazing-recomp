@@ -53,9 +53,9 @@ pub struct FrameTiming {
 /// Muestreo de características de hardware GBA en un fotograma completado.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PpuHwFrameSample {
-    /// Indica si el fotograma se renderizó por hardware en GPU (PpuShim).
+    /// Indica si el fotograma se renderizó por hardware en GPU (PpuNativa).
     pub is_gpu: bool,
-    /// Indica si el fotograma lo dibujó la PPU nativa (y no el shim).
+    /// Indica si el fotograma lo dibujó la PPU nativa en GPU.
     ///
     /// Las dos rutas van por GPU, así que `is_gpu` no las distingue: este
     /// campo es el que dice quién pintó el cuadro.
@@ -77,11 +77,11 @@ pub struct PpuHwFrameSample {
 /// Estadísticas agregadas de hardware GBA para una ventana de telemetría de 1 segundo.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PpuHwWindowStats {
-    /// Fotogramas completados mediante el pipeline acelerado PpuShim en GPU.
+    /// Fotogramas completados mediante aceleración GPU.
     pub gpu_frames: u32,
     /// Fotogramas que requirieron fallback a subida de framebuffer por software.
     pub sw_frames: u32,
-    /// Fotogramas que dibujó la PPU nativa (en vez del shim).
+    /// Fotogramas que dibujó la PPU nativa en GPU.
     pub nativa_frames: u32,
     /// Fotogramas que operaron en Modo 0.
     pub mode0_frames: u32,

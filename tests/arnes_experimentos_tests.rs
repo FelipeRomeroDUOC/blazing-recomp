@@ -1,7 +1,7 @@
 //! Pruebas del arnés compartido de los experimentos de `examples/`
 //! (propuesta `docs/propuestas/2026-10-22_arnes-de-experimentos-comun.md`).
 //!
-//! Los 47 experimentos comparten `examples/comun/`, que vive **fuera** del crate que se
+//! Los 18 experimentos comparten `examples/comun/`, que vive **fuera** del crate que se
 //! empaqueta en el APK. Eso lo deja sin `cargo test --lib`, así que se incluye aquí con
 //! `#[path]`: es el mismo fichero que compilan los ejemplos, probado de verdad.
 //!
@@ -43,7 +43,7 @@ fn dir_examples() -> PathBuf {
     repo_root().join("examples")
 }
 
-/// Los 47 ficheros de experimento, ordenados por nombre.
+/// Los 18 ficheros de experimento, ordenados por nombre.
 fn experimentos() -> Vec<PathBuf> {
     let mut rutas: Vec<PathBuf> = fs::read_dir(dir_examples())
         .expect("examples/ tiene que existir")
@@ -62,7 +62,7 @@ fn leer(ruta: &PathBuf) -> String {
 #[test]
 fn test_los_experimentos_usan_el_modulo_comun() {
     let rutas = experimentos();
-    assert_eq!(rutas.len(), 47, "tienen que quedar los 47 experimentos");
+    assert_eq!(rutas.len(), 18, "tienen que quedar los 18 experimentos");
 
     // Lo que deja de poder estar declarado dentro de un experimento: si reaparece una
     // copia, el arreglo del arnés vuelve a tener que hacerse 47 veces.
@@ -146,7 +146,7 @@ fn test_el_inventario_coincide_con_cargo_toml() {
         .map(|ruta| ruta.file_stem().unwrap().to_string_lossy().into_owned())
         .collect();
 
-    // Dos de los 47 compilan sin la feature: `ppu_barrido_nativa` y `ppu_modo_cuadro`
+    // Dos de los 18 compilan sin la feature: `ppu_barrido_nativa` y `ppu_modo_cuadro`
     // no usan la captura por línea de `perf-video` (medido: `cargo build --example
     // ppu_barrido_nativa --example ppu_modo_cuadro` termina con Finished). Los demás sí.
     const SIN_FEATURE: [&str; 2] = ["ppu_barrido_nativa", "ppu_modo_cuadro"];
@@ -171,7 +171,7 @@ fn test_el_inventario_coincide_con_cargo_toml() {
         declarados.insert(nombre);
     }
 
-    assert_eq!(declarados.len(), 47, "Cargo.toml declara los 47 experimentos");
+    assert_eq!(declarados.len(), 18, "Cargo.toml declara los 18 experimentos");
     assert_eq!(
         declarados, en_disco,
         "los nombres de Cargo.toml y los ficheros de examples/ tienen que coincidir: \
@@ -182,7 +182,7 @@ fn test_el_inventario_coincide_con_cargo_toml() {
         .iter()
         .filter(|nombre| !SIN_FEATURE.contains(&nombre.as_str()))
         .count();
-    assert_eq!(con_feature, 45, "45 experimentos exigen la feature proto");
+    assert_eq!(con_feature, 16, "16 experimentos exigen la feature proto");
 }
 
 #[test]

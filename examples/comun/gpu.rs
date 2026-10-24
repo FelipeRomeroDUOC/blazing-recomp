@@ -1,82 +1,25 @@
-//! Arnés de GPU de los experimentos: dibuja un cuadro con el shim o con la PPU nativa y
+//! Arnés de GPU de los experimentos: dibuja un cuadro con la PPU nativa y
 //! lo devuelve como RGB de 8 bits sin relleno.
-//!
-//! Las dos rutas van por GPU y tienen la misma cabecera de `render_frame`, así que un
-//! solo `Gpu` guarda cuál de las dos está usando. La única diferencia de construcción es
-//! que la PPU nativa puede fallar al crear su pipeline (`Result`) y el shim no.
 
 use blazing_recomp::ppu_nativa::PpuNativaPipeline;
-use blazing_recomp::ppu_shim::PpuShimPipeline;
 
 pub const ANCHO: usize = 240;
 pub const ALTO: usize = 160;
 /// Bytes por fila en el búfer de lectura de la GPU (wgpu exige múltiplos de 256).
 pub const FILA_GPU: u32 = (ANCHO as u32 * 4).div_ceil(256) * 256;
 
-/// Quién dibuja el cuadro.
-enum Backend {
-    Shim(PpuShimPipeline),
-    Nativa(PpuNativaPipeline),
-}
-
-impl Backend {
-    fn render_frame(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        vista: &wgpu::TextureView,
-        vram: &[u8],
-        oam: &[u8],
-        palette: &[u8],
-        io: &[u8],
-    ) {
-        self.render_frame_lineas(device, queue, vista, vram, oam, palette, io, None, None)
-    }
-
-    fn render_frame_lineas(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        vista: &wgpu::TextureView,
-        vram: &[u8],
-        oam: &[u8],
-        palette: &[u8],
-        io: &[u8],
-        io_lineas: Option<&[[u8; 0x60]; 160]>,
-        paleta_lineas: Option<&[[u8; 1024]; 160]>,
-    ) {
-        match self {
-            Backend::Shim(pipeline) => {
-                pipeline.render_frame(device, queue, vista, vram, oam, palette, io)
-            }
-            Backend::Nativa(pipeline) => {
-                pipeline.render_frame_lineas(device, queue, vista, vram, oam, palette, io, io_lineas, paleta_lineas)
-            }
-        }
-    }
-}
-
 pub struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    backend: Backend,
+    pipeline: PpuNativaPipeline,
     objetivo: wgpu::Texture,
     vista: wgpu::TextureView,
     lectura: wgpu::Buffer,
 }
 
 impl Gpu {
-    /// Arnés con el shim de GPU, que es la ruta de 25 de los 29 experimentos.
-    pub fn nueva() -> Result<Self, String> {
-        Self::con_backend(false)
-    }
-
     /// Arnés con la PPU nativa, que puede fallar al construir su pipeline.
     pub fn nueva_nativa() -> Result<Self, String> {
-        Self::con_backend(true)
-    }
-
-    fn con_backend(nativa: bool) -> Result<Self, String> {
         let instancia = wgpu::Instance::default();
         let adaptador = pollster::block_on(instancia.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
@@ -107,11 +50,7 @@ impl Gpu {
             view_formats: &[],
         });
         let vista = objetivo.create_view(&wgpu::TextureViewDescriptor::default());
-        let backend = if nativa {
-            Backend::Nativa(PpuNativaPipeline::new(&device, formato)?)
-        } else {
-            Backend::Shim(PpuShimPipeline::new(&device, formato))
-        };
+        let pipeline = PpuNativaPipeline::new(&device, formato)?;
         let lectura = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("arnes-lectura"),
             size: (FILA_GPU * ALTO as u32) as u64,
@@ -121,7 +60,7 @@ impl Gpu {
         Ok(Self {
             device,
             queue,
-            backend,
+            pipeline,
             objetivo,
             vista,
             lectura,
@@ -143,7 +82,7 @@ impl Gpu {
         io_lineas: Option<&[[u8; 0x60]; 160]>,
         paleta_lineas: Option<&[[u8; 1024]; 160]>,
     ) -> Vec<u8> {
-        self.backend
+        self.pipeline
             .render_frame_lineas(&self.device, &self.queue, &self.vista, vram, oam, palette, io, io_lineas, paleta_lineas);
 
         let mut codificador = self

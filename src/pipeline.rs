@@ -22,7 +22,7 @@ pub const GBA_PIXELS: usize = GBA_W * GBA_H;
 /// Duración exacta de un fotograma de GBA a 60 FPS (16.666 ms).
 pub const FRAME_DURATION: Duration = Duration::from_nanos(16_666_667);
 
-/// Estado de memoria de video para renderizado acelerado en GPU (PPU Shim y PPU Nativa).
+/// Estado de memoria de video para renderizado acelerado en GPU (PPU Nativa).
 #[derive(Clone)]
 pub struct PpuFrameState {
     pub vram: Box<[u8; 96 * 1024]>,
@@ -65,7 +65,7 @@ pub struct FramePacket {
     pub timing: StepTiming,
     /// Indica si el fotograma ejecutó bloques C recompilados nativamente.
     pub is_native: bool,
-    /// Volcado de memoria de video si el renderizado acelerado en GPU (PpuShim) está activo.
+    /// Volcado de memoria de video si el renderizado acelerado en GPU (PPU Nativa) está activo.
     pub ppu_state: Option<PpuFrameState>,
 }
 
@@ -170,13 +170,13 @@ impl EmulationBridge {
         }
     }
 
-    /// Consulta si el modo de renderizado acelerado en GPU (PpuShim) está activo.
+    /// Consulta si el modo de renderizado acelerado en GPU (PPU Nativa) está activo.
     #[inline]
     pub fn is_gpu_ppu_enabled(&self) -> bool {
         self.gpu_ppu.load(Ordering::Acquire)
     }
 
-    /// Activa o desactiva el renderizado acelerado en GPU (PpuShim).
+    /// Activa o desactiva el renderizado acelerado en GPU (PPU Nativa).
     #[inline]
     pub fn set_gpu_ppu_enabled(&self, enabled: bool) {
         self.gpu_ppu.store(enabled, Ordering::Release);

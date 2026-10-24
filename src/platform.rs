@@ -96,12 +96,11 @@ struct Compositor {
     game_texture: wgpu::Texture,
     game_texture_view: wgpu::TextureView,
     game_params_buffer: wgpu::Buffer,
-    ppu_shim: Option<crate::ppu_shim::PpuShimPipeline>,
     /// PPU nativa (composición por píxel en la GPU). Se construye de forma
     /// perezosa, la primera vez que se usa.
     ppu_nativa: Option<crate::ppu_nativa::PpuNativaPipeline>,
     /// La construcción de la PPU nativa falló en este dispositivo (la GPU
-    /// rechazó algún recurso). No se reintenta: se sigue con el *shim*.
+    /// rechazó algún recurso). No se reintenta: se vuelve al renderizado por software.
     ppu_nativa_fallida: bool,
 
     // Pipeline 2: Overlay táctil
@@ -136,12 +135,12 @@ struct DrawPhases {
     espera_ms: f64,
     dibujo_ms: f64,
     is_gpu: bool,
-    /// El fotograma lo dibujó la PPU nativa (y no el shim).
+    /// El fotograma lo dibujó la PPU nativa (y no por software).
     es_nativa: bool,
 }
 
 /// Permite forzar el renderizado por software en CPU para pruebas comparativas A/B.
-/// Por defecto `false` (usar GPU PpuShim cuando esté disponible).
+/// Por defecto `false` (usar GPU nativa cuando esté disponible).
 pub const FORZAR_PPU_SOFTWARE: bool = false;
 
 // Interruptor de la **PPU nativa**: composición por píxel en la GPU, con la
@@ -149,7 +148,7 @@ pub const FORZAR_PPU_SOFTWARE: bool = false;
 //
 // La PPU nativa es la ruta de dibujo **por defecto**: un APK recién instalado
 // compone los píxeles en la GPU sin que nadie tenga que tocar nada. Para
-// volver al shim (o al render por software) y comparar A/B en el propio
+// volver al render por software y comparar A/B en el propio
 // dispositivo, se crea el archivo de marca `ppu-nativa-off.flag`, que la app
 // relee una vez por segundo en los directorios de telemetría (véase
 // `crate::ppu_nativa::ppu_nativa_activada`).
@@ -814,11 +813,6 @@ impl Compositor {
             ],
         });
 
-        let ppu_shim = Some(crate::ppu_shim::PpuShimPipeline::new(
-            &device,
-            wgpu::TextureFormat::Rgba8Unorm,
-        ));
-
         // La PPU nativa se construye de forma **perezosa**, en el primer
         // fotograma en que se usa: reserva varias texturas y grupos de
         // enlaces, y si no hace falta no hay que pagarlos.
@@ -837,7 +831,6 @@ impl Compositor {
             game_texture,
             game_texture_view,
             game_params_buffer,
-            ppu_shim,
             ppu_nativa,
             ppu_nativa_fallida: false,
             overlay_pipeline,
@@ -950,7 +943,7 @@ impl Compositor {
         }
 
         // 1. Upload o renderizado GPU del frame GBA
-        //    La PPU nativa tiene prioridad sobre el shim anterior: si está
+        //    La PPU nativa compone por hardware: si está
         //    activa, es ella la que dibuja el cuadro. Su pipeline se construye
         //    en el primer fotograma que la usa, para que no se reserve nada en
         //    la GPU si no se usa.
@@ -967,20 +960,16 @@ impl Compositor {
                 Err(e) => {
                     // La GPU del dispositivo ha rechazado algún recurso. El
                     // guardián ha convertido el error de `wgpu` en `Err` para
-                    // que la app no muera: se sigue con el *shim` y no se
-                    // reintenta la construcción.
+                    // que la app no muera: se vuelve al renderizado por software
+                    // y no se reintenta la construcción.
                     self.ppu_nativa_fallida = true;
-                    log::error!(
-                        "PPU nativa: no se pudo construir el pipeline ({e}); se sigue con el shim"
+                    log::warn!(
+                        "PPU nativa no disponible: se vuelve al renderizado por software ({e})"
                     );
                 }
             }
         }
         let es_nativa = use_ppu_nativa && self.ppu_nativa.is_some();
-        let use_gpu_shim = !FORZAR_PPU_SOFTWARE
-            && !es_nativa
-            && ppu_state.is_some()
-            && self.ppu_shim.is_some();
         let is_gpu = if es_nativa {
             let ppu = ppu_state.unwrap();
             let nativa = self.ppu_nativa.as_mut().unwrap();
@@ -995,19 +984,6 @@ impl Compositor {
                 &ppu.io[..],
                 Some(&ppu.io_lineas),
                 Some(&ppu.paleta_lineas),
-            );
-            true
-        } else if use_gpu_shim {
-            let ppu = ppu_state.unwrap();
-            let shim = self.ppu_shim.as_mut().unwrap();
-            shim.render_frame(
-                &self.device,
-                &self.queue,
-                &self.game_texture_view,
-                &ppu.vram[..],
-                &ppu.oam[..],
-                &ppu.palette[..],
-                &ppu.io[..],
             );
             true
         } else {
@@ -1578,7 +1554,7 @@ fn init_perf_file(
                 if FORZAR_PPU_SOFTWARE {
                     format!("{}-sw", gba_core::ppu::PPU_CAMINO_VERSION)
                 } else {
-                    format!("{}+gpu_shim", gba_core::ppu::PPU_CAMINO_VERSION)
+                    format!("{}+gpu_nativa", gba_core::ppu::PPU_CAMINO_VERSION)
                 }
             );
             if f.write_all(header.as_bytes()).is_ok() && f.flush().is_ok() {
@@ -1705,7 +1681,7 @@ impl AppState {
             self.waker.clone(),
         );
         worker.bridge().set_gpu_ppu_enabled(self.ppu_nativa_activa && !FORZAR_PPU_SOFTWARE);
-        log::info!("Hardware Shim PPU (GPU) activado en EmulationWorker");
+        log::info!("PPU GPU activada en EmulationWorker");
         self.worker = Some(worker);
     }
 
@@ -1806,14 +1782,21 @@ impl AppState {
         } else {
             (self.placeholder_rgba.as_slice(), None, false)
         };
-        match compositor.render(
+        let render_res = compositor.render(
             frame,
             ppu_state,
             (w, h),
             &self.touch,
             is_native,
             self.ppu_nativa_activa,
-        ) {
+        );
+        if compositor.ppu_nativa_fallida && self.ppu_nativa_activa {
+            self.ppu_nativa_activa = false;
+            if let Some(worker) = &self.worker {
+                worker.bridge().set_gpu_ppu_enabled(false);
+            }
+        }
+        match render_res {
             Ok(timing) => Some(timing),
             Err(e) => {
                 log::warn!("compositor: {e}");
@@ -1830,6 +1813,9 @@ impl AppState {
     /// cierra la ventana de rendimiento, para que el cambio quede registrado
     /// en el Logcat y en `blazing-perf.txt`.
     fn reevaluar_ppu_nativa(&mut self) {
+        if self.compositor.as_ref().map_or(false, |c| c.ppu_nativa_fallida) {
+            return;
+        }
         let activa = crate::ppu_nativa::ppu_nativa_activada(&self.search_dirs);
         if activa == self.ppu_nativa_activa {
             return;

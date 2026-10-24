@@ -802,8 +802,8 @@ fn test_el_motor_base_y_el_shim_no_cambian() {
         comprobados += 1;
     }
     assert!(
-        comprobados >= 3,
-        "solo se comprobaron {comprobados} ficheros: el shim tiene que estar \
+        comprobados >= 2,
+        "solo se comprobaron {comprobados} ficheros: el motor base tiene que estar \
          entre ellos"
     );
 }
