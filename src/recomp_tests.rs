@@ -67,6 +67,54 @@ fn test_block_table_iwram_and_bios_regions() {
     assert!(table.get(0x0300_2000).is_none());
 }
 
+#[test]
+fn test_block_table_despacha_rutinas_de_combate_en_iwram() {
+    extern "C" fn dummy_combat(_api: *const gba_core::capi::RtApi, _m: *mut std::ffi::c_void) -> u32 { 0 }
+
+    // Clúster crítico de subrutinas de combate en IWRAM (ARM32, bit 0 = 0)
+    let combat_addrs = [
+        0x0300_3478, // InterpCalc
+        0x0300_3568, // DispatchLoop
+        0x0300_35C8, // Case4 Branch
+        0x0300_35CC, // Case5 Branch
+        0x0300_35D0, // Case3 Branch
+        0x0300_35D4, // Case2 Branch
+        0x0300_35D8, // Case6 Branch
+        0x0300_35DC, // Case1 Body
+        0x0300_3620, // Case2 Body
+        0x0300_3654, // Case3 Body
+        0x0300_3688, // Case4 Body
+        0x0300_36BC, // Case5 Body
+        0x0300_36CC, // Case5 Step 2
+        0x0300_36EC, // Epilogue
+        0x0300_3708, // Case6 Body
+    ];
+
+    let blocks: Vec<RcgBlock> = combat_addrs
+        .iter()
+        .map(|&addr| RcgBlock {
+            key: addr, // ARM mode (sin bit Thumb)
+            func: dummy_combat,
+        })
+        .collect();
+
+    let table = BlockTable::from_blocks(&blocks);
+    assert_eq!(table.len(), combat_addrs.len());
+
+    for &addr in &combat_addrs {
+        let entry = table.get(addr);
+        assert!(
+            entry.is_some(),
+            "la dirección de combate en IWRAM 0x{:08X} debe resolver nativamente en O(1)",
+            addr
+        );
+    }
+
+    // Comprobar que direcciones adyacentes no mapeadas no colisionen
+    assert!(table.get(0x0300_35C4).is_none());
+    assert!(table.get(0x0300_35E0).is_none());
+}
+
 // Antes existía aquí `test_run_frame_native_preserves_real_bios_stepping`, que exigía
 // `native == 0` en la BIOS real. Su contrato se retiró (propuesta
 // `2026-10-12_ejecucion-nativa-de-bios-real`): el motor en el rev fijado mantiene el flag

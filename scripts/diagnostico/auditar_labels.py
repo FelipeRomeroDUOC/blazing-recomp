@@ -79,8 +79,8 @@ def auditar():
         else:
             addr_val = int(addr)
 
-        # Verificación de rango ROM
-        if not (0x08000000 <= addr_val < 0x09000000) and not (0x02000000 <= addr_val < 0x03007FFF):
+        # Verificación de rango ROM / EWRAM / IWRAM
+        if not (0x08000000 <= addr_val < 0x09000000) and not (0x02000000 <= addr_val < 0x03008000):
             print(f"[ERROR] Dirección fuera de rango GBA: '{name}' en 0x{addr_val:08X}")
             errores += 1
 
