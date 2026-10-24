@@ -12,7 +12,7 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 
 ## Estado del Proyecto
 
-- **Versión:** `0.0.2` / `versionCode` 2 ([`Cargo.toml`](../Cargo.toml), [`android/AndroidManifest.xml`](../android/AndroidManifest.xml))
+- **Versión:** `0.0.3` / `versionCode` 3 ([`Cargo.toml`](../Cargo.toml), [`android/AndroidManifest.xml`](../android/AndroidManifest.xml))
 - **Hito del [roadmap](explicacion/roadmap-y-versionado.md):** **Fase 0 (Cimientos, `0.0.x`)**, camino a
   `0.1.0` (MVP jugable de principio a fin).
 - **ROM Objetivo:** `Fire Emblem (Europe)` — `6f2c30823ab0237310b138739ccfad879f1a07c4a782a9cbb92317d60d03cee9`
@@ -153,10 +153,10 @@ Curado a mano a partir del [registro](#registro-de-hallazgos); el registro es la
 
 ## Índice de Propuestas
 
-159 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
+160 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
 propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
-**159 = 95 `verificada por agente` + 40 `cerrada` + 2 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
+**160 = 96 `verificada por agente` + 40 `cerrada` + 2 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
 
 ### Pendientes (3) — sin ejecutar
 
@@ -234,7 +234,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-24_resolucion-segunda-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-segunda-auditoria-rant-md.md)
 - [`2026-10-24_resolucion-tercera-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-tercera-auditoria-rant-md.md)
 
-### Verificadas por agente (95) — con lo medido dentro; varias esperan el televisor
+### Verificadas por agente (96) — con lo medido dentro; varias esperan el televisor
 
 - [`2026-10-08_controles-tactiles-haptica.md`](propuestas/2026-10-08_controles-tactiles-haptica.md)
 - [`2026-10-08_crate-nativo-android.md`](propuestas/2026-10-08_crate-nativo-android.md)
@@ -331,6 +331,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md`](propuestas/2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md)
 - [`2026-10-23_ppu-nativa-paleta-lut-vertical.md`](propuestas/2026-10-23_ppu-nativa-paleta-lut-vertical.md)
 - [`2026-10-24_cobertura-aot-combate-iwram.md`](propuestas/2026-10-24_cobertura-aot-combate-iwram.md)
+- [`2026-10-24_reversionado-v0-0-3.md`](propuestas/2026-10-24_reversionado-v0-0-3.md)
 
 ### Modificadas (2) — cambiadas sobre la marcha
 

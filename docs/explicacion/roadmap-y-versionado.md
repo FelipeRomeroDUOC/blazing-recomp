@@ -21,7 +21,7 @@ El versionado se organiza en torno a dos hitos canónicos:
 - **`v0.1.0` (MVP Jugable):** Objetivo planificado: la versión mínima viable donde la ROM comercial y BIOS son verificadas, el bucle nativo arranca y el juego es completamente jugable de principio a fin con controles y guardado persistente en disco (`.sav`).
 - **`v1.0.0` (Lanzamiento Estable y Completo):** La versión de producción final que opera sin fallos en todos los dispositivos Android compatibles, con menú nativo, gestión de partidas, filtros de pantalla/shaders, y capacidad de añadir mods y ejecutar hackroms comunitarios.
 
-Todo el trabajo previo al primer arranque del juego se cataloga bajo el prefijo **`0.0.x`** (Fase de Cimientos y Prototipo), garantizando que las versiones no prometan capacidades que aún están en desarrollo en el motor. La versión actual del repositorio es **`0.0.2`**.
+Todo el trabajo previo al primer arranque del juego se cataloga bajo el prefijo **`0.0.x`** (Fase de Cimientos y Prototipo), garantizando que las versiones no prometan capacidades que aún están en desarrollo en el motor. La versión actual del repositorio es **`0.0.3`**.
 
 ### Fórmula de Sincronización con Android
 
@@ -32,7 +32,8 @@ $$\text{versionCode} = \text{MAJOR} \times 10000 + \text{MINOR} \times 100 + \te
 | SemVer | `versionName` | `versionCode` | Estado / Propósito |
 | :--- | :--- | :--- | :--- |
 | **`0.0.1`** | `"0.0.1"` | `1` | Prototipo inicial de ventana NDK y ciclo de vida de actividad. |
-| **`0.0.2`** | `"0.0.2"` | `2` | **Versión actual**: Compositor GLES/Vulkan, overlay GBA SP, pantalla de errores, empaquetado multi-ABI y PPU nativa en GPU. Persistencia `.sav` y audio en curso. |
+| **`0.0.2`** | `"0.0.2"` | `2` | Prototipo inicial de compositor GLES/Vulkan, overlay GBA SP, pantalla de errores y empaquetado multi-ABI. |
+| **`0.0.3`** | `"0.0.3"` | `3` | **Versión actual**: PPU nativa en GPU (ADR 42), 60 FPS estables y cobertura AOT C11 completa en IWRAM con 0 pasos de intérprete. Persistencia `.sav` y audio en curso. |
 | **`0.1.0`** | `"0.1.0"` | `100` | **Hito MVP planificado**: Juego arrancable y jugable de inicio a fin con controles y guardado persistente. |
 | **`0.2.0`** | `"0.2.0"` | `200` | Subsistema de audio de baja latencia (AAudio/Oboe) y pacing 60 FPS. |
 | **`0.3.0`** | `"0.3.0"` | `300` | Menú nativo en pantalla táctil (selector de archivos, ajustes de controles). |
@@ -49,7 +50,7 @@ $$\text{versionCode} = \text{MAJOR} \times 10000 + \text{MINOR} \times 100 + \te
 ```mermaid
 flowchart TD
     subgraph Fase0["Fase 0: Cimientos (0.0.x)"]
-        F0A["0.0.1: Skeleton NDK"] --> F0B["0.0.2: GPU, Overlay, Errores & Multi-ABI"]
+        F0A["0.0.1: Skeleton NDK"] --> F0B["0.0.2: Overlay, Errores & Multi-ABI"] --> F0C["0.0.3: PPU Nativa en GPU & 0 Intérprete AOT"]
     end
     
     subgraph Fase1["Fase 1: MVP Jugable (0.1.0)"]

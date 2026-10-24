@@ -32,7 +32,7 @@ Controla la identidad del paquete y las plataformas destino:
 ```toml
 [package]
 name = "blazing-recomp"
-version = "0.0.2"
+version = "0.0.3"
 platforms = ["windows", "linux", "macos"]
 icon = "assets/icon.png"   # Opcional: PNG cuadrado (mínimo 256x256, ideal 1024x1024)
 ```
@@ -40,7 +40,7 @@ icon = "assets/icon.png"   # Opcional: PNG cuadrado (mínimo 256x256, ideal 1024
 | Clave | Tipo | Por defecto | Descripción |
 | :--- | :--- | :--- | :--- |
 | `name` | String | *(Obligatorio)* | Nombre base del ejecutable nativo generado. |
-| `version` | String | `"0.0.2"` | Versión SemVer del port (alineada con `Cargo.toml`). |
+| `version` | String | `"0.0.3"` | Versión SemVer del port (alineada con `Cargo.toml`). |
 | `platforms` | Array de Strings | `["macos", "windows", "linux"]` | Plataformas de escritorio soportadas. Para Android se usa la compilación cruzada mediante NDK. |
 | `icon` | Path (relativo) | Ninguno | Ruta a un icono maestro PNG a partir del cual se generan los iconos nativos (.ico, .icns). |
 

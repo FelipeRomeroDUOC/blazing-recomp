@@ -8,6 +8,19 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 
 ## [Sin publicar]
 
+---
+
+## [0.0.3] - 2026-10-24
+
+* `versionName`: "0.0.3"
+* `versionCode`: 3
+* Target principal: `arm64-v8a`, `armeabi-v7a`, `x86_64`
+
+### Hitos Principales
+* **PPU Nativa en GPU (ADR 42 / shaders WGSL):** Renderizado acelerado por hardware al 100 % en GPU con shaders WGSL y conmutación automática Vulkan / OpenGL ES 3.0 (`src/ppu_nativa.rs`), extinguiendo el antiguo shim por software y sosteniendo 60 FPS estables.
+* **0 Pasos de Intérprete (AOT C11 en IWRAM):** Incorporación de las 14 rutinas de combate en IWRAM a `blazing.labels.toml` con guardas de contenido FNV-1a en C11. Telemetría de 269 segundos en Android confirmó 0 caídas al intérprete y más de 64 millones de bloques nativos despachados.
+
+
 * **Ampliación masiva de cobertura AOT con 22 nuevos hotspots de CPU (`blazing.labels.toml`):** Incorporación de 22 etiquetas de funciones Thumb descubiertas en dos rondas de telemetría (`0x08076bd8`, `0x08077020`, `0x08069bfc`, `0x0801eb20`, `0x08066bf8`, `0x080a2c9c`, `0x080067ac`, etc.) que eliminaron de raíz los cuellos de botella del intérprete en descompresión LZ77, copias de VRAM, interpolación y fórmulas de combate. La base de etiquetas [`blazing.labels.toml`](blazing.labels.toml) crece a **36.966 claves `name`/`address`** (≈18.483 funciones) con cero colisiones.
 * **Optimización lineal de composición de capas y blending en la PPU (`gba-core`):** Sustitución del escaneo anidado por fuerza bruta (`0..4u8`) en `compose` por un recorrido lineal directo sobre el arreglo pre-ordenado `bg_prio` con intercalación canónica del sprite, pre-evaluación y atajo de ventanas por scanline (`line_has_window`), e inlining forzado de las rutinas de aritmética de color (`alpha_blend`, `brighten`, `darken`, `split6`, `join6`). Esto reduce las comprobaciones por píxel de hasta 20 a un máximo de 5, eliminando más del 75% de las ramas condicionales en el pipeline de composición y efectos de color.
 * **Optimización de desempaquetado de tiles 4bpp y recorte de sprites en la PPU (`gba-core`):** Carga en ráfaga de 32 bits por fila de tile con extracción de nibbles sin divisiones ni bifurcaciones por píxel, inlining forzado de `pal16`, recorte horizontal temprano de sprites y cálculo invariante de coordenadas verticales para sprites no afines. Esto redujo el tiempo de ejecución `ejec` en escenas típicas de 11.7 ms a 8.4 ms (28% de mejora) con 60 FPS estables.
