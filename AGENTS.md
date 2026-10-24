@@ -81,6 +81,23 @@ Directrices, arquitectura y reglas operativas para agentes de IA que trabajen en
    - Al diseñar claves compuestas o tramos de empaquetado de bits (como `clave_de_tramo` o prioridades de capas/sprites), verificar que los campos no compartan bits para evitar colisiones silenciosas (*aliasing*).
 10. **TDD en Contratos y Esquemas:**
     - Al diseñar formatos de telemetría o contratos de datos entre subsistemas, escribir y validar primero el test de esquema antes de implementar el formateador.
+11. **Fuente Única de Verdad y Sincronización Transversal (Anti-Contradicciones):**
+    - Al sustituir, refactorizar o retirar un componente, backend o flujo de ejecución (ej. sustitución de `PpuShim` por `NativePpu`, conmutación de backend gráfico por defecto, etc.):
+      - **Prohibido:** Dejar afirmaciones contradictorias o desfasadas en guías prácticas (`docs/guias/`), explicaciones o en el cuerpo narrativo de `docs/BACKLOG.md`.
+      - **Obligatorio:** Realizar un escaneo transversal (`git grep`) y alinear todos los documentos satélites (`README.md`, `GLOSSARY.md`, `docs/`) para que reflejen de forma unánime y consistente la misma realidad técnica de producción.
+12. **Higiene en Tableros Vivos (`BACKLOG.md` vs `PENDIENTES.md`):**
+    - Para prevenir la acumulación desbordada de viñetas que desorienten al lector:
+      - Todo hallazgo en el "Registro de Hallazgos" de `docs/BACKLOG.md` debe consignar explícitamente su estado (`[Abierto]` | `[Cerrado: AAAA-MM-DD]`).
+      - Si una tarea o hallazgo ha sido resuelto por una propuesta posterior, el agente debe marcarlo inmediatamente como cerrado o retirarlo de la lista activa.
+      - `docs/PENDIENTES.md` se reserva de forma estricta para tareas de desarrollo reales y accionables en código.
+13. **Precisión Topográfica en Memoria y Hardware de Bajo Nivel:**
+    - En documentación técnica, guías de desensamblado o mapas AOT:
+      - **Diferenciación de punteros y código:** Diferenciar siempre de forma inequívoca una dirección que aloja un vector o puntero de memoria (ej. `0x03007FFC`, User IRQ vector) del punto de entrada ejecutable de la subrutina (`0x030028A0`, `IntrMain`).
+      - **Diferenciación de buffers y subrutinas:** No confundir buffers de datos de combate (ej. `0x03002B80`) con rutinas ejecutables de interpolación (`0x030035C8`).
+      - **Fidelidad de metadatos:** No atribuir a esquemas de configuración (como `blazing.labels.toml`) propiedades que no poseen (como firmas o tipos de retorno).
+14. **Prohibición de Afirmaciones Volátiles en Texto Rígido (Anti-Bitrot):**
+    - **Prohibido:** Escribir en texto narrativo recuentos numéricos volátiles que cambian con frecuencia (ej. *"la suite tiene exactamente 250 tests"* o *"se han catalogado 18.483 funciones"*), salvo que vayan acompañados de la fecha exacta de corte o estén validados por tests de integración que garanticen su actualización.
+    - Siempre que se describa el estado de pruebas o etiquetas, remitir al comando de inspección dinámico oficial (`cargo test -- --list`, `auditar_labels.py`).
 
 ### Topología de Repositorios, Motor Upstream y Delimitación de Archivos
 Este proyecto depende de los componentes y crates del motor base del proyecto oficial `gba-recomp` de Jack Rickey:
@@ -200,10 +217,20 @@ Todo agente que vaya a modificar, crear o refactorizar código en este repositor
 
 #### Fase 5: Sincronización Documental y Cierre
 1. **Impacto en documentación (`diataxis-docs`):** Si el cambio altera APIs nativas, flags, arquitectura o guías de compilación Android, actualizar el cuadrante correspondiente en `docs/`.
-2. **Registro de hallazgos fuera de alcance y tareas pendientes:** Registrar obligatoriamente todo bug, refactor o deuda técnica detectada durante la edición en la sección de la propuesta:
+2. **Regeneración y Validación Automática de Tableros (Obligatorio):**
+   - Ejecutar obligatoriamente `python scripts/actualizar_indice_propuestas.py` para sincronizar y reindexar `docs/BACKLOG.md`.
+   - Ejecutar `python .agents/skills/diataxis-docs/scripts/validar_docs.py` verificando 0 errores y 0 advertencias.
+3. **Higiene Activa de Tableros (`BACKLOG.md` y `PENDIENTES.md`):**
+   - Si la tarea resolvió un hallazgo registrado en `docs/BACKLOG.md`, marcarlo inmediatamente como cerrado con fecha (`[Cerrado: AAAA-MM-DD]`).
+   - Si resolvió una tarea de `docs/PENDIENTES.md`, marcarla como completada (`[x]`).
+   - Sincronizar fecha y versión en la cabecera del `BACKLOG.md`.
+4. **Gatekeeper de Decisiones Arquitectónicas (`docs/explicacion/DECISIONES.md`):**
+   - Pregunta obligatoria de auditoría: *¿Este cambio introduce una nueva directriz arquitectónica, sustituye o altera un ADR previo, o formaliza un compromiso técnico estructural?*
+   - Si la respuesta es afirmativa, redactar obligatoriamente el siguiente ADR consecutivo en `docs/explicacion/DECISIONES.md`, clasificar su vigencia (`[Vigente]`, `[Sustituye a...]`) y añadirlo en el índice cronológico.
+5. **Registro de hallazgos fuera de alcance y tareas pendientes:** Registrar obligatoriamente todo bug, refactor o deuda técnica detectada durante la edición en la sección de la propuesta:
    `### Fuera de alcance (hallazgos que no se arreglaron)` con su nivel de impacto (`bajo | medio`), o en el resumen de cierre del chat (en Nivel 1).
    - **Regla estricta de filtrado (`docs/PENDIENTES.md` vs `docs/BACKLOG.md`):** Al completar cada propuesta, los hallazgos que constituyan **tareas pendientes reales/accionables** (código por escribir, refactors necesarios, funciones por implementar o bugs reales) deben registrarse o actualizarse en [`docs/PENDIENTES.md`](docs/PENDIENTES.md). Los aprendizajes técnicos, notas de diseño o limitaciones físicas de hardware sin acción de código asociada deben conservarse únicamente en [`docs/BACKLOG.md`](docs/BACKLOG.md) y [`docs/explicacion/DECISIONES.md`](docs/explicacion/DECISIONES.md).
-3. **Reporte final:** Contrastar lo predicho en la propuesta contra el resultado real obtenido (`Predicho vs. real`).
+6. **Reporte final:** Contrastar lo predicho en la propuesta contra el resultado real obtenido (`Predicho vs. real`).
 
 ---
 
@@ -240,7 +267,7 @@ Todo agente que vaya a modificar, crear o refactorizar código en este repositor
 
 - **Checklist Obligatorio de Pre-Commit Gatekeeper:**
   Antes de proponer o ejecutar un `git commit` y `git push`, el agente debe verificar sin excepción los siguientes 5 criterios:
-  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (250 tests actuales: 172 en los módulos de `src/` + 78 de integración en `tests/`).
+  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (todos los tests unitarios y de integración pasando sin fallos).
   2. **Validación Diátaxis sin errores:** `python .agents/skills/diataxis-docs/scripts/validar_docs.py .` devuelve `0 error(es), 0 aviso(s)`.
   3. **Especificaciones de API sincronizadas:** `python scripts/extraer_referencias.py --check` sale con código de éxito 0.
   4. **Auditoría de labels AOT aprobada:** `python scripts/diagnostico/auditar_labels.py` sale con código de éxito 0.
