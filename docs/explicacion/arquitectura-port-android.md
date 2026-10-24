@@ -40,7 +40,7 @@ flowchart TD
 
     subgraph CapaMotor["3. Motor de Consola y Lógica AOT"]
         GbaCore["gba-core (Bus de Memoria, Timers, DMA3, MMIO)"]
-        JuegoC["Lógica Recompilada C11 (18,483 funciones nativas AOT)"]
+        JuegoC["Lógica Recompilada C11 (144.875 bloques / 18.483 funciones AOT)"]
     end
 
     NA --> AM
@@ -64,7 +64,8 @@ flowchart TD
 * **Propósito:** Define la biblioteca dinámica (`cdylib`) que Android carga al instanciar la `NativeActivity`.
 * **Separación de entornos:**
   * Expone públicamente los módulos puros (`input`, `overlay`, `overlay_shader`, `error_screen`, `ppu_nativa`) compilables y testeables en cualquier máquina de desarrollo (Windows, macOS, Linux).
-  * Concatena condicionalmente bajo `#[cfg(target_os = "android")]` el módulo `platform`, exportando el símbolo nativo `android_main`.
+  * Concatena condicionalmente bajo `#[cfg(target_os = "android")]` el módulo `platform`, exportando el símbolo nativo `android_main` y enlazando la biblioteca `libblazing_recompiled.so` vía `dlopen` para la ejecución nativa de los 144.875 bloques C11.
+  * En host de desarrollo (PC), el binario `ppu_doble` ejecuta la lógica mediante el intérprete de CPU de `gba-core` (`load_native_blocks()` retorna `None`), sirviendo como arnés de validación visual de la PPU nativa en GPU frente al software de referencia.
 
 ### 2.2. Entrada Táctil y Ergonomía (`src/input.rs`)
 * **Propósito:** Gestión determinista de colisiones y cálculo de la máscara de botones de la consola Game Boy Advance.
@@ -112,6 +113,7 @@ El proyecto vincula sus componentes del bus y la CPU directamente al repositorio
 
 * **`gba-core`:**
   * Provee la estructura `Machine`, que gestiona la memoria de la consola (IWRAM, EWRAM, VRAM, OAM, Palette) y el mapa de registros MMIO (`DISPSTAT`, `VCOUNT`, `DMA3`).
+  * Emula los canales de audio MMIO de GBA (`SOUNDCNT_H`, `SOUNDBIAS`, etc.) capturando las transferencias DMA1/DMA2 hacia las colas FIFO DirectSound A y B generadas por el driver Music Player 2000 (M4A) de *Fire Emblem*.
   * Recibe la máscara `KEYINPUT` generada por `TouchController` o mandos físicos en cada ciclo de fotograma.
 * **`armv4t`:**
   * Provee el decodificador de instrucciones para el intérprete de respaldo de 16 bits (Thumb) y 32 bits (ARM) en caso de bifurcaciones indirectas no resueltas.
@@ -121,5 +123,5 @@ El proyecto vincula sus componentes del bus y la CPU directamente al repositorio
 ## Alternativas y Compromisos
 
 1. **Sin capa Java/Kotlin (`hasCode="false"`):** Simplifica radicalmente la arquitectura y acelera la compilación, pero exige interactuar manualmente con JNI mediante firmas crudas (`jni_sig!`, `jni_str!`) para acceder a servicios del sistema como la vibración y SAF.
-2. **Cero emulación de PPU en CPU:** Se eliminó la rasterización por software línea a línea (`render_scanline`), asumiendo el compromiso de resolver fondos, sprites y mezclas directamente en shaders de GPU (`wgpu`), lo que asegura 59.7 FPS en chipsets de bajo consumo como el TV Stick (ADRs 41 y 42).
+2. **Cero emulación de PPU en CPU en la ruta de producción:** La producción no utiliza rasterización por software en CPU; resuelve fondos, sprites y mezclas directamente en shaders de GPU (`wgpu`), lo que asegura 59.7 FPS en chipsets de bajo consumo como el TV Stick (ADRs 41 y 42). La rasterización por software de `gba-core` (`render_scanline`) se conserva exclusivamente como mecanismo de contingencia y diagnóstico (vía `ppu-nativa-off.flag` o ante fallo en la inicialización de GPU).
 3. **Desacoplamiento de eventos por colas atómicas:** La alta tasa de muestreo táctil (120/240 Hz) se desacopla del bucle de renderizado a 60 FPS mediante colas atómicas libres de bloqueo, evitando contención en la CPU.

@@ -52,6 +52,12 @@ python scripts/diagnostico/auditar_labels.py
 ### `compilar_recomp_aot.ps1`
 Automatiza la ejecución del recompilador estático `gba-recomp`, forzando la preservación de las unidades `.c` generadas (`RECOMP_KEEP_C=1`) y copiándolas directamente a [`src-c/`](../../src-c/) para su posterior compilación con el NDK.
 
+> **Requisito del ejecutable `recomp`:** Requiere el binario del motor upstream [`JRickey/gba-recomp`](https://github.com/JRickey/gba-recomp). Si no se encuentra en el `PATH` ni en `../gba-recomp/target/release/recomp.exe`, se puede compilar clonando el repositorio oficial:
+> ```bash
+> git clone https://github.com/JRickey/gba-recomp.git
+> cd gba-recomp && cargo build --release -p recomp
+> ```
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/diagnostico/compilar_recomp_aot.ps1
 ```

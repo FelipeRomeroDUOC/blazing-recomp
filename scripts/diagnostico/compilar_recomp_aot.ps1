@@ -26,7 +26,7 @@ foreach ($path in $possiblePaths) {
 }
 
 if (-not $recompBin) {
-    Write-Error "No se encontro el ejecutable 'recomp'. Verifique su instalacion en PATH o en gba-recomp hermano."
+    Write-Error "No se encontro el ejecutable 'recomp'. Verifique su instalacion en PATH o compilelo en gba-recomp hermano ejecutando: cd ..\gba-recomp; cargo build --release -p recomp"
     exit 1
 }
 

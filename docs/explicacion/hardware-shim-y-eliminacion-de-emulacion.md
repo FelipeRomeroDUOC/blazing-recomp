@@ -5,6 +5,13 @@ verificado: si
 
 # Arquitectura del Hardware Shim y Eliminación de la Emulación
 
+> [!NOTE] Estado Arquitectónico de este Documento
+> **Estado:** [Sustituido en parte por ADR 42 / Registro de Evolución Arquitectónica]  
+> Este documento recoge el diseño original y la justificación técnica de la iniciativa *Hardware Shim* concebida en la rama `feature/hardware-shim`.  
+> - **Fase 1 (PPU):** *Sustituida y superada por `NativePpu` en GPU* ([ADR 42](DECISIONES.md#42-eliminación-definitiva-de-ppushim-software-en-favor-de-pipeline-gpu-directo-nativeppu)). El antiguo `PpuShim` por capas fue retirado del árbol activo de compilación y archivado en [`docs/historico/ppu-shim/`](../historico/ppu-shim/README.md).  
+> - **Fase 2 (Bus plano y timing por VSync):** *Pendiente de implementación* (diseño conceptual; actualmente la emulación de bus y memoria reside en `gba-core`).  
+> - **Fase 3 (Audio nativo AAudio / desacople de `gba-core`):** *Pendiente de implementación* (planificada para `v0.2.0` / Fase 2 del Roadmap).
+
 Este documento explica los fundamentos técnicos, la justificación de rendimiento y la arquitectura del **Hardware Shim** concebido para reemplazar el subsistema de hardware emulado (`gba-core`) por una capa nativa orientada a GPU en Android, desarrollada en la rama `feature/hardware-shim`.
 
 ---
@@ -115,9 +122,9 @@ Por lo tanto, para reemplazar `gba-core`, basta con que el nuevo componente nati
 
 ## Hoja de Ruta de Implementación (Rama `feature/hardware-shim`)
 
-Para preservar la estabilidad del proyecto y permitir validación continua frente a la versión base de `main`, el desarrollo se estructura en tres fases incrementales:
+Para preservar la estabilidad del proyecto y permitir validación continua frente a la versión base de `main`, el desarrollo se estructuró en tres fases incrementales:
 
-1. **Fase 1: PPU Shim sobre GPU (`wgpu`)**
+1. **Fase 1: PPU Shim sobre GPU (`wgpu`)** — *[Completada y sustituida por `NativePpu` en GPU según ADR 42; código archivado en `docs/historico/ppu-shim/`]*
    - Mantener temporalmente la gestión de memoria y CPU actual, pero desviar el rasterizado de `ppu.rs` hacia un renderizador de fondos y sprites acelerado por GPU.
    - Meta: Recuperar los 8-14 ms de CPU por fotograma y verificar fidelidad visual exacta con los fotogramas de prueba (*golden frames*).
 
@@ -129,11 +136,11 @@ Para preservar la estabilidad del proyecto y permitir validación continua frent
 
    El fondo deformable de los menús es el **fondo afín BG2 del modo 1**, y la PPU nativa también lo dibuja: `CapaFondoGpu` lleva los ocho registros del afín (`PA`, `PB`, `PC`, `PD`, `BG2X`, `BG2Y`, el wrap y la marca de afín), y el shader muestrea esa capa con la misma aritmética que la referencia (`render_affine_bg` de `crates/gba-core/src/ppu.rs`): punto fijo 20.8, ancla de la línea `ref + línea·(PB, PD)`, paso por píxel `PA` (horizontal) y `PC` (vertical), vuelta al mapa con el módulo de su tamaño cuando el wrap está activo y transparencia fuera del mapa cuando no lo está. Con el fondo afín dibujado, el cuadro 900 de la secuencia `escena3` (el fondo girando de los menús) da **0 diferencias de 38400 píxeles** contra la PPU de software, donde antes había 5222. El detalle, con las mediciones y los casos límite, está en [`docs/propuestas/2026-10-21_fondo-afin-bg2-modo-1.md`](../propuestas/2026-10-21_fondo-afin-bg2-modo-1.md).
 
-   El interruptor `PPU_NATIVA_ACTIVA` (`src/platform.rs`) está **apagado** por defecto: la ruta de producción sigue siendo la del shim, y encenderlo es una decisión que requiere ver la imagen en un dispositivo.
-2. **Fase 2: Bus & Timing Shim**
+   El interruptor de la PPU nativa (`src/platform.rs`) está **encendido** por defecto desde el ADR 42: la ruta de producción es el pipeline nativo acelerado en GPU (`NativePpu`). Conforme a la eliminación de la capa intermedia `PpuShim` ([`docs/propuestas/2026-10-23_eliminacion-del-ppu-shim.md`](../propuestas/2026-10-23_eliminacion-del-ppu-shim.md)), ante fallos de GPU o cuando se coloca el archivo `ppu-nativa-off.flag`, la app recurre limpiamente al rasterizador por software en CPU provisto por `gba-core` de forma visible.
+2. **Fase 2: Bus & Timing Shim** — *[Pendiente / En planificación conceptual]*
    - Implementar el gestor de memoria plana (IWRAM, EWRAM, VRAM, OAM, Palette, I/O) y sustituir la tabla `RtApi` completa.
    - Reemplazar la simulación de ciclo a ciclo de `a->tick` por avance por fotograma gobernado por VSync.
-3. **Fase 3: Audio Shim y Desvinculación de `gba-core`**
+3. **Fase 3: Audio Shim y Desvinculación de `gba-core`** — *[Pendiente / Planificada para v0.2.0]*
    - Conectar el generador PCM de audio a AAudio/Oboe.
    - Retirar completamente la dependencia de `gba-core` en `Cargo.toml`.
 

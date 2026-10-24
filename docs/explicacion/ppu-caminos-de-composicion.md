@@ -1,9 +1,18 @@
 ---
 tipo: explicacion
 verificado: si
+actualizado: 2026-10-24
 ---
 
 # Cómo decide la PPU por software qué camino dibuja cada línea
+
+> [!NOTE] Contexto Histórico, Entorno y Alcance Arquitectónico
+> Este documento es una **página de estudio histórico y análisis de ingeniería inversa** centrada en el funcionamiento interno del rasterizador por software en CPU de `gba-core` (`crates/gba-core/src/ppu.rs`) y los experimentos previos de `PpuShim`.
+> 
+> En la arquitectura de producción de **`blazing-recomp`**, el rasterizado por software en CPU fue retirado definitivamente en favor del pipeline de renderizado directo por GPU (**`NativePpu`** en `src/ppu_nativa.rs` vía `wgpu`), tal como documenta el **[ADR 42](DECISIONES.md#42-eliminación-definitiva-de-ppushim-software-en-favor-de-pipeline-gpu-directo-nativeppu)**. Este análisis se conserva íntegro por su alto valor didáctico para comprender la lógica de prioridad de capas, ventanas y efectos de mezcla del hardware original de la Game Boy Advance.
+> 
+> **Requisito del repositorio hermano para ejercicios prácticos:**  
+> Las rutas de archivo (`crates/gba-core/...`) y los comandos de prueba interactivos de esta página asumen la presencia del repositorio oficial clonado adyacente en `../gba-recomp` (`git clone https://github.com/JRickey/gba-recomp.git ../gba-recomp`). Si no dispones del repositorio hermano local, este documento debe leerse como análisis teórico conceptual del hardware de video de GBA.
 
 Página de estudio del motor hermano `gba-recomp` (crate `gba-core`, módulo `ppu.rs`): por qué hay
 dos caminos para componer una línea, qué los separa, cómo se calcula el color de un píxel, y por
@@ -761,7 +770,7 @@ Después de esta página deberías poder:
 Lo que queda fuera del arreglo, anotado en la ficha y en el
 [`BACKLOG`](../BACKLOG.md): el atajo sigue sin componer la máscara de la ventana de sprites (se
 podría recuperar parte del rendimiento con tramos de longitud variable), el shim de GPU del port
-(`src/ppu_shim.rs`) sigue sin ventana de sprites por hardware porque es otro camino de dibujo, y la
+(`src/ppu_shim.rs`, retirado en el ADR 42) carecía de ventana de sprites por hardware porque era otro camino de dibujo, y la
 clave de tramo tiene el defecto de aliasing del bloque 11.
 
 ---
