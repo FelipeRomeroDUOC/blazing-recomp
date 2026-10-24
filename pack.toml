@@ -1,6 +1,14 @@
+# pack.toml — Manifiesto de entrada para el generador estático upstream (recomp build / gba-pack).
+#
+# NOTA ARQUITECTÓNICA: Este archivo NO es leído en tiempo de ejecución por el runtime de Rust
+# en Android ni por el empaquetador del APK (scripts/package_apk.ps1). Su función exclusiva
+# es parametrizar la herramienta externa recomp durante la traducción estática inicial de la
+# ROM oficial hacia código fuente C11 (src-c/). Los subsistemas de tiempo de ejecución (PPU
+# nativa por GPU, audio, controles) se configuran directamente en el código Rust y en Cargo.toml.
+
 [package]
 name = "blazing-recomp"
-version = "0.1.0"
+version = "0.0.2"
 platforms = ["windows", "linux", "macos"]
 
 [image]
@@ -10,7 +18,7 @@ rom-sha256  = "6f2c30823ab0237310b138739ccfad879f1a07c4a782a9cbb92317d60d03cee9"
 bios-sha256 = "fd2547724b505f487e6dcb29ec2ecff3af35a841a77ab2e85fd87350abd36570"
 
 [labels]
-# Archivo de mapa de funciones (se completará con --record-labels o gba-mapper)
+# Archivo de mapa de funciones catalogadas
 file = "blazing.labels.toml"
 
 [runtime]

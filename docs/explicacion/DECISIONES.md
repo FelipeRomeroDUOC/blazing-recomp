@@ -23,40 +23,59 @@ Este registro documenta de manera exhaustiva y transparente cada decisión de di
 
 ## Registro Cronológico de Decisiones
 
-1. [Seguridad Legal y Aislamiento de Assets Propietarios (Validación SHA-256 en Runtime)](#1-seguridad-legal-y-aislamiento-de-assets-propietarios-validación-sha-256-en-runtime)
-2. [Cero Emulación Tradicional: Recompilación Estática AOT a C11](#2-cero-emulación-tradicional-recompilación-estática-aot-a-c11)
-3. [Modelo de Cobertura Híbrido: Mapeo de Labels y Red de Seguridad con Intérprete](#3-modelo-de-cobertura-híbrido-mapeo-de-labels-y-red-de-seguridad-con-intérprete)
-4. [Desacoplamiento de Repositorio Hermano a Dependencia Git Upstream Oficial (JRickey/gba-recomp)](#4-desacoplamiento-de-repositorio-hermano-a-dependencia-git-upstream-oficial-jrickeygba-recomp)
-5. [Entorno de Ejecución Android: NativeActivity Pura sin Capa DEX (`hasCode="false"`)](#5-entorno-de-ejecución-android-nativeactivity-pura-sin-capa-dex-hascodefalse)
-6. [Pipeline de Construcción CLI sin Gradle (`aapt2`, `zipalign`, `apksigner`)](#6-pipeline-de-construcción-cli-sin-gradle-aapt2-zipalign-apksigner)
-7. [Gestión Segura del Ciclo de Vida de `ANativeWindow` y Liberación de Superficies](#7-gestión-segura-del-ciclo-de-vida-de-anativewindow-y-liberación-de-superficies)
-8. [Backend Gráfico `wgpu`: Priorización de OpenGL ES 3.0 sobre Vulkan para Emuladores](#8-backend-gráfico-wgpu-priorización-de-opengl-es-30-sobre-vulkan-para-emuladores)
-9. [Desacoplamiento Matemático de la Entrada Táctil (`src/input.rs`)](#9-desacoplamiento-matemático-de-la-entrada-táctil-srcinputrs)
-10. [Ergonomía del Mando Virtual: Disposición Diagonal a 16° estilo GBA SP y Cuencas Cóncavas](#10-ergonomía-del-mando-virtual-disposición-diagonal-a-16-estilo-gba-sp-y-cuencas-cóncavas)
-11. [Overlay Táctil Procedural por Shaders WGSL (SDF 3D) vs. Sprites PNG](#11-overlay-táctil-procedural-por-shaders-wgsl-sdf-3d-vs-sprites-png)
-12. [Rasterizado de Tipografía en Atlas Estático de 256x256 en CPU con `fontdue`](#12-rasterizado-de-tipografía-en-atlas-estático-de-256x256-en-cpu-con-fontdue)
-13. [Blindaje de Fallos: Pantalla de Diagnóstico de Emergencia en Framebuffer ANativeWindow](#13-blindaje-de-fallos-pantalla-de-diagnóstico-de-emergencia-en-framebuffer-anativewindow)
-14. [Arnés de Empaquetado Fat APK Multi-ABI (`arm64-v8a`, `armeabi-v7a`, `x86_64`)](#14-arnés-de-empaquetado-fat-apk-multi-abi-arm64-v8a-armeabi-v7a-x86_64)
-15. [Reducción de Peso sin Pérdida de Debugging: Stripping con `llvm-strip`](#15-reducción-de-peso-sin-pérdida-de-debugging-stripping-con-llvm-strip)
-16. [Firma Híbrida v1/v2/v3 y Compatibilidad con Android TV sin Pantalla Táctil](#16-firma-híbrida-v1v2v3-y-compatibilidad-con-android-tv-sin-pantalla-táctil)
-17. [Poda Espacial Temprana AABB en Shader y Latencia de Swapchain a 1 Fotograma](#17-poda-espacial-temprana-aabb-en-shader-y-latencia-de-swapchain-a-1-fotograma)
-18. [Modernización Háptica a `VibrationEffect` y Pulso de 35 ms](#18-modernización-háptica-a-vibrationeffect-y-pulso-de-35-ms)
-19. [Topología de Pruebas: Crate Híbrido cdylib+rlib, Integración en tests/ y Tests Satélite *_tests.rs](#19-topología-de-pruebas-crate-híbrido-cdylibrlib-integración-en-tests-y-tests-satélite-_testsrs)
-20. [Blindaje de Suite por Mutation Testing (Mutation Score 100% sobre Lógica Pura)](#20-blindaje-de-suite-por-mutation-testing-mutation-score-100-sobre-lógica-pura)
-21. [Desacoplamiento de GameRunner y Pacing de Fotogramas a 60 FPS con Suspensión Pasiva](#21-desacoplamiento-de-gamerunner-y-pacing-de-fotogramas-a-60-fps-con-suspensión-pasiva)
-22. [Ingestión y Verificación de ROM/BIOS con Resolución Amigable en Downloads y Hash Criptográfico SHA-256](#22-ingestión-y-verificación-de-rombios-con-resolución-amigable-en-downloads-y-hash-criptográfico-sha-256)
-23. [Prevención de Conflicto de Superficie GPU y Guía Visual en Framebuffer GBA para Android 16](#23-prevención-de-conflicto-de-superficie-gpu-y-guía-visual-en-framebuffer-gba-para-android-16)
-24. [Triple Buffering Explícito en Swapchain Vulkan para Prevenir Degradación de Mailbox](#24-triple-buffering-explícito-en-swapchain-vulkan-para-prevenir-degradación-de-mailbox)
-25. [Tope Dinámico Diferenciado de Swapchain (1280px Landscape / 960px Portrait) para 60 FPS Estables](#25-tope-dinámico-diferenciado-de-swapchain-1280px-landscape--960px-portrait-para-60-fps-estables)
-26. [Profiler de Hotspots en Runtime y Expansión de Cobertura AOT C11 a 17,663 Bloques](#26-profiler-de-hotspots-en-runtime-y-expansión-de-cobertura-aot-c11-a-17663-bloques)
-27. [Calibración Simétrica de Swapchain a 960px para 60 FPS Estables en Apaisado y Retrato](#27-calibración-simétrica-de-swapchain-a-960px-para-60-fps-estables-en-apaisado-y-retrato)
-28. [Sincronización Reactiva por Eventos con AndroidAppWaker y Erradicación del Sondeo Inútil en el Hilo Principal](#28-sincronización-reactiva-por-eventos-con-androidappwaker-y-erradicación-del-sondeo-inútil-en-el-hilo-principal)
-29. [Instrumentación de Rendimiento de Hardware en gba-core y Aislamiento del Overhead de Simulación](#29-instrumentación-de-rendimiento-de-hardware-en-gba-core-y-aislamiento-del-overhead-de-simulación)
-30. [Optimización de Desempaquetado Ráfaga 4bpp y Recorte de Sprites en la PPU](#30-optimización-de-desempaquetado-ráfaga-4bpp-y-recorte-de-sprites-en-la-ppu)
+1. [Seguridad Legal y Aislamiento de Assets Propietarios (Validación SHA-256 en Runtime)](#1-seguridad-legal-y-aislamiento-de-assets-propietarios-validación-sha-256-en-runtime) — **[Vigente]**
+2. [Cero Emulación Tradicional: Recompilación Estática AOT a C11](#2-cero-emulación-tradicional-recompilación-estática-aot-a-c11) — **[Vigente]**
+3. [Modelo de Cobertura Híbrido: Mapeo de Labels y Red de Seguridad con Intérprete](#3-modelo-de-cobertura-híbrido-mapeo-de-labels-y-red-de-seguridad-con-intérprete) — **[Vigente]**
+4. [Desacoplamiento de Repositorio Hermano a Dependencia Git Upstream Oficial (JRickey/gba-recomp)](#4-desacoplamiento-de-repositorio-hermano-a-dependencia-git-upstream-oficial-jrickeygba-recomp) — **[Histórica / Contexto local]**
+5. [Entorno de Ejecución Android: NativeActivity Pura sin Capa DEX (`hasCode="false"`)](#5-entorno-de-ejecución-android-nativeactivity-pura-sin-capa-dex-hascodefalse) — **[Vigente]**
+6. [Pipeline de Construcción CLI sin Gradle (`aapt2`, `zipalign`, `apksigner`)](#6-pipeline-de-construcción-cli-sin-gradle-aapt2-zipalign-apksigner) — **[Vigente]**
+7. [Gestión Segura del Ciclo de Vida de `ANativeWindow` y Liberación de Superficies](#7-gestión-segura-del-ciclo-de-vida-de-anativewindow-y-liberación-de-superficies) — **[Vigente]**
+8. [Backend Gráfico `wgpu`: Priorización de OpenGL ES 3.0 sobre Vulkan para Emuladores](#8-backend-gráfico-wgpu-priorización-de-opengl-es-30-sobre-vulkan-para-emuladores) — **[Vigente]**
+9. [Desacoplamiento Matemático de la Entrada Táctil (`src/input.rs`)](#9-desacoplamiento-matemático-de-la-entrada-táctil-srcinputrs) — **[Vigente]**
+10. [Ergonomía del Mando Virtual: Disposición Diagonal a 16° estilo GBA SP y Cuencas Cóncavas](#10-ergonomía-del-mando-virtual-disposición-diagonal-a-16-estilo-gba-sp-y-cuencas-cóncavas) — **[Vigente]**
+11. [Overlay Táctil Procedural por Shaders WGSL (SDF 3D) vs. Sprites PNG](#11-overlay-táctil-procedural-por-shaders-wgsl-sdf-3d-vs-sprites-png) — **[Vigente]**
+12. [Rasterizado de Tipografía en Atlas Estático de 256x256 en CPU con `fontdue`](#12-rasterizado-de-tipografía-en-atlas-estático-de-256x256-en-cpu-con-fontdue) — **[Vigente]**
+13. [Blindaje de Fallos: Pantalla de Diagnóstico de Emergencia en Framebuffer ANativeWindow](#13-blindaje-de-fallos-pantalla-de-diagnóstico-de-emergencia-en-framebuffer-anativewindow) — **[Vigente]**
+14. [Arnés de Empaquetado Fat APK Multi-ABI (`arm64-v8a`, `armeabi-v7a`, `x86_64`)](#14-arnés-de-empaquetado-fat-apk-multi-abi-arm64-v8a-armeabi-v7a-x86_64) — **[Vigente]**
+15. [Reducción de Peso sin Pérdida de Debugging: Stripping con `llvm-strip`](#15-reducción-de-peso-sin-pérdida-de-debugging-stripping-con-llvm-strip) — **[Vigente]**
+16. [Firma Híbrida v1/v2/v3 y Compatibilidad con Android TV sin Pantalla Táctil](#16-firma-híbrida-v1v2v3-y-compatibilidad-con-android-tv-sin-pantalla-táctil) — **[Vigente]**
+17. [Poda Espacial Temprana AABB en Shader y Latencia de Swapchain a 1 Fotograma](#17-poda-espacial-temprana-aabb-en-shader-y-latencia-de-swapchain-a-1-fotograma) — **[Sustituida parcialmente por ADR 24 y ADR 42]**
+18. [Modernización Háptica a `VibrationEffect` y Pulso de 35 ms](#18-modernización-háptica-a-vibrationeffect-y-pulso-de-35-ms) — **[Vigente]**
+19. [Topología de Pruebas: Crate Híbrido cdylib+rlib, Integración en tests/ y Tests Satélite *_tests.rs](#19-topología-de-pruebas-crate-híbrido-cdylibrlib-integración-en-tests-y-tests-satélite-_testsrs) — **[Vigente]**
+20. [Blindaje de Suite por Mutation Testing (Mutation Score 100% sobre Lógica Pura)](#20-blindaje-de-suite-por-mutation-testing-mutation-score-100-sobre-lógica-pura) — **[Vigente]**
+21. [Desacoplamiento de GameRunner y Pacing de Fotogramas a 60 FPS con Suspensión Pasiva](#21-desacoplamiento-de-gamerunner-y-pacing-de-fotogramas-a-60-fps-con-suspensión-pasiva) — **[Sustituida por ADR 45]**
+22. [Ingestión y Verificación de ROM/BIOS con Resolución Amigable en Downloads y Hash Criptográfico SHA-256](#22-ingestión-y-verificación-de-rombios-con-resolución-amigable-en-downloads-y-hash-criptográfico-sha-256) — **[Vigente]**
+23. [Prevención de Conflicto de Superficie GPU y Guía Visual en Framebuffer GBA para Android 16](#23-prevención-de-conflicto-de-superficie-gpu-y-guía-visual-en-framebuffer-gba-para-android-16) — **[Vigente]**
+24. [Triple Buffering Explícito en Swapchain Vulkan para Prevenir Degradación de Mailbox](#24-triple-buffering-explícito-en-swapchain-vulkan-para-prevenir-degradación-de-mailbox) — **[Vigente]**
+25. [Tope Dinámico Diferenciado de Swapchain (1280px Landscape / 960px Portrait) para 60 FPS Estables](#25-tope-dinámico-diferenciado-de-swapchain-1280px-landscape--960px-portrait-para-60-fps-estables) — **[Sustituida por ADR 27]**
+26. [Profiler de Hotspots en Runtime y Expansión de Cobertura AOT C11 a 17,663 Bloques](#26-profiler-de-hotspots-en-runtime-y-expansión-de-cobertura-aot-c11-a-17663-bloques) — **[Histórica / Exploratoria]**
+27. [Calibración Simétrica de Swapchain a 960px para 60 FPS Estables en Apaisado y Retrato](#27-calibración-simétrica-de-swapchain-a-960px-para-60-fps-estables-en-apaisado-y-retrato) — **[Vigente]**
+28. [Sincronización Reactiva por Eventos con AndroidAppWaker y Erradicación del Sondeo Inútil en el Hilo Principal](#28-sincronización-reactiva-por-eventos-con-androidappwaker-y-erradicación-del-sondeo-inútil-en-el-hilo-principal) — **[Vigente]**
+29. [Instrumentación de Rendimiento de Hardware en gba-core y Aislamiento del Overhead de Simulación](#29-instrumentación-de-rendimiento-de-hardware-en-gba-core-y-aislamiento-del-overhead-de-simulación) — **[Vigente - Motor upstream]**
+30. [Optimización de Desempaquetado Ráfaga 4bpp y Recorte de Sprites en la PPU](#30-optimización-de-desempaquetado-ráfaga-4bpp-y-recorte-de-sprites-en-la-ppu) — **[Histórica - Motor upstream / Fallback]**
+31. [Optimización Lineal de Composición de Capas y Pre-Evaluación de Ventanas en la PPU](#31-optimización-lineal-de-composición-de-capas-y-pre-evaluación-de-ventanas-en-la-ppu) — **[Histórica - Motor upstream / Fallback]**
+32. [Compresión DEFLATE de las Bibliotecas Nativas en el APK](#32-compresión-deflate-de-las-bibliotecas-nativas-en-el-apk) — **[Vigente]**
+33. [El acceso a memoria no se troca por puntero directo, y la instrumentación que viaja en el APK pasa a ser el objetivo](#33-el-acceso-a-memoria-no-se-troca-por-puntero-directo-y-la-instrumentación-que-viaja-en-el-apk-pasa-a-ser-el-objetivo) — **[Vigente - Resultado negativo]**
+34. [La composición de la PPU se decide por tramos de línea, no por píxel](#34-la-composición-de-la-ppu-se-decide-por-tramos-de-línea-no-por-píxel) — **[Histórica - Motor upstream / Fallback]**
+35. [Efectos de color inertes y camino especializado para oscurecido y aclarado en la PPU](#35-efectos-de-color-inertes-y-camino-especializado-para-oscurecido-y-aclarado-en-la-ppu) — **[Histórica - Motor upstream / Fallback]**
+36. [El alpha real de la PPU por tramos: componer sin buscar la segunda capa en cada píxel](#36-el-alpha-real-de-la-ppu-por-tramos-componer-sin-buscar-la-segunda-capa-en-cada-píxel) — **[Histórica - Motor upstream / Fallback]**
+37. [La imagen del procesador es el corazón del C generado, pero localizarla no ahorra](#37-la-imagen-del-procesador-es-el-corazón-del-c-generado-pero-localizarla-no-ahorra) — **[Vigente - Resultado negativo]**
+38. [La frontera entre bloques no es una palanca](#38-la-frontera-entre-bloques-no-es-una-palanca) — **[Vigente - Resultado negativo]**
+39. [El reloj por instrucción tampoco es palanca, y el fotograma duerme](#39-el-reloj-por-instrucción-tampoco-es-palanca-y-el-fotograma-duerme) — **[Vigente - Resultado negativo]**
+40. [La calibración de presentación se reabre para el televisor](#40-la-calibración-de-presentación-se-reabre-para-el-televisor) — **[Histórica / Exploratoria]**
+41. [Transición de Emulación de Hardware a Port Nativo Puro con Hardware Shim (feature/hardware-shim)](#41-transición-de-emulación-de-hardware-a-port-nativo-puro-con-hardware-shim-featurehardware-shim) — **[Parcialmente vigente: Marco conceptual activo; Fase 1 PPU sustituida por ADR 42; Fases 2 y 3 pendientes]**
+42. [Eliminación Definitiva de PpuShim Software en favor de Pipeline GPU Directo (NativePpu)](#42-eliminación-definitiva-de-ppushim-software-en-favor-de-pipeline-gpu-directo-nativeppu) — **[Vigente]**
+43. [Subida Consolidada en VBlank y Texturas Paletizadas R8/RG8 con Lookup en Fragment Shader](#43-subida-consolidada-en-vblank-y-texturas-paletizadas-r8rg8-con-lookup-en-fragment-shader) — **[Vigente]**
+44. [Renderizado Directo sobre SurfaceView y Formato de Ventana Opaco RGBX_8888](#44-renderizado-directo-sobre-surfaceview-y-formato-de-ventana-opaco-rgbx_8888) — **[Vigente]**
+45. [Pacing de Cuadros Coordinado con Choreographer / VSync y Cola de Entrada Lock-Free](#45-pacing-de-cuadros-coordinado-con-choreographer--vsync-y-cola-de-entrada-lock-free) — **[Vigente]**
+46. [Omisión Pragmática de Registros MMIO no Consultados por Fire Emblem 7](#46-omisión-pragmática-de-registros-mmio-no-consultados-por-fire-emblem-7) — **[Vigente]**
 
 ---
 
 ### 1. Seguridad Legal y Aislamiento de Assets Propietarios (Validación SHA-256 en Runtime)
+
+> **Estado:** Vigente. Valida SHA-256 en runtime de ROM y BIOS oficiales sin distribuir assets propietarios.
+
 
 #### Contexto
 Distribuir o versionar la ROM de *Fire Emblem: The Blazing Blade* o el archivo binario del BIOS de la Game Boy Advance violaría la propiedad intelectual de Nintendo y comprometería legalmente el repositorio público del proyecto.
@@ -77,6 +96,9 @@ Establecer una política de sala limpia (*clean-room boundary*):
 
 ### 2. Cero Emulación Tradicional: Recompilación Estática AOT a C11
 
+> **Estado:** Vigente. Recompilación estática C11 AOT con cero emulación de CPU en tiempo de ejecución.
+
+
 #### Contexto
 Los emuladores clásicos de Game Boy Advance en Android interpretan o recompilan dinámicamente (JIT) las instrucciones ARMv4T en tiempo de ejecución. Esto introduce sobrecarga de CPU, consumo intensivo de batería y caídas esporádicas de fotogramas por compilación de bloques.
 
@@ -91,8 +113,11 @@ Recompilar estáticamente (Ahead-Of-Time) el binario oficial de *Fire Emblem: Th
 
 ### 3. Modelo de Cobertura Híbrido: Mapeo de Labels y Red de Seguridad con Intérprete
 
+> **Estado:** Vigente. Mapeo de 18.483 funciones canónicas en `blazing.labels.toml` con intérprete de CPU como red de seguridad.
+
+
 #### Contexto
-En un juego con 17,207 funciones y cientos de punteros a funciones indirectos o tablas de saltos (*jump tables*), traducir el 100% del binario sin errores desde el primer día es prácticamente imposible. Una sola bifurcación no catalogada causaría un cierre inmediato de la aplicación.
+En un juego con 144.875 bloques básicos y 18.483 funciones catalogadas (17.207 en la cosecha inicial de etiquetas) y cientos de punteros a funciones indirectos o tablas de saltos (*jump tables*), traducir el 100% del binario sin errores desde el primer día es prácticamente imposible. Una sola bifurcación no catalogada causaría un cierre inmediato de la aplicación.
 
 #### Decisión e implementación
 Adoptar un modelo híbrido documentado en [`arquitectura-c-recompilado.md`](arquitectura-c-recompilado.md):
@@ -106,6 +131,9 @@ Adoptar un modelo híbrido documentado en [`arquitectura-c-recompilado.md`](arqu
 ---
 
 ### 4. Desacoplamiento de Repositorio Hermano a Dependencia Git Upstream Oficial (JRickey/gba-recomp)
+
+> **Estado:** Histórica / Contexto local. Establece el desacoplamiento hacia el commit Git fijado de `gba-recomp`, utilizando temporalmente `[patch]` local para extensiones de telemetría y LUT vertical.
+
 
 #### Contexto
 El proyecto requiere los subsistemas de bus de hardware (`gba-core`) y presentación de pantalla (`screen`) desarrollados en el toolkit base `gba-recomp`. Inicialmente, las dependencias en `Cargo.toml` se enlazaron mediante rutas relativas a una carpeta hermana (`path = "../gba-recomp/crates/..."`). Sin embargo, este esquema generaba un acoplamiento frágil de entorno local: cualquier clonado en un entorno de integración continua (CI/CD) o en la máquina de otro desarrollador fallaba de inmediato al no existir la carpeta hermana en el sistema de archivos.
@@ -125,6 +153,9 @@ El proyecto requiere los subsistemas de bus de hardware (`gba-core`) y presentac
 
 ### 5. Entorno de Ejecución Android: NativeActivity Pura sin Capa DEX (`hasCode="false"`)
 
+> **Estado:** Vigente. NativeActivity pura de Android en C/Rust sin runtime DEX ni capa JVM (`android:hasCode="false"`).
+
+
 #### Contexto
 La mayoría de las aplicaciones Android usan Gradle, Kotlin y Android SDK para inicializar la ventana y luego llaman al código nativo vía JNI (`System.loadLibrary`).
 
@@ -138,6 +169,9 @@ Configurar la aplicación como una `android.app.NativeActivity` pura con `androi
 ---
 
 ### 6. Pipeline de Construcción CLI sin Gradle (`aapt2`, `zipalign`, `apksigner`)
+
+> **Estado:** Vigente. Pipeline de empaquetado autónomo multi-ABI con `aapt2`, `zipalign` y `apksigner` en `scripts/package_apk.ps1` sin Gradle.
+
 
 #### Contexto
 El sistema de compilación de Android estándar (Gradle + Android Gradle Plugin) requiere descargas masivas de paquetes, configuración pesada de Java y tiempos de sincronización lentos (15–30 segundos por cambio menor). Para un proyecto nativo en Rust/C, Gradle añade una capa innecesaria de fricción.
@@ -158,6 +192,9 @@ Diseñar un arnés de empaquetado autónomo en PowerShell ([`scripts/package_apk
 
 ### 7. Gestión Segura del Ciclo de Vida de `ANativeWindow` y Liberación de Superficies
 
+> **Estado:** Vigente. Gestión segura del ciclo de vida de `ANativeWindow` y liberación síncrona de superficies gráficas.
+
+
 #### Contexto
 Cuando un usuario bloquea el teléfono, recibe una llamada telefónica o rota la pantalla, el sistema operativo Android destruye inmediatamente la superficie gráfica (`ANativeWindow`). Si el motor gráfico continúa intentando renderizar o retiene punteros a dicha ventana, la aplicación experimenta un fallo de segmentación (SIGSEGV).
 
@@ -175,6 +212,9 @@ En [`src/platform.rs`](../../src/platform.rs), orquestar la inicialización y de
 
 ### 8. Backend Gráfico `wgpu`: Priorización de OpenGL ES 3.0 sobre Vulkan para Emuladores
 
+> **Estado:** Vigente. Backend gráfico `wgpu` con priorización automática de Vulkan a OpenGL ES 3.0 para emuladores y dispositivos sin soporte Vulkan.
+
+
 #### Contexto
 Al probar la aplicación en emuladores de PC (como BlueStacks 5) o dispositivos Android antiguos, la inicialización gráfica fallaba con pantalla negra o pánico: los controladores Vulkan en emuladores suelen estar rotos o ausentes.
 
@@ -189,6 +229,9 @@ En [`src/platform.rs`](../../src/platform.rs), configurar la instancia de `wgpu`
 
 ### 9. Desacoplamiento Matemático de la Entrada Táctil (`src/input.rs`)
 
+> **Estado:** Vigente. Desacoplamiento matemático y normalización de coordenadas de entrada táctil en `src/input.rs`.
+
+
 #### Contexto
 En aplicaciones móviles es común mezclar la detección de toques con las APIs del sistema (`MotionEvent`) y el pipeline de renderizado gráfico, haciendo imposible testear la lógica de colisiones en PC sin un dispositivo Android.
 
@@ -202,6 +245,9 @@ Diseñar [`src/input.rs`](../../src/input.rs) como un módulo puro de lógica y 
 ---
 
 ### 10. Ergonomía del Mando Virtual: Disposición Diagonal a 16° estilo GBA SP y Cuencas Cóncavas
+
+> **Estado:** Vigente. Ergonomía física del mando virtual con disposición diagonal a 16° estilo GBA SP y cuencas cóncavas.
+
 
 #### Contexto
 En pantallas táctiles planas, los jugadores carecen de retroalimentación táctil física. Los emuladores convencionales colocan los botones A y B alineados horizontalmente o en ángulos genéricos de 45°, provocando fatiga en el pulgar y pulsaciones erróneas durante combates intensos.
@@ -221,6 +267,9 @@ Inspirarse fielmente en la geometría física de la Game Boy Advance SP:
 
 ### 11. Overlay Táctil Procedural por Shaders WGSL (SDF 3D) vs. Sprites PNG
 
+> **Estado:** Vigente. Overlay táctil procedural generado en tiempo real por shaders WGSL mediante funciones de distancia con signo (SDF 3D).
+
+
 #### Contexto
 Los emuladores convencionales utilizan imágenes PNG estáticas para los botones táctiles. En pantallas modernas (con densidades DPI extremas y relaciones de aspecto de 16:9, 19.5:9, 21:9 o 4:3), los PNGs se pixelan, se deforman o requieren cientos de megabytes en texturas para diferentes resoluciones.
 
@@ -234,6 +283,9 @@ Generar los controles táctiles proceduralmente en el fragment shader GPU ([`src
 ---
 
 ### 12. Rasterizado de Tipografía en Atlas Estático de 256x256 en CPU con `fontdue`
+
+> **Estado:** Vigente. Rasterizado tipográfico estático en atlas de textura 256×256 con `fontdue` en CPU para badges de FPS y mensajes de error.
+
 
 #### Contexto
 El shader WGSL necesita dibujar etiquetas sobre los botones ("A", "B", "L", "R", "SELECT", "START" y flechas de la cruceta). Evaluar fuentes vectoriales o curvas Bézier en cada píxel en el fragment shader es inviable para GPUs móviles.
@@ -249,6 +301,9 @@ Durante la carga de la aplicación (`src/overlay.rs`), se utiliza la biblioteca 
 
 ### 13. Blindaje de Fallos: Pantalla de Diagnóstico de Emergencia en Framebuffer ANativeWindow
 
+> **Estado:** Vigente. Pantalla de diagnóstico de emergencia renderizada directamente en el framebuffer de `ANativeWindow` ante ausencia de ROM/BIOS o fallos gráficos.
+
+
 #### Contexto
 Cuando una biblioteca nativa en Android sufre un pánico en Rust o un fallo de wgpu, el comportamiento por defecto es un cierre forzoso inmediato (*crash to launcher*). El usuario solo ve que la app "se cierra sola" y el desarrollador no puede ver el error sin conectar `adb logcat`.
 
@@ -262,6 +317,9 @@ En [`src/platform.rs`](../../src/platform.rs), se instala un hook global con `st
 ---
 
 ### 14. Arnés de Empaquetado Fat APK Multi-ABI (`arm64-v8a`, `armeabi-v7a`, `x86_64`)
+
+> **Estado:** Vigente. Arnés de empaquetado Fat APK multi-ABI (`arm64-v8a`, `armeabi-v7a`, `x86_64`) con bibliotecas compartidas contiguas.
+
 
 #### Contexto
 Android se ejecuta en una diversidad de procesadores: smartphones modernos (ARM64), emuladores en PC (x86_64) y Smart TVs o TV boxes económicas (procesadores ARM de 32 bits `armeabi-v7a`). Compilar solo para ARM64 causaba el error `INSTALL_FAILED_NO_MATCHING_ABIS`.
@@ -281,6 +339,9 @@ Además, se declara `android:extractNativeLibs="true"` para compatibilidad con i
 
 ### 15. Reducción de Peso sin Pérdida de Debugging: Stripping con `llvm-strip`
 
+> **Estado:** Vigente. Reducción de tamaño del APK mediante stripping de símbolos de depuración con `llvm-strip`.
+
+
 #### Contexto
 Al compilar las 3 arquitecturas nativas en modo debug con símbolos DWARF, el APK resultante alcanzaba **340 MB**. Sin embargo, compilar en modo `--release` eliminaba las aserciones de seguridad y dificultaba el diagnóstico temprano.
 
@@ -296,6 +357,9 @@ En [`scripts/package_apk.ps1`](../../scripts/package_apk.ps1), se incorporó un 
 ---
 
 ### 16. Firma Híbrida v1/v2/v3 y Compatibilidad con Android TV sin Pantalla Táctil
+
+> **Estado:** Vigente. Firma híbrida APK v1/v2/v3 y compatibilidad con Android TV sin pantalla táctil declarada en el manifiesto.
+
 
 #### Contexto
 Al intentar instalar el APK en televisores inteligentes con Android 10, el sistema abortaba con `INSTALL_FAILED_MISSING_FEATURE` ("No se instaló la aplicación"). Esto ocurría porque Android asume que toda aplicación requiere panel táctil físico y porque los instaladores básicos de TV rechazan paquetes firmados únicamente con esquemas modernos v2/v3.
@@ -317,6 +381,9 @@ Al intentar instalar el APK en televisores inteligentes con Android 10, el siste
 
 ### 17. Poda Espacial Temprana AABB en Shader y Latencia de Swapchain a 1 Fotograma
 
+> **Estado:** Sustituida parcialmente por ADR 24 y ADR 42. La latencia de 1 fotograma fue elevada a 2 en [ADR 24](#24-triple-buffering-explícito-en-swapchain-vulkan-para-prevenir-degradación-de-mailbox) y el renderizado pasó a GPU en [ADR 42](#42-eliminación-definitiva-de-ppushim-software-en-favor-de-pipeline-gpu-directo-nativeppu). La poda espacial AABB del overlay en shader continúa vigente.
+
+
 #### Contexto
 En dispositivos con GPUs de gama de entrada (GPU Mali-G31 en Android TV y Adreno 610 en tablets), el overlay sufría una latencia de 100–200 ms entre el toque y la animación del botón. El fragment shader calculaba los SDFs y rotaciones de los 8 botones sobre todos los millones de píxeles de pantalla, saturando la tasa de relleno (*fillrate*), sumado a un swapchain que encolaba 2 fotogramas (`desired_maximum_frame_latency: 2`).
 
@@ -333,6 +400,9 @@ En dispositivos con GPUs de gama de entrada (GPU Mali-G31 en Android TV y Adreno
 ---
 
 ### 18. Modernización Háptica a `VibrationEffect` y Pulso de 35 ms
+
+> **Estado:** Vigente. Modernización de retroalimentación háptica a la API `VibrationEffect` con pulso táctil de 35 ms.
+
 
 #### Contexto
 Al optimizar la latencia visual, la respuesta háptica dejó de sentirse en tablets con Android 11. El método primitivo `vibrator.vibrate(long)` de la API 1 está deprecado y Android 11 silencia las vibraciones con atributos nulos (`USAGE_UNKNOWN`). Además, los motores de vibración rotatorios mecánicos (ERM) de las tablets tienen una inercia de arranque de ~30 ms, haciendo imperceptible el pulso original de 15 ms al no haber bloqueo en la GPU.
@@ -356,6 +426,9 @@ En [`src/platform.rs`](../../src/platform.rs):
 
 ### 19. Topología de Pruebas: Crate Híbrido cdylib+rlib, Integración en tests/ y Tests Satélite `*_tests.rs`
 
+> **Estado:** Vigente. Topología de pruebas modular: crate híbrido `cdylib` + `rlib`, integración en `tests/` y tests satélite adyacentes `*_tests.rs`.
+
+
 #### Contexto
 A medida que la suite de pruebas creció hasta 35 tests, módulos como `src/overlay.rs` (714 líneas) e `src/input.rs` (616 líneas) tenían más del 50% de su código dedicado a bloques `mod tests`. Esto saturaba la legibilidad del código de producción. Además, `packaging_tests.rs` residía dentro de `src/lib.rs` pese a no probar lógica interna de Rust, sino la integridad del manifiesto XML, empaquetado del APK y sincronización de documentación. Sin embargo, configurar `blazing-recomp` exclusivamente como `crate-type = ["cdylib"]` impedía a Cargo enlazar una carpeta de integración externa `tests/`.
 
@@ -372,6 +445,9 @@ A medida que la suite de pruebas creció hasta 35 tests, módulos como `src/over
 ---
 
 ### 20. Blindaje de Suite por Mutation Testing (Mutation Score 100% sobre Lógica Pura)
+
+> **Estado:** Vigente. Blindaje de la suite de pruebas mediante Mutation Testing con un Mutation Score del 100% en módulos de lógica pura.
+
 
 #### Contexto
 Una alta cobertura de código por líneas (*line coverage*) no garantiza la detección efectiva de errores semánticos; una aserción laxa o incompleta puede ejecutar una línea al 100% sin detectar una mutación relacional (`<` en vez de `<=`), una constante de registro GBA errónea o un desbordamiento de padding de memoria. Para verificar la resistencia de la suite (49 tests), era indispensable aplicar una auditoría de mutación sistemática sin depender de herramientas externas pesadas o invasivas.
@@ -392,6 +468,9 @@ Una alta cobertura de código por líneas (*line coverage*) no garantiza la dete
 
 ### 21. Desacoplamiento de GameRunner y Pacing de Fotogramas a 60 FPS con Suspensión Pasiva
 
+> **Estado:** Sustituida por ADR 45. El pacing original basado en `std::thread::sleep` y pausas cooperativas fue sustituido por la sincronización coordinada con `Choreographer` / VSync y cola lock-free en [ADR 45](#45-pacing-de-cuadros-coordinado-con-choreographer--vsync-y-cola-de-entrada-lock-free).
+
+
 #### Contexto
 En Android, una aplicación de juego no puede ejecutar bucles de espera activa (*busy-waiting*) ni acoplar el avance de hardware de la consola (`Machine`) directamente al hilo de la interfaz o al ciclo de vida de la actividad sin ocasionar estrangulamiento térmico (*thermal throttling*), drenaje excesivo de batería y pérdida de la capacidad de ejecutar pruebas unitarias automáticas en máquinas de desarrollo host. Además, la PPU de GBA genera un búfer crudo RGB555 de $240 \times 160$ que debe pasar por los filtros temporales del panel LCD (`Temporal`) y transformarse con la tabla de color (`ColorLut`) antes de subirse a la textura GPU del `Compositor`.
 
@@ -409,6 +488,9 @@ En Android, una aplicación de juego no puede ejecutar bucles de espera activa (
 ---
 
 ### 22. Ingestión y Verificación de ROM/BIOS con Resolución Amigable en Downloads y Hash Criptográfico SHA-256
+
+> **Estado:** Vigente. Ingestión y verificación de ROM/BIOS mediante escaneo amigable en `/sdcard/Download/` y directorios privados con comprobación criptográfica SHA-256.
+
 
 #### Contexto
 Para respetar la política de sala limpia (*clean-room*) del proyecto (`AGENTS.md §3`), el repositorio no distribuye ningún archivo propietario de *Fire Emblem: The Blazing Blade* ni de la BIOS oficial de Game Boy Advance. Sin embargo, en Android 11+ el acceso al almacenamiento privado de aplicaciones (`/sdcard/Android/data/...`) está fuertemente restringido para el usuario común mediante Scoped Storage, requiriendo herramientas complejas o permisos de administrador. Era indispensable brindar una experiencia de usuario amigable y libre de fricción: permitir que el usuario simplemente descargue su copia legal a la carpeta habitual de descargas (`Downloads/`) y que la aplicación detecte, verifique y cargue el juego automáticamente.
@@ -434,6 +516,9 @@ Para respetar la política de sala limpia (*clean-room*) del proyecto (`AGENTS.m
 
 ### 23. Prevención de Conflicto de Superficie GPU y Guía Visual en Framebuffer GBA para Android 16
 
+> **Estado:** Vigente. Prevención de conflicto de superficie GPU y guía visual de diagnóstico en framebuffer para Android 16.
+
+
 #### Contexto
 Al probar el APK en un dispositivo con Android 16, la pantalla quedaba completamente negra en el arranque. La investigación de la causa raíz reveló dos fallos concurrentes:
 1. **Conflicto EGL/Vulkan vs. ANativeWindow_lock:** Cuando `Compositor::new` toma control de la ventana física para inicializar `wgpu`, la superficie queda acoplada al buffer queue de hardware. En Android NDK, cualquier intento posterior de invocar `ANativeWindow_lock` (renderizado por software en CPU) es rechazado por el sistema con error. Al activarse un aviso informativo de estado, `redraw()` llamaba a `render_software_error`, que fallaba silenciosamente y abortaba el dibujado con `return;`, impidiendo que el Compositor GPU ejecutara el pase de dibujado y congelando la pantalla en negro.
@@ -455,6 +540,9 @@ Al probar el APK en un dispositivo con Android 16, la pantalla quedaba completam
 
 ### 24. Triple Buffering Explícito en Swapchain Vulkan para Prevenir Degradación de Mailbox
 
+> **Estado:** Vigente. Sustituyó la latencia de 1 fotograma de [ADR 17](#17-poda-espacial-temprana-aabb-en-shader-y-latencia-de-swapchain-a-1-fotograma). Configura triple buffering explícito (`desired_maximum_frame_latency = 2`) en swapchain Vulkan/GLES para prevenir degradación de fotogramas.
+
+
 #### Contexto
 En Android, el modo de presentación sin desgarro y libre de bloqueos es `VK_PRESENT_MODE_MAILBOX_KHR` (o `wgpu::PresentMode::Mailbox`). Sin embargo, en el controlador de Vulkan de varios SoCs móviles (Mali, PowerVR, Adreno), si la superficie solicita `desired_maximum_frame_latency: 1`, el backend de `wgpu-hal` solicita al driver `minImageCount = latencia + 1 = 2` imágenes. Con solo 2 imágenes en el swapchain, `Mailbox` no puede operar libremente: mientras el compositor del sistema (`SurfaceFlinger`) retiene una imagen en pantalla, solo queda una imagen libre. Si el motor intenta presentar un nuevo fotograma antes del siguiente pulso de VSync, `vkAcquireNextImageKHR` o `vkQueuePresentKHR` se bloquea como un doble búfer estricto, reteniendo el hilo de dibujado entre 32 ms y 52 ms por fotograma e impidiendo superar los 18 a 28 FPS.
 
@@ -471,6 +559,9 @@ En Android, el modo de presentación sin desgarro y libre de bloqueos es `VK_PRE
 ---
 
 ### 25. Tope Dinámico Diferenciado de Swapchain (1280px Landscape / 960px Portrait) para 60 FPS Estables
+
+> **Estado:** Sustituida por ADR 27. El tope dinámico diferenciado (1280px landscape / 960px portrait) fue reemplazado por la calibración simétrica uniforme a 960px en [ADR 27](#27-calibración-simétrica-de-swapchain-a-960px-para-60-fps-estables-en-apaisado-y-retrato).
+
 
 #### Contexto
 Dispositivos móviles y tablets modernos incorporan paneles de resolución 2K/QHD (como 1200×2000 o 2000×1200 píxeles, equivalente a 2.4 millones de píxeles por fotograma). Cada fotograma a resolución nativa requiere un búfer RGBA de 9.6 MB, exigiendo más de 570 MB/s de ancho de banda de memoria LPDDR solo para swapchain. La consola Game Boy Advance renderiza nativamente a $240 \times 160$ píxeles (0.038 millones de píxeles). Rasterizar la carcasa, componer el marco de GBA y transferir 2.4 MP en cada fotograma saturaba por completo la tasa de relleno (*fillrate*) de la GPU y la cola de `SurfaceFlinger`, haciendo que `present` consumiera más de 50 ms en retrato y 32 ms en apaisado, estancando la emulación en 18 y 28 FPS respectivamente a pesar de que la simulación de CPU en C11 (`ejec`) apenas tomaba 10-12 ms. Además, en modo retrato la mitad inferior ejecuta cálculos procedurales pesados (carcasa plateada, cuencas 3D de botones, sombras), requiriendo una cuota de fillrate más estricta que el modo apaisado.
@@ -497,6 +588,9 @@ Dispositivos móviles y tablets modernos incorporan paneles de resolución 2K/QH
 
 ### 26. Profiler de Hotspots en Runtime y Expansión de Cobertura AOT C11 a 17,663 Bloques
 
+> **Estado:** Histórica / Exploratoria. Campaña preliminar de recolección de hotspots y expansión AOT hacia 17.663 bloques, superada por la cobertura completa actual de 144.875 bloques C11.
+
+
 #### Contexto
 A pesar de contar con 17,207 bloques traducidos a C11, la telemetría en runtime (`blazing-perf.txt`) revelaba entre 35,000 y 55,000 pasos de intérprete de respaldo por segundo, manteniendo la ejecución de CPU (`ejec`) en ~12.5 ms por fotograma. Al operar sin un juego completo de labels en `blazing.labels.toml`, ciertas rutinas centrales del juego se saltaban de forma indirecta hacia direcciones no indexadas en la tabla de bloques estática, obligando al bucle de emulación a recurrir a `m.step()` para interpretar dichas instrucciones. Sin embargo, diagnosticar a ciegas qué funciones de la ROM ($0x08000000..0x09FFFFFF$) consumían ese volumen resultaba inviable.
 
@@ -522,6 +616,9 @@ A pesar de contar con 17,207 bloques traducidos a C11, la telemetría en runtime
 
 ### 27. Calibración Simétrica de Swapchain a 960px para 60 FPS Estables en Apaisado y Retrato
 
+> **Estado:** Vigente. Sustituyó a [ADR 25](#25-tope-dinámico-diferenciado-de-swapchain-1280px-landscape--960px-portrait-para-60-fps-estables). Calibra simétricamente el tope del swapchain a 960px en apaisado y retrato para garantizar 60 FPS estables.
+
+
 #### Contexto
 Tras optimizar la CPU a <8 ms mediante AOT, el juego corría a 60 FPS clavados en modo vertical (retrato), pero en modo horizontal (apaisado, $2000 \times 1200$) la tasa de refresco fluctuaba entre 55 y 58 FPS. La telemetría por fase reveló que `ejec` tardaba solo 6.6 ms, pero `present` se elevaba a **14.2 ms** (agotando casi la totalidad de los 16.6 ms de VSync). Con el tope anterior de 1280px para apaisado, la superficie del swapchain se dimensionaba en $1280 \times 768$ (983,040 píxeles, un 77% más área que en retrato), saturando el fillrate del hardware y la cola de composición de la GPU.
 
@@ -543,6 +640,9 @@ Tras optimizar la CPU a <8 ms mediante AOT, el juego corría a 60 FPS clavados e
 ---
 
 ### 28. Sincronización Reactiva por Eventos con AndroidAppWaker y Erradicación del Sondeo Inútil en el Hilo Principal
+
+> **Estado:** Vigente. Sincronización reactiva por eventos mediante `AndroidAppWaker`, erradicando el sondeo activo (*busy-waiting*) en el hilo principal de Android.
+
 
 #### Contexto
 Para evitar bloquear el hilo principal de la interfaz y permitir que la emulación corriera a 60 Hz desacoplada, el hilo principal en Android utilizaba un timeout breve de 1 ms (`Duration::from_millis(1)`) en `app.poll_events()` ([`src/platform.rs`](../../src/platform.rs)). Este sondeo ciego era necesario porque el hilo principal no recibía ninguna notificación cuando el hilo de emulación (`blazing-emu`) completaba un fotograma y lo depositaba en el buzón `worker.bridge().try_recv_frame()`.
@@ -572,6 +672,9 @@ Como cada fotograma de GBA toma ~16.6 ms, durante cada ciclo de cuadro el hilo p
 ---
 
 ### 29. Instrumentación de Rendimiento de Hardware en gba-core y Aislamiento del Overhead de Simulación
+
+> **Estado:** Vigente - Motor upstream. Instrumentación de contadores de rendimiento en `gba-core` para aislar el coste de simulación del hardware.
+
 
 #### Contexto
 En pruebas en hardware real sobre tablets modestas (Qualcomm Snapdragon 662), el tiempo de ejecución de la simulación (`ejec`) mostraba un piso persistente de ~9 a 13 ms por fotograma, incluso cuando el intérprete de respaldo ejecutaba muy pocas instrucciones. Existía la hipótesis de que dicho piso provenía de la PPU, el sintetizador de audio APU o la frecuencia de accesos al bus de memoria (callbacks `read8/16/32` y `write8/16/32`). Sin embargo, no existía instrumentación granular que permitiera aislar qué subsistema consumía dicho tiempo.
@@ -606,6 +709,9 @@ Además, en procesadores móviles de gama de entrada, una llamada a `std::time::
 
 ### 30. Optimización de Desempaquetado Ráfaga 4bpp y Recorte de Sprites en la PPU
 
+> **Estado:** Histórica - Motor upstream / Fallback. Optimización de desempaquetado ráfaga 4bpp y recorte de sprites en el rasterizador por software de `gba-core`. Vigente en el arnés PC `ppu_doble` y como fallback pasivo en Android, pero no en la ruta primaria GPU ([ADR 42](#42-eliminación-definitiva-de-ppushim-software-en-favor-de-pipeline-gpu-directo-nativeppu)).
+
+
 #### Contexto
 Tras la instrumentación de hardware (ADR 29), las mediciones en Snapdragon 662 demostraron que el renderizador de software de la PPU (`crates/gba-core/src/ppu.rs`) representaba el componente individual más pesado de la simulación, consumiendo entre 3.5 y 6.9 ms por fotograma. Al perfilar el renderizado de scanlines se identificaron dos cuellos de botella algorítmicos fundamentales:
 1. En fondos de texto de 4 bits por píxel (Modo 0, predominante en *Fire Emblem*), la función `render_text_bg` leía la VRAM byte a byte píxel a píxel, realizando divisiones `fx / 2` y bifurcaciones condicionales repetitivas (`if fx & 1 == 0`) para desempaquetar cada nibble.
@@ -634,6 +740,9 @@ Tras la instrumentación de hardware (ADR 29), las mediciones en Snapdragon 662 
 
 ### 31. Optimización Lineal de Composición de Capas y Pre-Evaluación de Ventanas en la PPU
 
+> **Estado:** Histórica - Motor upstream / Fallback. Optimización lineal de composición de capas y pre-evaluación de ventanas en la PPU por software de `gba-core`. Vigente en `ppu_doble` y fallback.
+
+
 #### Contexto
 A pesar de la optimización de desempaquetado de tiles y recorte de sprites (ADR 30), en escenas con ventanas, efectos de color o múltiples fondos activos, el renderizado de la PPU consumía entre 3.2 y 5.5 ms por fotograma. Al analizar la función de composición de capas (`compose` en `crates/gba-core/src/ppu.rs`), se identificaron dos ineficiencias críticas:
 1. **Búsqueda por fuerza bruta en cada píxel:** La función ejecutaba un bucle anidado `'outer: for p in 0..4u8` sobre las 4 prioridades posibles de hardware ($0 \dots 3$). Dentro de cada prioridad evaluaba el sprite (`obj.priority == p`), y si no coincidía, realizaba un segundo bucle lineal sobre las 4 capas de fondo (`bg_prio`). Si el píxel requería mezcla de colores (*alpha blend* o efectos de fade), se repetía otra búsqueda anidada completa para encontrar la segunda capa visible (`tgt2`), lo que generaba hasta 20 iteraciones y evaluaciones condicionales por píxel ($>3,800$ evaluaciones por scanline, más de 614,000 por fotograma).
@@ -660,6 +769,9 @@ A pesar de la optimización de desempaquetado de tiles y recorte de sprites (ADR
 
 ### 32. Compresión DEFLATE de las Bibliotecas Nativas en el APK
 
+> **Estado:** Vigente. Compresión DEFLATE de las bibliotecas nativas (`.so`) en el empaquetado del APK.
+
+
 #### Contexto
 El APK universal de tres ABIs pesaba **195,670,857 bytes (186.6 MiB)**. La medición de su estructura interna mostró que las seis entradas `lib/**/*.so` ocupaban dentro del archivo exactamente lo mismo que fuera de él: estaban almacenadas con `compression_method=0` (STORED), sin comprimir. El empaquetado STORED se justificaba en el script como imprescindible para la carga directa por `mmap` con `android:extractNativeLibs="false"`, pero el manifiesto declara `android:extractNativeLibs="true"` desde la decisión 14: Android **extrae** las bibliotecas al instalar y acepta entradas comprimidas. Se pagaba 4.5× de tamaño por una ventaja que la configuración real no utilizaba.
 
@@ -678,6 +790,9 @@ El APK universal de tres ABIs pesaba **195,670,857 bytes (186.6 MiB)**. La medic
 ---
 
 ### 33. El acceso a memoria no se troca por puntero directo, y la instrumentación que viaja en el APK pasa a ser el objetivo
+
+> **Estado:** Vigente - Resultado negativo. Demuestra empíricamente que el acceso a memoria en el C recompilado no se acelera trocándolo por punteros directos, orientando la optimización hacia la instrumentación.
+
 
 #### Contexto
 El residuo de `ejec` en el Android TV (4,54 ms de mediana tras descontar PPU y APU, sesión 17) se atribuía al acceso a memoria: cada lectura y escritura del juego es una llamada indirecta a la vtable `RtApi`, y a 12.214 accesos por fotograma eso daba ~3,7 ms a 0,27 µs por acceso. La fase A de [`2026-10-12_acceso-memoria-sin-llamada-indirecta.md`](../propuestas/2026-10-12_acceso-memoria-sin-llamada-indirecta.md) existía para medir antes de tocar el generador.
@@ -699,6 +814,9 @@ El residuo de `ejec` en el Android TV (4,54 ms de mediana tras descontar PPU y A
 
 ### 34. La composición de la PPU se decide por tramos de línea, no por píxel
 
+> **Estado:** Histórica - Motor upstream / Fallback. Composición de la PPU software por tramos de línea constantes en lugar de por píxel. Vigente en `ppu_doble` y fallback.
+
+
 #### Contexto
 La PPU en software costaba 9,20 ms por fotograma en el Android TV (55 % de `ejec`, con `ejec` ocupando
 el presupuesto entero de 60 FPS) y su parte mayor era la composición: 4,20 ms para decidir, píxel a
@@ -709,7 +827,7 @@ que se pagaba 240 veces por línea y 160 veces por fotograma. El trabajo lo pidi
 con la salida visual como restricción intocable.
 
 #### Decisión e implementación
-1. En [`../gba-recomp/crates/gba-core/src/ppu.rs`](../../../gba-recomp/crates/gba-core/src/ppu.rs)
+1. En `crates/gba-core/src/ppu.rs` (en el motor base `gba-core`)
    (motor, ruta local del `[patch]`) la línea se parte en **tramos** de x con control de capas
    constante (hasta cinco: los bordes de WIN0H/WIN1H) y cada tramo se compone en una pasada con la
    lista de fondos monomorfizada por número de fondos activos (`straight_span`, `straight_bgs`,
@@ -752,6 +870,9 @@ con la salida visual como restricción intocable.
 
 ### 35. Efectos de color inertes y camino especializado para oscurecido y aclarado en la PPU
 
+> **Estado:** Histórica - Motor upstream / Fallback. Detección de efectos de color inertes y camino especializado para oscurecido/aclarado en la PPU software de `gba-core`. Vigente en `ppu_doble` y fallback.
+
+
 #### Contexto
 En mediciones de telemetría de Android TV (sesión 19), el 78 % de las líneas del fotograma eran
 descartadas hacia el camino general de composición por tener `BLDCNT` activo, triplicando `ppucomp`
@@ -761,7 +882,7 @@ de la capa ganadora superior sin requerir la búsqueda per-píxel de la segunda 
 en [`2026-10-13_ppu-efectos-inertes-y-camino-especializado.md`](../propuestas/2026-10-13_ppu-efectos-inertes-y-camino-especializado.md).
 
 #### Decisión e implementación
-1. **Regla de efectos inertes en vía rápida ([`../gba-recomp/crates/gba-core/src/ppu.rs`](../../../gba-recomp/crates/gba-core/src/ppu.rs)):**
+1. **Regla de efectos inertes en vía rápida (`crates/gba-core/src/ppu.rs`):**
    Se detectan efectos identidad en tiempo de escaneo: modos 2 y 3 con `EVY == 0` y modo 1 sin bits en la
    máscara de segundos objetivos. Estas líneas entran directamente por la vía rápida de tramos continuos
    (`rectas`), incrementando además el contador informativo `inertes`.
@@ -788,6 +909,9 @@ en [`2026-10-13_ppu-efectos-inertes-y-camino-especializado.md`](../propuestas/20
 
 ### 36. El alpha real de la PPU por tramos: componer sin buscar la segunda capa en cada píxel
 
+> **Estado:** Histórica - Motor upstream / Fallback. Resolución de mezclas alfa reales de la PPU software por subtramos sin búsqueda de segunda capa por píxel. Vigente en `ppu_doble` y fallback.
+
+
 #### Contexto
 Las líneas con alpha real (`BLDCNT` modo 1 con segundos objetivos) eran el último bloque grande del camino
 general: 186 de los 353 segundos de la sesión 20 con las ~160 líneas de cada fotograma por el camino de mezcla,
@@ -798,7 +922,7 @@ buscar una vez por tramo en vez de una vez por píxel. Se planificó en
 [`2026-10-13_alpha-real-por-tramos.md`](../propuestas/2026-10-13_alpha-real-por-tramos.md).
 
 #### Decisión e implementación
-1. **La pareja de capas se resuelve por subtramo ([`../gba-recomp/crates/gba-core/src/ppu.rs`](../../../gba-recomp/crates/gba-core/src/ppu.rs)):**
+1. **La pareja de capas se resuelve por subtramo (`crates/gba-core/src/ppu.rs`):**
    `compose_alpha_tramos` recorre los tramos de control de ventana que ya calculaba el camino recto y los parte
    en subtramos de clave constante. `clave_de_tramo` resume por píxel lo único que `top_two_layers` necesita de
    `x`: qué capas habilitadas son opacas (bits 0-3) y qué prioridad tiene el sprite que tapa (bits 8-15). Dentro
@@ -850,6 +974,9 @@ ms/fotograma: el recorrido de claves cuesta 0,059 (el 41 % del premium) y la gan
 
 ### 37. La imagen del procesador es el corazón del C generado, pero localizarla no ahorra
 
+> **Estado:** Vigente - Resultado negativo. Demuestra empíricamente que localizar la imagen del procesador en el código C generado no genera ganancias de rendimiento.
+
+
 #### Contexto
 El código nativo que corre en el teléfono trabaja sobre la imagen de los dieciséis registros en memoria (`uint32_t c[17]`): cada operando es una carga y cada resultado un almacén. La intuición era que mantenerlos en variables locales del bloque —que el compilador del dispositivo pueda tener en registros de máquina— bajaría el coste de `ejec`.
 
@@ -877,6 +1004,9 @@ El registro en memoria **sí** cuesta —el **31,1 % de las instrucciones genera
 
 ### 38. La frontera entre bloques no es una palanca
 
+> **Estado:** Vigente - Resultado negativo. Demuestra empíricamente que alterar la frontera entre bloques básicos C11 no constituye una palanca de optimización.
+
+
 #### Contexto
 Cerrada la vía de los registros, la sospecha cayó en la frontera: cada bloque nativo termina volviendo al despachador, y el censo estático decía 5.540 grupos, 196.461 `goto` internos, 19.894 puertas de cadena y 81.572 `return`. Faltaba el dato que decide: **cuántas veces se cruza esa frontera por fotograma**.
 
@@ -899,6 +1029,9 @@ Se contaron las puertas de bucle dentro de `rt_chain_gate` (contador estático, 
 ---
 
 ### 39. El reloj por instrucción tampoco es palanca, y el fotograma duerme
+
+> **Estado:** Vigente - Resultado negativo. Demuestra empíricamente que la precisión de ciclo por instrucción no aporta fluidez frente a la suspensión cooperativa durante el *halt*.
+
 
 #### Contexto
 El censo de llamadas del C generado puso a `a->tick` como el **32,1 %** de todas las llamadas emitidas (400.767), por delante de la lectura y la escritura de memoria, y la propuesta anterior lo señaló como sospechoso. Antes de atacarlo se acotó su techo.
@@ -928,6 +1061,9 @@ Solo **14.577 y 46.710 de los 280.896 ciclos** que dura un fotograma pasan por `
 
 ### 40. La calibración de presentación se reabre para el televisor
 
+> **Estado:** Histórica / Exploratoria. Experimento temporal de calibración de presentación en televisor, consolidado posteriormente en [ADR 27](#27-calibración-simétrica-de-swapchain-a-960px-para-60-fps-estables-en-apaisado-y-retrato) y [ADR 42](#42-eliminación-definitiva-de-ppushim-software-en-favor-de-pipeline-gpu-directo-nativeppu).
+
+
 #### Contexto
 La Decisión 25 y la propuesta del arranque multihilo retiraron el barrido de calibración: en la tablet, solo la reducción de resolución bajaba el coste de `present` (51,4 ms → 2,9 ms), y eso choca con la nitidez nativa, que es una decisión de producto. El mecanismo (`src/present.rs`) se conservó entero para poder reabrir la decisión.
 
@@ -938,6 +1074,125 @@ Se reactiva el barrido de arranque (`CALIBRAR_PRESENTACION = true` en [`src/plat
 * **Alternativa descartada: dejarlo desactivado y no medir.** El resultado de la tablet no tiene por qué trasladarse al Android TV, cuyo SoC y compositor son distintos; sin medirlo, la decisión se apoya en un solo dispositivo.
 * **Compromiso asumido: cada arranque gasta 12-15 s** de mediciones y una sonda a media resolución mientras dure el experimento.
 * **Compromiso asumido: la confirmación exige el televisor.** Si el resultado de la tablet se traslada, la constante vuelve a `false` y se anota; la sonda a media resolución sigue siendo **sonda**, nunca adoptable.
+
+---
+
+### 41. Transición de Emulación de Hardware a Port Nativo Puro con Hardware Shim (feature/hardware-shim)
+
+> **Estado:** Parcialmente vigente. Marco conceptual rector activo; Fase 1 (PPU) sustituida por ADR 42; Fases 2 y 3 pendientes.
+
+
+#### Contexto
+A pesar de que la CPU corre de forma nativa AOT en C11, los dispositivos móviles de gama de entrada sufren para mantener 60 FPS estables (cayendo a 30-45 FPS) debido a que `gba-core` rasteriza por software en CPU 160 líneas de escaneo por fotograma en `render_scanline` (entre 8 y 14 ms por cuadro). Los emuladores comerciales tradicionales alcanzan 60 FPS en estos mismos dispositivos mediante técnicas de *frame-based rendering* y optimización SIMD/NEON. En un port nativo, continuar emulando el silicio de la consola por software resulta ineficiente e innecesario cuando el dispositivo cuenta con GPU moderna (`wgpu`).
+
+#### Decisión e implementación
+1. **Creación de la rama aislada `feature/hardware-shim`:** Se crea una rama dedicada para desarrollar la sustitución del hardware sin alterar la línea base funcional ni la suite de pruebas de `main`.
+2. **Arquitectura del Hardware Shim:** Sustituir el modelo de hardware de `gba-core` por una implementación nativa de la interfaz `RtApi`:
+   - **PPU delegada a GPU:** En lugar de rasterizar 38.400 píxeles por software en CPU, el Shim emite *draw calls* instanciadas en `wgpu` para dibujar las 4 capas de fondos y los 128 sprites de la OAM directamente sobre la pantalla en VBlank.
+   - **Memoria plana contigua:** IWRAM, EWRAM, VRAM, OAM y Palette residen en arreglos contiguos sin simulación de mirrors de bus.
+   - **Retiro de `a->tick`:** La sincronización de ciclos de cuarzo a 16,78 MHz se elimina, y la llamada `VBlankIntrWait` se enlaza directamente a la tasa de refresco del panel.
+3. **Documento de especificación arquitectónica:** Se documenta el diseño completo en [`docs/explicacion/hardware-shim-y-eliminacion-de-emulacion.md`](hardware-shim-y-eliminacion-de-emulacion.md).
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Continuar optimizando micro-rutinas de CPU en `gba-core`.** El techo de ganancia es insuficiente para garantizar 60 FPS en núcleos Cortex-A53/A55 lentos.
+* **Alternativa descartada: Decompilación manual completa de cero.** Descartada por requerir años de ingeniería inversa frente a aprovechar los 144.875 bloques C11 plenamente funcionales.
+* **Compromiso asumido:** El desarrollo se ejecuta por fases incrementales (Fase 1: PPU GPU, Fase 2: Bus & Timing, Fase 3: Audio), validando cada etapa visualmente contra los *golden frames*.
+
+---
+
+### 42. Eliminación Definitiva de PpuShim Software en favor de Pipeline GPU Directo (NativePpu)
+
+> **Estado:** Vigente. Retirada definitiva de la capa intermedia `PpuShim` en favor del pipeline nativo GPU directo (`NativePpu`), manteniendo el rasterizador software de `gba-core` exclusivamente como fallback de contingencia y diagnóstico.
+
+
+#### Contexto
+Durante la fase inicial del hardware shim, se concibió un componente intermedio (`PpuShim`) encargado de interceptar y rasterizar scanlines en CPU antes de transferirlos a la GPU. Sin embargo, las mediciones empíricas de telemetría en dispositivos de bajo consumo (TV Stick con GPU Mali-G31) demostraron que la simulación de scanlines por CPU continuaba consumiendo entre 8 y 12 ms por cuadro, dejando un margen casi nulo para alcanzar los 60 FPS estables.
+
+#### Decisión e implementación
+Se acordó retirar definitivamente la vía de renderizado por software (`PpuShim`) y migrar hacia un pipeline GPU nativo directo (`NativePpu`):
+1. **Delegación total a GPU:** Los planos de fondo (Backgrounds) y los sprites de la OAM se componen directamente en la GPU mediante shaders wgpu en lugar de rasterizarse píxel a píxel en CPU.
+2. **Subida en bloque en VBlank:** Se eliminó la transferencia de líneas individuales intermedias, consolidando la sincronización de buffers al final del cuadro.
+3. **Resultado medido:** El tiempo de dibujo de la escena cayó en ~1.0 ms promedio (bajando de ~12.2 ms a 11.26 ms), alcanzando 59.7 FPS sostenidos sobre el TV Stick a lo largo de 400 segundos continuos de ejecución.
+4. **Ejecución definitiva (2026-10-23):** Conforme a la propuesta [`docs/propuestas/2026-10-23_eliminacion-del-ppu-shim.md`](../propuestas/2026-10-23_eliminacion-del-ppu-shim.md), se eliminaron los fuentes de `PpuShim` del crate y de la app, archivando 29 arneses y 10 pruebas en [`docs/historico/ppu-shim/`](../historico/ppu-shim/README.md). En caso de fallo al inicializar la PPU nativa, la app apaga la GPU en el worker y degrada limpiamente a renderizado por software en CPU.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Mantener un modo híbrido concurrente continuo (ejecutar ambos renderizadores en paralelo en cada fotograma de producción).** Descartada por complejidad, duplicidad de cómputo y consumo innecesario de batería; se preservó únicamente el mecanismo de degradación y conmutación pasiva para contingencias o diagnóstico con `ppu-nativa-off.flag`.
+* **Compromiso asumido:** Obliga a resolver cualquier efecto gráfico especial (ventanas, color blending) mediante shaders de GPU en lugar de manipulaciones en memoria de CPU.
+
+---
+
+### 43. Subida Consolidada en VBlank y Texturas Paletizadas R8/RG8 con Lookup en Fragment Shader
+
+> **Estado:** Vigente. Subida consolidada de datos en VBlank y texturas paletizadas R8/RG8 con desempaquetado en el fragment shader.
+
+
+#### Contexto
+En los SoCs móviles y de TV Stick con arquitectura de memoria unificada (UMA), el bus de memoria DRAM (4.8 a 6.4 GB/s) se comparte concurrentemente entre la CPU, la GPU y el controlador de pantalla. Subir 160 líneas individuales generaba 160 llamadas al driver gráfico y vaciados prematuros de teselas (*premature tile flushes*). Asimismo, transferir la pantalla completa en formato `RGBA8888` (4 bytes por píxel) desperdiciaba ancho de banda al transportar datos expandidos de una paleta que en GBA es intrínsecamente de 8 bits o 15 bits.
+
+#### Decisión e implementación
+1. **Consolidación en VBlank:** Se agrupa la totalidad de datos en un único buffer de transferencia por fotograma, emitido exclusivamente durante la ventana de borrado vertical (*VBlank*).
+2. **Formato R8 con desempaquetado en GPU:** Se transfieren los índices de paleta en texturas de 1 byte por píxel (`R8_UINT`), delegando el mapeo de color final a un lookup de paleta ejecutado dentro de la memoria SRAM on-chip de la tesela en el fragment shader.
+3. **Ahorro de ancho de banda:** Reduce el tráfico en el bus UMA en un 75% frente a subidas tradicionales `RGBA8888`, evitando la saturación del controlador de memoria del SoC.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Expandir la paleta a RGBA32 en la CPU antes de subir la textura.** Descartada por sobrecargar el bus UMA y la CPU.
+* **Compromiso asumido:** Requiere vincular un búfer uniforme (UBO) o textura 1D de 256 colores para la paleta en el pipeline de shaders.
+
+---
+
+### 44. Renderizado Directo sobre SurfaceView y Formato de Ventana Opaco RGBX_8888
+
+> **Estado:** Vigente. Renderizado directo sobre `SurfaceView` con formato opaco `WINDOW_FORMAT_RGBX_8888` para habilitar Hardware Overlays directos sin sobrecarga de `SurfaceFlinger`.
+
+
+#### Contexto
+El servidor de composición de Android (`SurfaceFlinger`) introduce sobrecarga y latencia si la superficie de renderizado se integra como una vista ordinaria en el árbol de vistas mediante `TextureView`, obligando a la GPU a ejecutar un doble pase de renderizado (dibujo del juego + mezcla en cascada con la UI del sistema).
+
+#### Decisión e implementación
+1. **Uso exclusivo de `SurfaceView`:** Se adopta `SurfaceView`, permitiendo que el Hardware Composer (HWC) asigne un plano de hardware dedicado (*Hardware Overlay*) directo al controlador de pantalla sin procesamiento en la GPU del sistema.
+2. **Formato `RGBX_8888`:** Se configura la superficie nativa con formato de píxel opaco (`WINDOW_FORMAT_RGBX_8888`), suprimiendo el procesamiento de canal alfa contra planos inferiores.
+3. **Impacto:** Reduce el *input lag* en 1 a 2 cuadros y libera la GPU de la carga de composición del sistema.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Utilizar `TextureView` para facilitar animaciones de transición en Java.** Descartada por penalizar la fluidez en TV Sticks.
+* **Compromiso asumido:** El canvas del juego opera en un plano independiente y no puede intercalar vistas Java translúcidas directamente por encima sin habilitar composición explícita.
+
+---
+
+### 45. Pacing de Cuadros Coordinado con Choreographer / VSync y Cola de Entrada Lock-Free
+
+> **Estado:** Vigente. Sustituyó a [ADR 21](#21-desacoplamiento-de-gamerunner-y-pacing-de-fotogramas-a-60-fps-con-suspensión-pasiva). Pacing de fotogramas coordinado con `Choreographer` / VSync y cola de entrada lock-free con sincronización atómica.
+
+
+#### Contexto
+El uso de pausas activas (*busy-waiting*) mediante bucles cerrados en Rust satura las cachés de la CPU, compite por el bus UMA con la GPU y dispara el estrangulamiento térmico (*thermal throttling*). Paralelamente, los paneles táctiles modernos muestrean toques a 120/240 Hz, desfasados del refresco de 60 Hz del juego.
+
+#### Decisión e implementación
+1. **Suspensión pasiva coordinada con VSync:** El bucle principal de ejecución delega el ritmo de cuadro al compositor de Android (`ANativeWindow_unlockAndPost` y `Choreographer`), suspendiendo los núcleos en estados de bajo consumo (`WFI`/`pthread_cond_wait`).
+2. **Cola de eventos atómica Lock-Free:** La recepción de eventos táctiles y de gamepad se desacopla del hilo de renderizado mediante una cola circular *Single-Producer Single-Consumer* (SPSC) respaldada por operaciones atómicas con semántica Acquire/Release.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Sincronización mediante `std::thread::sleep` o bucles `spin`.** Descartada por falta de precisión temporal y sobrecalentamiento.
+* **Compromiso asumido:** El motor asume una latencia de sincronización ligada al pulso del panel del dispositivo físico.
+
+---
+
+### 46. Omisión Pragmática de Registros MMIO no Consultados por Fire Emblem 7
+
+> **Estado:** Vigente. Omisión pragmática de registros MMIO del hardware de GBA no consultados por *Fire Emblem 7* para reducir el overhead en el bus de simulación.
+
+
+#### Contexto
+Una implementación completa de hardware de GBA requiere simular decenas de registros de entrada/salida (`0x04000000`): canales serie, timers auxiliares no utilizados, flags de control de cartucho y accesos irrelevantes. Mantener shims para estos puertos añade complejidad de código y sobrecarga de comprobaciones en cada acceso de memoria.
+
+#### Decisión e implementación
+1. **Auditoría de labels y desensamblado:** Se analizó el binario oficial de *Fire Emblem: The Blazing Blade* para cartografiar con precisión qué registros I/O son leídos y escritos en la práctica.
+2. **Omisión de shims inertes:** Se determinó no emular la lógica activa de registros periféricos que FE7 jamás consulta en sus bucles de combate y mapa (ej. puerto serie, timers secundarios sin interrupción asignada), tratándolos como lecturas inocuas de cero o escrituras descartadas.
+3. **Focalización en registros críticos:** Toda la precisión de ciclo y sincronización se concentró en los registros vitales para el juego: `DISPSTAT` (VCount match), `VCOUNT`, `DMA3` e interrupciones de VBlank.
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Emulación exhaustiva del chipset GBA al estilo de emuladores universales (mGBA / VBA-M).** Descartada por contradecir la visión de un port nativo especializado y liviano.
+* **Compromiso asumido:** Este diseño es específico para *Fire Emblem 7*; portar otros juegos requerirá auditar sus respectivos mapas de acceso MMIO.
 
 ---
 

@@ -2,7 +2,7 @@
 """Audita el registro de hallazgos del BACKLOG contra las propuestas.
 
 Los hallazgos "fuera de alcance" nacen al final de cada propuesta y hasta ahora
-no tenían registro: quien buscaba "qué falta" tenía que abrir las 56 propuestas.
+no tenían registro: quien buscaba "qué falta" tenía que abrir las 130 propuestas.
 Este script cierra ese hueco en las dos direcciones:
 
   --list   Extrae los hallazgos de todas las propuestas (y los imprime).

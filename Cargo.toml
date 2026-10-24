@@ -35,3 +35,96 @@ panic = "unwind"
 
 [patch."https://github.com/JRickey/gba-recomp.git"]
 gba-core = { path = "../gba-recomp/crates/gba-core" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+] }
+
+[[bin]]
+name = "ppu_doble"
+path = "src/bin/ppu_doble.rs"
+required-features = ["proto"]
+
+[features]
+proto = ["gba-core/perf-video"]
+
+[[example]]
+name = "ppu_capas"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_estado"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_linea"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_capas_linea"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_efectos_ventanas"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_pixeles_obj"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_contenido_bg"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_subcamino"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_afin_y_linea"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_camino_general"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_tiempos"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_capa_ganadora"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_nativa_compara"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_nativa_afin"
+required-features = ["proto"]
+
+# Estos tres ejemplos no estaban declarados y los construía el descubrimiento
+# automático de Cargo, sin `required-features`. `ppu_banda_nativa` usa
+# `gba_core::ppu::forzar_camino_general`, que solo existe con la feature
+# `perf-video` del motor base: al declararlo con `proto`, `cargo test` deja de
+# fallar al compilarlo. Los otros dos no necesitan la feature, así que se
+# declaran sin ella para que la suite siga compilándolos.
+[[example]]
+name = "ppu_banda_nativa"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_barrido_nativa"
+
+[[example]]
+name = "ppu_nativa_atribuye"
+required-features = ["proto"]
+
+[[example]]
+name = "ppu_modo_cuadro"

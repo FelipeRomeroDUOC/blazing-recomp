@@ -9,20 +9,14 @@ verificado: si
 > Ventana: **122 segundos** de telemetría (portrait 1200×2000 → landscape 2000×1200)
 
 > [!WARNING]
-> **Estado (2026-10-13): este análisis es histórico y su conclusión ya no describe el port.** Se
-> redactó con `modo=INT`, 13 funciones mapeadas en [`blazing.labels.toml`](../../blazing.labels.toml) y
-> `latency=1`. Hoy el juego corre en AOT —el intérprete quedó reducido al BIOS, con 7.759 pasos en
-> 256 s— y `present` mide 7,15 ms de media, no ~100 ms, así que la espera del compositor ya no es el
-> cuello de botella. El documento se conserva como registro de aquella medición y de su método.
+> **Estado del análisis:** Este documento es un registro histórico del diagnóstico inicial del proyecto y su conclusión ya no describe el estado actual del port. Se redactó cuando el juego operaba en `modo=INT` (95%+ en el intérprete de respaldo) con solo 13 funciones mapeadas y renderizado de scanlines por CPU en pantalla completa.
 >
-> Números vigentes:
-> - **Android TV** (sesión 17): `ejec` 13,53 ms, con `ppu` 7,53 (fondos 3,21 + sprites 1,35 +
->   composición 2,96) y `apu` 1,52.
-> - **Host** (arnés, 7.200 fotogramas, antes → después de la decisión 34): `ppu` 0,536 → 0,367 ms,
->   `compose` 0,157 → 0,071, `bg` 0,284 → 0,197, con `spr` y `apu` planos.
+> **Evolución y métricas consolidadas:**
+> - **Línea base inicial (Modo INT, 2026-10-09):** ~10 FPS en portrait (105 ms/frame) y ~16 FPS en landscape por saturación del intérprete y cuello de botella en `present`.
+> - **Recompilación AOT (Sesión 17, 2026-10-13):** Con 17.663 bloques en C11, la CPU bajó a 13.53 ms, pero el rasterizador por software (`ppu.rs`) absorbía 7.53 ms en CPU.
+> - **PPU Nativa en GPU (Sesión 30, 2026-10-23):** Con la eliminación definitiva de la PPU software y adopción de `NativePpu` en `wgpu` ([ADR 42](DECISIONES.md#42-eliminación-definitiva-de-ppushim-software-en-favor-de-pipeline-gpu-directo-nativeppu)), el tiempo medio de dibujo se redujo a **11.26 ms** en Android TV (TV Stick), alcanzando **59.7 FPS sostenidos** a lo largo de 400 segundos continuos de juego.
 >
-> Detalle en [`DECISIONES.md`](DECISIONES.md) §34 y en
-> [`2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md`](../propuestas/2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md).
+> El detalle de las fases y decisiones que hicieron posible esta optimización puede consultarse en [`DECISIONES.md`](DECISIONES.md) (ADRs 24 al 46).
 
 ---
 
@@ -103,7 +97,7 @@ El encabezado del log confirma `modo=INT` (modo intérprete). Solo **13 funcione
 | `Unit_InitStats` | `0x08024410` |
 | `RNG_Advance` | `0x080283c8` |
 
-El juego tiene **17,207 funciones** según el comentario de [`recomp.rs:4`](../../src/recomp.rs#L4). Con solo 13 labels, la cobertura nativa es del **0.075%** — el intérprete ejecuta instrucción por instrucción todo lo demás.
+El juego contaba en la fecha de este diagnóstico inicial con una estimación preliminar de **17.207 funciones** (posteriormente ampliada y consolidada en las 18.483 funciones canónicas actuales documentadas en [`blazing.labels.toml`](../../blazing.labels.toml)). Con solo 13 labels activas en ese momento, la cobertura nativa era del **0.075%** — el intérprete ejecutaba instrucción por instrucción todo lo demás.
 
 #### Impacto en `ejec`
 
@@ -150,29 +144,29 @@ FPS real          │  10             │  16–17           │  60
 
 ### Eje 1: Resolver el bloqueo de `present` (de ~100ms a <5ms)
 
-| Acción | Prioridad | Impacto esperado |
+| Acción | Estado / Resolución | Impacto obtenido |
 |---|---|---|
-| Subir `desired_maximum_frame_latency` a **2** (triple buffering real) | 🔴 Inmediata | `present` de ~100ms a ~16-33ms |
-| Reactivar calibración (`CALIBRAR_PRESENTACION = true`) para medir | 🟡 Alta | Dato de `lat=2` vs `lat=3` + Mailbox vs Fifo |
-| Probar Vulkan (`PREFERIR_OPENGL_ES = false`) junto con lat=2 | 🟡 Alta | Posible ~30% menos en `present` por fences explícitas |
+| Subir `desired_maximum_frame_latency` a **2** (triple buffering real) | ✅ Completada (2026-10-10) | Redujo `present` de ~100ms a ~16-33ms desbloqueando SurfaceFlinger. |
+| Reactivar calibración (`CALIBRAR_PRESENTACION = true`) para medir | ✅ Completada (2026-10-14) | Permitió seleccionar el `PresentMode` idóneo por dispositivo. |
+| Probar Vulkan (`PREFERIR_OPENGL_ES = false`) junto con lat=2 | ✅ Completada (ADR 42) | Vulkan es el backend preferente; sincronización explícita por fences. |
 
-> [!TIP]
-> Solo con `desired_maximum_frame_latency: 2` el FPS debería saltar de 10 a ~30+ en portrait. Es un cambio de **una línea**.
+> [!NOTE]
+> La latencia 2 y el triple buffering quedaron consolidados en producción desde el 2026-10-10 en [`src/platform.rs`](../../src/platform.rs).
 
 ### Eje 2: Ampliar la cobertura de labels (de 13 a ~500+ funciones)
 
-| Acción | Prioridad | Impacto esperado |
+| Acción | Estado / Resolución | Impacto obtenido |
 |---|---|---|
-| Ejecutar `gba-mapper` para generar el mapa completo de funciones | 🔴 Inmediata | `ejec` de ~12ms a ~3-4ms |
-| Priorizar las ~50 funciones de hot-path (bucle principal, PPU, DMA) | 🟡 Alta | Reducción del intérprete al < 5% |
-| Objetivo "0 intérprete" (17,207 funciones cubiertas) | 🟢 Medio plazo | `interprete=0` en telemetría |
+| Cosecha y mapeo exhaustivo de funciones | ✅ Completada (2026-10-11) | Se cosecharon 18.483 funciones con [`scripts/diagnostico/`](../../scripts/diagnostico/). |
+| Priorizar funciones de hot-path (bucle principal, PPU, DMA) | ✅ Completada (2026-10-12) | El intérprete se redujo a menos del 1% en escenas tácticas. |
+| Objetivo "0 intérprete" (18.483 funciones cubiertas) | 🟡 En curso | Totalidad de funciones en ROM cubiertas; pendiente IWRAM ([`docs/PENDIENTES.md`](../PENDIENTES.md)). |
 
 ### Eje 3: Optimizaciones secundarias
 
-| Acción | Prioridad | Impacto esperado |
+| Acción | Estado / Resolución | Impacto obtenido |
 |---|---|---|
-| Validar `alpha_mode = Opaque` llega efectivamente al compositor | 🟡 Alta | Evitar blend a pantalla completa en SurfaceFlinger |
-| Escala de render dinámica como fallback para dispositivos gama baja | 🟢 Baja | Ya probado: 0.50 baja `present` a ~3ms pero pierde nitidez |
+| Validar `alpha_mode = Opaque` llega efectivamente al compositor | ✅ Completada (2026-10-12) | Se eliminó el blending redundante a pantalla completa en el OS. |
+| Escala de render dinámica como fallback para dispositivos gama baja | ✅ Descartada (ADR 27) | Descartada por borrosidad; la aceleración GPU nativa resolvió el cuello de botella. |
 
 ---
 

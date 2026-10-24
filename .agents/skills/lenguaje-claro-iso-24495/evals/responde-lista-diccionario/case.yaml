@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: responde-lista-diccionario
+expected_outcome: |
+  Respuesta de chat breve que empieza directo con la diferencia, usa lenguaje simple, explica los términos, incluye un ejemplo corto por estructura y cierra con cuándo usar cada una o con un siguiente paso.

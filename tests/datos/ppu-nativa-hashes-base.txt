@@ -1,0 +1,12 @@
+# Línea de base de la fase 1 de la PPU nativa.
+# Propuesta: docs/propuestas/2026-10-19_ppu-nativa-fase-1.md
+#
+# Formato: <identificador> <sha256 en minúsculas>
+#
+# El shim histórico fue eliminado definitivamente conforme a ADR 42 y la
+# propuesta docs/propuestas/2026-10-23_eliminacion-del-ppu-shim.md.
+#
+# Motor base en el rev fijado de4edf59 de gba-recomp. El identificador es
+# <crate>:<rev corto>:<ruta dentro del repo del motor>.
+gba-core:de4edf5:crates/gba-core/src/ppu.rs c08e3294ce7fceac7c5f6730ebc5498d6cb73ea4076b498e400671b09b53b76c
+gba-core:de4edf5:crates/gba-core/src/mem.rs 78f439a6e07b053f893887edd4049719a2f8bf99867d6292c6009cb9334fe692

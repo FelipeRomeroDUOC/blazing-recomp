@@ -20,10 +20,13 @@ Directrices, arquitectura y reglas operativas para agentes de IA que trabajen en
 1. **Arquitectura:**
    - Target principal: `aarch64-linux-android` (ARM64).
    - Secundario / Emuladores: `x86_64-linux-android`.
-2. **Capa Nativa (NDK & Rust):**
-   - El código Rust y C recompilado se empaquetará como biblioteca compartida (`.so`) enlazada vía JNI o `android-activity` / `winit`.
+2. **Capa Nativa y Topología de Bibliotecas (.so en APK):**
+   - El APK distribuye **dos bibliotecas dinámicas contiguas** en `lib/<abi>/`:
+     - `libblazing_recomp.so`: Runtime en Rust generado por `cargo-ndk`. Es el punto de entrada oficial de la `NativeActivity` de Android (`android:hasCode="false"`, `android.app.lib_name="blazing_recomp"`). Controla el ciclo de vida, la GPU, el audio, el bus de memoria, DMA, timers y la capa de entrada.
+     - `libblazing_recompiled.so`: Lógica C11 AOT del juego compilada de forma independiente por Clang del NDK a partir de las 12 unidades de `src-c/`. Contiene los 144.875 bloques C11 del juego y es cargada dinámicamente en tiempo de ejecución en Android por `src/recomp.rs` vía `dlopen("libblazing_recompiled.so")`.
 3. **Renderizado & Pantalla:**
-   - Backend gráfico compatible con Android: **Vulkan** o **OpenGL ES 3.0** a través de `wgpu`.
+   - Pipeline gráfico de producción: **`NativePpu`** en GPU con shaders WGSL (`src/ppu_nativa.rs` y `src/present.rs`), con respaldo automático de Vulkan a OpenGL ES 3.0 a través de `wgpu`.
+   - Conforme al ADR 42, el antiguo `PpuShim` por software y el tipo `Presenter` están completamente extintos. Prohibido sugerir o reintroducir emulación PPU por software como pipeline primario en producción. La rasterización por software en CPU provista por `gba-core` se mantiene exclusivamente como mecanismo de contingencia y diagnóstico (conmutable mediante la bandera `ppu-nativa-off.flag` o ante fallo en la inicialización de GPU), conforme a lo autorizado por el ADR 42.
    - Soporte para diferentes relaciones de aspecto y resoluciones de smartphones modernos (incluyendo escalado de píxeles nítido y posibles mejoras panorámicas).
 4. **Controles & Entrada:**
    - Soporte para mandos físicos (Bluetooth y USB Type-C vía Gamepad API de Android).
@@ -70,16 +73,25 @@ Directrices, arquitectura y reglas operativas para agentes de IA que trabajen en
 6. **Restauración en Memoria en Scripts de Prueba y Auditoría:**
    - Todo script automatizado de mutación o estrés debe respaldar el contenido original de los archivos en memoria RAM y restaurarlo fielmente sobre el disco en un bloque `finally`.
    - **Prohibido:** Invocar comandos destructivos de Git (`git checkout`, `git restore`, `git reset`) dentro de scripts automatizados para evitar la pérdida silenciosa de trabajo en curso no commiteado.
+7. **Higiene en Estructura Documental Diátaxis:**
+   - En las páginas de referencia (`docs/referencia/`), utilizar estrictamente los encabezados estandarizados exigidos por `validar_docs.py` (ej. `## Descripción general`) sin prefijos numéricos que rompan la validación automática.
+8. **Verificación de Línea Base Previa a Propuestas:**
+   - Comprobar siempre que `cargo test` esté al 100% en verde **antes** de redactar cualquier propuesta o cambio de código, garantizando que el criterio de no regresión sea comprobable.
+9. **Empaquetado de Máscaras de Bits sin Solapamiento:**
+   - Al diseñar claves compuestas o tramos de empaquetado de bits (como `clave_de_tramo` o prioridades de capas/sprites), verificar que los campos no compartan bits para evitar colisiones silenciosas (*aliasing*).
+10. **TDD en Contratos y Esquemas:**
+    - Al diseñar formatos de telemetría o contratos de datos entre subsistemas, escribir y validar primero el test de esquema antes de implementar el formateador.
 
-### Topología de Repositorios y Motor Upstream
+### Topología de Repositorios, Motor Upstream y Delimitación de Archivos
 Este proyecto depende de los componentes y crates del motor base del proyecto oficial `gba-recomp` de Jack Rickey:
-- **Port de Fire Emblem (este repositorio):** `blazing-recomp/`
+- **Port de Fire Emblem (este repositorio):** `blazing-recomp/` (el paquete Cargo se denomina `blazing-recomp`).
 - **Motor Upstream Oficial:** [`JRickey/gba-recomp`](https://github.com/JRickey/gba-recomp)
   - Motor de hardware y bus de GBA: `crates/gba-core`
   - Decodificador de instrucciones ARMv4T: `crates/armv4t`
   - Shaders y renderizado GPU: `crates/screen`
-- En `Cargo.toml`, las dependencias se vinculan directamente al repositorio Git oficial fijadas a un commit SHA inmutable (`rev = "de4edf59b872d887046d6a3b005e2df551b6d44c"`), garantizando que el repositorio sea 100% autónomo, portable y reproducible sin depender de carpetas hermanas locales en el sistema de archivos.
-- Para desarrollo y pruebas locales del motor en paralelo, se puede recurrir temporalmente a la directiva `[patch."https://github.com/JRickey/gba-recomp.git"]` apuntando a `../gba-recomp`.
+- **Delimitación de `pack.toml`:** `pack.toml` es un manifiesto consumido exclusivamente por el generador de código estático upstream (`recomp build`). El runtime en Rust y los scripts de empaquetado (`scripts/package_apk.ps1`) **NO leen este archivo en tiempo de ejecución**.
+- **Herramienta `recomp`:** Es el ejecutable CLI provisto por `JRickey/gba-recomp`. Comandos como `cargo build --release -p recomp` solo existen y deben ejecutarse dentro del workspace clonado de `gba-recomp`.
+- **Estado de dependencias y directiva `[patch]`:** Aunque las dependencias base en `Cargo.toml` declaran la URL del repositorio Git oficial fijadas a un commit inmutable (`rev = "de4edf59b872d887046d6a3b005e2df551b6d44c"`), actualmente el archivo `Cargo.toml` mantiene **activa de forma requerida** la directiva `[patch."https://github.com/JRickey/gba-recomp.git"]` apuntando a la carpeta hermana `../gba-recomp/crates/gba-core`. Esto se debe a que extensiones críticas de telemetría de video (`perf-video`), contadores de rendimiento y la omisión de PPU por software residen en dicho árbol local en proceso de integración en el upstream oficial. Por tanto, en el estado actual de desarrollo, el repositorio **requiere la presencia local de `../gba-recomp` para compilar `cargo test`, el visor interactivo y el APK**. La autonomía total sin carpetas hermanas locales representa el objetivo de entrega de la versión de release, no el estado del árbol de trabajo actual.
 
 
 ## 5. Skills del Repositorio (`.agents/skills/`)
@@ -105,12 +117,13 @@ El repositorio cuenta con skills locales en [`.agents/skills/`](.agents/skills/)
     No se crea la carpeta vacía sin contenido.)*
   - **Guías prácticas (`docs/guias/`):** Pasos directos para tareas concretas (ej. compilación cruzada con NDK, integración JNI, generación del APK).
   - **Referencia ([`docs/referencia/`](docs/referencia/README.md)):** Especificaciones técnicas puras (APIs nativas, flags de `pack.toml`, comandos).
-  - **Explicación ([`docs/explicacion/`](docs/explicacion/DECISIONES.md)):** Decisiones de diseño, arquitectura del port Android y compromisos técnicos.
+  - **Explicación ([`docs/explicacion/`](docs/explicacion/README.md)):** Detalla **cómo funciona este proyecto por dentro**: arquitectura interna del port Android, diseño de software, compromisos técnicos (*trade-offs*), lecciones aprendidas sobre nuestro propio código y el registro histórico de decisiones de ingeniería ([`DECISIONES.md`](docs/explicacion/DECISIONES.md)).
   - **Propuestas ([`docs/propuestas/`](docs/propuestas/README.md)):** Propuestas formales de Nivel 2
     (no es un cuadrante Diátaxis: es el registro del flujo `propuesta-verificable`). Cada archivo
     declara su estado en el bloque `>` de cabecera (`Estado:` / `Resultado:`).
   - **Prototipos (`docs/prototipos/`):** Bocetos HTML de trabajo referenciados desde las propuestas
     de overlay; material efímero, no documentación Diátaxis versionada como página de lectura.
+  - **Fuentes ([`docs/fuentes/`](docs/fuentes/README.md)):** Repositorio de consulta de **conocimiento externo y especificaciones técnicas objetivas**: física y arquitectura del hardware de Game Boy Advance, ISA ARMv4T/AArch32, funcionamiento de GPUs móviles TBDR/UMA, subsistemas de audio de bajo nivel (AAudio / MMAP) y almacenamiento en Android (SAF / Scoped Storage). Representa la fuente de verdad técnica externa que agentes y desarrolladores consultan para fundamentar las decisiones de diseño. **Regla estricta:** Es de solo lectura para los agentes de IA, a menos que el desarrollador humano solicite explícitamente redactar o agregar una nueva fuente. No forma parte de los cuatro cuadrantes Diátaxis editables.
 - **Activación:** Siempre que se solicite documentar el proyecto, crear guías de instalación o despliegue para Android, documentar interfaces nativas, actualizar docs tras cambios de código o estructurar la carpeta `docs/`.
 
 ### 3. `explicar-codigo-documento`
@@ -127,7 +140,17 @@ El repositorio cuenta con skills locales en [`.agents/skills/`](.agents/skills/)
   - **Mutación:** Evaluación de la efectividad y resistencia de la suite de pruebas mediante mutantes.
 - **Activación:** Siempre que se solicite crear, ampliar o auditar pruebas, mejorar la cobertura de tests, diseñar fixtures o evaluar la solidez del sistema ante cambios.
 
-### 5. Pipeline Operativo al Modificar Código
+### 5. `lenguaje-claro-iso-24495` (Directriz Transversal de Comunicación)
+- **Definición:** [`.agents/skills/lenguaje-claro-iso-24495/SKILL.md`](.agents/skills/lenguaje-claro-iso-24495/SKILL.md)
+- **Propósito:** Garantizar que todas las comunicaciones, explicaciones, propuestas, respuestas en el chat y textos en español cumplan los principios de la norma ISO 24495-1 / UNE-ISO 24495-1: contenido pertinente, fácil de encontrar, fácil de comprender y fácil de usar.
+- **Regla transversal:** Aplica de forma obligatoria y predeterminada a toda interacción del agente:
+  - Ir directo al grano al inicio, sin fórmulas de relleno ni rodeos.
+  - Explicar términos técnicos solo cuando sea necesario para la persona lectora, preservando la exactitud del dominio.
+  - Ordenar cronológicamente las acciones y utilizar listas o tablas para facilitar la lectura visual rápida.
+  - Mantener la precisión técnica y el rigor sin sacrificar la claridad.
+- **Activación:** Siempre activa en todas las interacciones, propuestas, reportes y redacción en español.
+
+### 6. Pipeline Operativo al Modificar Código
 
 Todo agente que vaya a modificar, crear o refactorizar código en este repositorio debe ejecutar de forma obligatoria y secuencial este pipeline de 5 fases, encadenando las skills locales:
 
@@ -177,13 +200,14 @@ Todo agente que vaya a modificar, crear o refactorizar código en este repositor
 
 #### Fase 5: Sincronización Documental y Cierre
 1. **Impacto en documentación (`diataxis-docs`):** Si el cambio altera APIs nativas, flags, arquitectura o guías de compilación Android, actualizar el cuadrante correspondiente en `docs/`.
-2. **Registro de hallazgos fuera de alcance:** Registrar obligatoriamente todo bug o refactor detectado durante la edición en la sección de la propuesta:
-   `### Fuera de alcance (hallazgos que no se arreglaron)` con su nivel de impacto (`bajo | medio`), o en el resumen de cierre del chat (en Nivel 1) para alimentar futuras propuestas.
+2. **Registro de hallazgos fuera de alcance y tareas pendientes:** Registrar obligatoriamente todo bug, refactor o deuda técnica detectada durante la edición en la sección de la propuesta:
+   `### Fuera de alcance (hallazgos que no se arreglaron)` con su nivel de impacto (`bajo | medio`), o en el resumen de cierre del chat (en Nivel 1).
+   - **Regla estricta de filtrado (`docs/PENDIENTES.md` vs `docs/BACKLOG.md`):** Al completar cada propuesta, los hallazgos que constituyan **tareas pendientes reales/accionables** (código por escribir, refactors necesarios, funciones por implementar o bugs reales) deben registrarse o actualizarse en [`docs/PENDIENTES.md`](docs/PENDIENTES.md). Los aprendizajes técnicos, notas de diseño o limitaciones físicas de hardware sin acción de código asociada deben conservarse únicamente en [`docs/BACKLOG.md`](docs/BACKLOG.md) y [`docs/explicacion/DECISIONES.md`](docs/explicacion/DECISIONES.md).
 3. **Reporte final:** Contrastar lo predicho en la propuesta contra el resultado real obtenido (`Predicho vs. real`).
 
 ---
 
-## 6. Notas y Reglas Personalizadas del Usuario
+## 7. Notas y Reglas Personalizadas del Usuario
 
 *(Espacio reservado para preferencias, decisiones de diseño y restricciones añadidas por el usuario durante el desarrollo)*
 
@@ -216,7 +240,7 @@ Todo agente que vaya a modificar, crear o refactorizar código en este repositor
 
 - **Checklist Obligatorio de Pre-Commit Gatekeeper:**
   Antes de proponer o ejecutar un `git commit` y `git push`, el agente debe verificar sin excepción los siguientes 5 criterios:
-  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (131 tests actuales: 109 en los módulos satélite de `src/` + 18 en `tests/packaging_tests.rs` + 4 en `tests/golden_frame_tests.rs`).
+  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (250 tests actuales: 172 en los módulos de `src/` + 78 de integración en `tests/`).
   2. **Validación Diátaxis sin errores:** `python .agents/skills/diataxis-docs/scripts/validar_docs.py .` devuelve `0 error(es), 0 aviso(s)`.
   3. **Especificaciones de API sincronizadas:** `python scripts/extraer_referencias.py --check` sale con código de éxito 0.
   4. **Auditoría de labels AOT aprobada:** `python scripts/diagnostico/auditar_labels.py` sale con código de éxito 0.

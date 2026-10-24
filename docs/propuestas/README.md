@@ -42,7 +42,7 @@ Reglas que este vocabulario sostiene:
 - Una propuesta **no se cierra sin `Resultado`**: predicho vs. real, y qué se respetó del contexto.
 - Un estado `verificada por agente` **no** implica verificado en el dispositivo: eso es
   `revisada por humano`. Las que esperan el televisor están listadas en
-  [`docs/BACKLOG.md`](../BACKLOG.md#esperando-el-televisor-28-propuestas-con-revisión-humana-pendiente).
+  [`docs/BACKLOG.md`](../BACKLOG.md#esperando-el-televisor-propuestas-con-revisión-humana-pendiente).
 - Un hallazgo que se descubre y no se arregla **no se borra**: se anota en `### Fuera de alcance` y
   entra en el registro de [`docs/BACKLOG.md`](../BACKLOG.md#registro-de-hallazgos), que audita
   [`scripts/auditar_hallazgos.py`](../../scripts/auditar_hallazgos.py).
@@ -57,7 +57,19 @@ Reglas que este vocabulario sostiene:
 
 Las propuestas deben crearse a partir de la plantilla en [`.agents/skills/propuesta-verificable/assets/plantilla-propuesta.md`](../../.agents/skills/propuesta-verificable/assets/plantilla-propuesta.md) y contener:
 1. **Intención y Contexto:** Problema, restricciones y alternativas descartadas.
-2. **Criterios de Aceptación:** Escenarios Dado / Cuando / Entonces con nombre de test.
-3. **Suposiciones y Prototipos:** Identificación de riesgos antes de tocar código.
-4. **Métodos de Comprobación:** Herramientas y comandos concretos para validar.
-5. **Revisión Humana:** Puntos visibles para inspección y veredicto del usuario.
+2. **Suposiciones y Prototipos:** Identificación de riesgos antes de tocar código.
+3. **Criterios de Aceptación:** Escenarios Dado / Cuando / Entonces con nombre de test.
+4. **Plan de Verificación:** Qué herramientas o comandos concretos validan cada escenario.
+5. **Resultado:** Tabla predicho vs. real, hallazgos fuera de alcance y notas de revisión humana.
+
+---
+
+## Índice maestro e historial de propuestas
+
+El historial completo y clasificado de las propuestas registradas en este directorio se encuentra indexado por estado en:  
+👉 **[`docs/BACKLOG.md` — Índice de Propuestas](../BACKLOG.md#índice-de-propuestas)**
+
+Dicho índice se actualiza automáticamente a partir del metadato `Estado:` de cada ficha invocando:
+```bash
+python scripts/actualizar_indice_propuestas.py
+```

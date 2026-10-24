@@ -41,6 +41,10 @@ pub struct StepTiming {
     pub ppu_compose_ms: f64,
     /// Milisegundos empleados por el APU en síntesis de audio.
     pub apu_ms: f64,
+    /// Llamadas a `pump_audio` en este paso (contador entero).
+    pub pump_llamadas: u64,
+    /// Muestras de audio generadas en este paso.
+    pub pump_muestras: u64,
     /// Cantidad de accesos de lectura a memoria realizados.
     pub reads: u64,
     /// Cantidad de accesos de escritura a memoria realizados.
@@ -54,6 +58,7 @@ pub struct GameRunner {
     pub temporal: Temporal,
     pub lut: ColorLut,
     pub screen_kind: ScreenKind,
+    pub gpu_ppu_enabled: bool,
     rgba: Vec<[u8; 4]>,
     frames_elapsed: u64,
     last_timing: StepTiming,
@@ -63,10 +68,12 @@ impl GameRunner {
     /// Inicializa una nueva sesión de juego a partir de los bytes de la ROM
     /// y un BIOS opcional (si es `None`, se utiliza el BIOS HLE embebido en `gba-core`).
     pub fn new(rom: Vec<u8>, bios: Option<&[u8]>, screen_kind: ScreenKind) -> Self {
-        let machine = match bios {
+        let mut machine = match bios {
             Some(b) => gba_core::Machine::new_with_bios(rom, b),
             None => gba_core::Machine::new(rom),
         };
+        // Medicion del coste de audio: solo si existe perf-audio-timing.flag en Descargas.
+        machine.bus.perf_audio_timing = crate::perf::audio_timing_flag_enabled(&[]);
         let block_table = crate::recomp::load_native_blocks();
         let mut settings = ColorSettings::default();
         settings.screen = screen_kind;
@@ -85,6 +92,7 @@ impl GameRunner {
             temporal,
             lut,
             screen_kind,
+            gpu_ppu_enabled: false,
             rgba,
             frames_elapsed: 0,
             last_timing: StepTiming::default(),
@@ -100,6 +108,56 @@ impl GameRunner {
     #[inline]
     pub fn is_native(&self) -> bool {
         self.block_table.as_ref().map_or(false, |t| !t.is_empty())
+    }
+
+    /// Activa o desactiva el renderizado por GPU mediante PPU Shim.
+    #[inline]
+    pub fn set_gpu_ppu_enabled(&mut self, enabled: bool) {
+        self.gpu_ppu_enabled = enabled;
+        self.machine.bus.omitir_ppu_software = enabled;
+        self.machine.bus.capturar_lut_ligera = enabled;
+    }
+
+    /// Indica si el renderizado PPU Shim en GPU esta activo.
+    #[inline]
+    pub fn is_gpu_ppu_enabled(&self) -> bool {
+        self.gpu_ppu_enabled
+    }
+
+    /// Registros de E/S capturados por scanline (0..160).
+    #[inline]
+    pub fn io_lineas(&self) -> &[[u8; 0x60]; 160] {
+        &self.machine.bus.io_lineas
+    }
+
+    /// Paleta capturada por scanline (0..160).
+    #[inline]
+    pub fn paleta_lineas(&self) -> &[[u8; 1024]; 160] {
+        &self.machine.bus.paleta_lineas
+    }
+
+    /// Referencia a la VRAM de la GBA (96 KB).
+    #[inline]
+    pub fn vram(&self) -> &[u8] {
+        &self.machine.bus.vram
+    }
+
+    /// Referencia a la OAM de la GBA (1 KB).
+    #[inline]
+    pub fn oam(&self) -> &[u8] {
+        &self.machine.bus.oam
+    }
+
+    /// Referencia a la memoria de paletas de la GBA (1 KB).
+    #[inline]
+    pub fn palette(&self) -> &[u8] {
+        &self.machine.bus.palette
+    }
+
+    /// Referencia a los registros de I/O de la GBA.
+    #[inline]
+    pub fn io(&self) -> &[u8] {
+        &self.machine.bus.io
     }
 
     /// Inyecta la máscara de botones activa en bajo en el bus de hardware (`KEYINPUT`).
@@ -153,11 +211,15 @@ impl GameRunner {
         let apu_ms = (hw.apu_ns as f64) / 1_000_000.0;
 
         if self.machine.bus.frame_ready {
-            let t2 = std::time::Instant::now();
-            self.temporal.push(&self.machine.bus.framebuffer, &self.lut);
-            self.temporal.compose(&self.lut, &mut self.rgba);
-            let t3 = std::time::Instant::now();
-            let color_ms = t3.duration_since(t2).as_secs_f64() * 1000.0;
+            let color_ms = if self.gpu_ppu_enabled {
+                0.0
+            } else {
+                let t2 = std::time::Instant::now();
+                self.temporal.push(&self.machine.bus.framebuffer, &self.lut);
+                self.temporal.compose(&self.lut, &mut self.rgba);
+                let t3 = std::time::Instant::now();
+                t3.duration_since(t2).as_secs_f64() * 1000.0
+            };
 
             self.last_timing = StepTiming {
                 ejec_ms,
@@ -169,6 +231,8 @@ impl GameRunner {
                 ppu_sprite_ms,
                 ppu_compose_ms,
                 apu_ms,
+                pump_llamadas: hw.pump_llamadas,
+                pump_muestras: hw.pump_muestras,
                 reads: hw.reads,
                 writes: hw.writes,
             };
@@ -187,6 +251,8 @@ impl GameRunner {
                 ppu_sprite_ms,
                 ppu_compose_ms,
                 apu_ms,
+                pump_llamadas: hw.pump_llamadas,
+                pump_muestras: hw.pump_muestras,
                 reads: hw.reads,
                 writes: hw.writes,
             };

@@ -1,6 +1,6 @@
 //! Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT).
 //!
-//! Conecta la tabla maestra de 17,207 funciones nativas (`rcg_blocks`)
+//! Conecta los 144.875 bloques nativos de ejecución C11 (`rcg_blocks`), agrupados bajo 18.483 funciones catalogadas,
 //! con el runtime de `gba-core`, ejecutando la lógica del juego directamente
 //! en la CPU física sin emulación de instrucciones por software.
 

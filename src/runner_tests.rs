@@ -154,10 +154,112 @@ fn test_runner_vuelca_el_reparto_de_camino_de_la_ppu() {
 #[test]
 fn test_runner_timing_includes_hardware_counters() {
     let mut runner = GameRunner::new(create_dummy_rom(), None, ScreenKind::Frontlit);
+    runner.machine.bus.perf_audio_timing = true;
     runner.step_frame();
 
     let timing = runner.last_timing();
     assert!(timing.ppu_ms > 0.0, "debe registrar tiempo de PPU (obtenido: {} ms)", timing.ppu_ms);
     assert!(timing.apu_ms > 0.0, "debe registrar tiempo de APU (obtenido: {} ms)", timing.apu_ms);
+    assert!(timing.pump_llamadas > 0, "debe registrar llamadas de pump_audio (obtenido: {})", timing.pump_llamadas);
+    assert!(timing.pump_muestras > 0, "debe registrar muestras de audio (obtenido: {})", timing.pump_muestras);
     assert!(timing.reads > 0, "debe registrar lecturas de memoria (obtenido: {})", timing.reads);
 }
+
+#[test]
+fn test_runner_timing_default_audio_timing_disabled() {
+    let mut runner = GameRunner::new(create_dummy_rom(), None, ScreenKind::Frontlit);
+    assert!(
+        !runner.machine.bus.perf_audio_timing,
+        "por defecto el flag de audio debe estar inactivo"
+    );
+    runner.step_frame();
+
+    let timing = runner.last_timing();
+    assert_eq!(
+        timing.apu_ms, 0.0,
+        "con el flag apagado no debe registrar tiempo de APU (coste 0 ns de reloj)"
+    );
+    assert!(
+        timing.pump_llamadas > 0,
+        "debe seguir contando llamadas a pump_audio"
+    );
+    assert!(
+        timing.pump_muestras > 0,
+        "debe seguir contando muestras generadas de audio"
+    );
+    assert!(timing.ppu_ms > 0.0, "debe seguir registrando tiempo de PPU normalmente");
+    assert!(timing.reads > 0, "debe seguir registrando lecturas de memoria");
+}
+
+#[test]
+fn test_runner_gpu_ppu_toggle_and_memory_accessors() {
+    let dummy_rom = create_dummy_rom();
+    let mut runner = GameRunner::new(dummy_rom, None, ScreenKind::Frontlit);
+
+    // 1. Por defecto está desactivado
+    assert!(!runner.is_gpu_ppu_enabled());
+
+    // 2. Activación
+    runner.set_gpu_ppu_enabled(true);
+    assert!(runner.is_gpu_ppu_enabled());
+
+    // 3. Accesores de memoria de video para PPU Shim
+    assert_eq!(runner.vram().len(), 96 * 1024, "VRAM debe ser 96 KB");
+    assert_eq!(runner.oam().len(), 1024, "OAM debe ser 1 KB");
+    assert_eq!(runner.palette().len(), 1024, "Palette debe ser 1 KB");
+    assert_eq!(runner.io().len(), 1024, "IO debe ser 1 KB");
+}
+
+#[test]
+fn test_runner_gpu_ppu_captura_lut_por_linea_y_omite_ppu_software() {
+    let _guard = crate::recomp::LOCK_ACUMULADORES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let mut runner = GameRunner::new(create_dummy_rom(), None, ScreenKind::Frontlit);
+
+    // Activar PPU por GPU
+    runner.set_gpu_ppu_enabled(true);
+
+    // Configurar estado inicial
+    runner.machine.bus.io[0x54] = 0x04; // BLDY
+    runner.machine.bus.palette[0] = 0x34;
+    runner.machine.bus.palette[1] = 0x12; // 0x1234
+
+    // Avanzar un fotograma completo
+    let completado = runner.step_frame();
+    assert!(completado, "step_frame debe completar el fotograma");
+
+    // Con GPU PPU, los buffers por línea deben tener datos capturados
+    assert_eq!(runner.io_lineas().len(), 160);
+    assert_eq!(runner.paleta_lineas().len(), 160);
+    assert_eq!(runner.io_lineas()[0][0x54], 0x04);
+    assert_eq!(runner.paleta_lineas()[0][0], 0x34);
+    assert_eq!(runner.paleta_lineas()[0][1], 0x12);
+
+    // PPU por software debe omitirse
+    let timing = runner.last_timing();
+    assert_eq!(timing.ppu_ms, 0.0, "con gpu_ppu_enabled la PPU CPU debe dar 0.0 ms");
+    assert_eq!(timing.color_ms, 0.0, "con gpu_ppu_enabled temporal/lut debe dar 0.0 ms");
+    assert!(timing.pump_muestras > 0, "audio debe seguir avanzando normalmente");
+}
+
+#[test]
+fn test_runner_conmutacion_en_caliente_entre_gpu_ppu_y_software() {
+    let _guard = crate::recomp::LOCK_ACUMULADORES
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let mut runner = GameRunner::new(create_dummy_rom(), None, ScreenKind::Frontlit);
+
+    // 1. Ejecutar con GPU PPU
+    runner.set_gpu_ppu_enabled(true);
+    runner.step_frame();
+    assert_eq!(runner.last_timing().ppu_ms, 0.0);
+    assert_eq!(runner.last_timing().color_ms, 0.0);
+
+    // 2. Conmutar a Software PPU
+    runner.set_gpu_ppu_enabled(false);
+    runner.step_frame();
+    assert!(runner.last_timing().ppu_ms > 0.0, "PPU por software debe reactivarse");
+    assert!(runner.last_timing().color_ms > 0.0, "Temporal/ColorLut debe reactivarse");
+}
+

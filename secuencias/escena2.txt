@@ -1,0 +1,47 @@
+# Secuencia para buscar otra escena (propuesta decode-oam-otro-cuadro-regresion).
+# Pulsa Start y A de forma periódica para salir de la intro. Tiempos NO medidos todavía.
+# Formato: <cuadros> <botones>
+120 ninguno
+5 Start
+120 ninguno
+5 A
+120 ninguno
+5 Start
+120 ninguno
+5 A
+120 ninguno
+5 Start
+120 ninguno
+5 A
+120 ninguno
+5 Start
+120 ninguno
+5 A
+120 ninguno
+5 Start
+120 ninguno
+5 A
+120 ninguno
+5 Start
+120 ninguno
+5 A
+120 ninguno
+5 Start
+120 ninguno
+5 A
+120 ninguno
+5 Start
+120 ninguno
+5 A
+120 ninguno
+5 Start
+120 ninguno
+5 A
+120 ninguno
+5 Start
+120 ninguno
+5 A
+120 ninguno
+5 Start
+120 ninguno
+5 A

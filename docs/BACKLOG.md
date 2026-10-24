@@ -4,10 +4,9 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 
 > **Este es el tablero vivo del proyecto:** qué falta, qué se sabe y dónde está anotado.
 > No es una página Diátaxis — el validador lo excluye por nombre —, así que no lleva front-matter.
-> Los hallazgos que aún no se han arreglado viven en el [registro de hallazgos](#registro-de-hallazgos),
-> y su coherencia con las propuestas la comprueba `python scripts/auditar_hallazgos.py`.
+> Los hallazgos históricos fuera de alcance viven en el [registro de hallazgos](#registro-de-hallazgos) (y su coherencia con las propuestas la comprueba `python scripts/auditar_hallazgos.py`), mientras que las tareas accionables abiertas se gestionan en [`docs/PENDIENTES.md`](PENDIENTES.md).
 
-**Última actualización:** 2026-10-14
+**Última actualización:** 2026-10-24
 
 ---
 
@@ -18,10 +17,9 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
   `0.1.0` (MVP jugable de principio a fin).
 - **ROM Objetivo:** `Fire Emblem (Europe)` — `6f2c30823ab0237310b138739ccfad879f1a07c4a782a9cbb92317d60d03cee9`
 - **BIOS Objetivo:** `gba_bios.bin` — `fd2547724b505f487e6dcb29ec2ecff3af35a841a77ab2e85fd87350abd36570`
-- **Estado de la suite:** 131 tests en verde (109 en los módulos satélite de `src/`, 18 en
-  [`tests/packaging_tests.rs`](../tests/packaging_tests.rs), 4 en
-  [`tests/golden_frame_tests.rs`](../tests/golden_frame_tests.rs)). El checklist de pre-commit vive en
-  [`AGENTS.md`](../AGENTS.md) §6.
+- **Estado de la suite:** 257 tests en verde (172 en los módulos de `src/`, 85 de integración en
+  [`tests/`](../tests/)). El checklist de pre-commit vive en
+  [`AGENTS.md`](../AGENTS.md#checklist-obligatorio-de-pre-commit-gatekeeper) §7.
 
 ---
 
@@ -65,6 +63,23 @@ Las áreas son de trabajo, no las fases del roadmap: una misma área puede repar
   shaders LCD, overlay táctil procedural por SDF y pantalla de diagnóstico de emergencia.
 - Triple buffering y latencia de swapchain a 2 fotogramas
   ([`2026-10-10_triple-buffering-swapchain-latencia-2.md`](propuestas/2026-10-10_triple-buffering-swapchain-latencia-2.md)).
+- **PPU nativa** (fase 1): composición por píxel en la GPU con la unidad de mezcla de la GBA
+  ([`2026-10-19_ppu-nativa-fase-1.md`](propuestas/2026-10-19_ppu-nativa-fase-1.md),
+  [`verificada por agente`](propuestas/2026-10-19_ppu-nativa-fase-1.md)). Da **0 diferencias de
+  38.400 píxeles** frente a la PPU de referencia en los dos cuadros de aceptación. **Es la ruta de
+  dibujo por defecto** desde
+  [`2026-10-21_ppu-nativa-activa-por-defecto.md`](propuestas/2026-10-21_ppu-nativa-activa-por-defecto.md);
+  Conforme al ADR 42, el antiguo `PpuShim` por software fue completamente retirado del árbol activo
+  y archivado en [`docs/historico/ppu-shim/`](historico/ppu-shim/README.md). La PPU nativa en GPU (`NativePpu`)
+  es la única ruta de renderizado de producción. Ante fallo en la inicialización de GPU o activación
+  de la bandera de contingencia `ppu-nativa-off.flag`, el motor conmuta automáticamente al rasterizador
+  por software en CPU provisto por `gba-core` (`render_scanline`).
+- **Fondo afín del modo 1** (el fondo girando de los menús): la PPU nativa lo dibuja con la
+  aritmética de la referencia
+  ([`2026-10-21_fondo-afin-bg2-modo-1.md`](propuestas/2026-10-21_fondo-afin-bg2-modo-1.md),
+  [`verificada por agente`](propuestas/2026-10-21_fondo-afin-bg2-modo-1.md)). El cuadro 900 de
+  `secuencias/escena3.txt` da **0 diferencias de 38.400 píxeles** (antes 5222) y el arnés sintético
+  da 0 en los siete casos de wrap y de tamaño de mapa.
 - **Abierto:** la calibración de presentación está **activa** por el experimento
   [`2026-10-14_reactivar-la-calibracion-de-presentacion.md`](propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md),
   que espera una sesión en el televisor. El techo de `present` en tablet (51,4 ms) solo bajó con
@@ -117,52 +132,66 @@ Curado a mano a partir del [registro](#registro-de-hallazgos); el registro es la
    [`Cargo.toml`](../Cargo.toml)). Origen:
    [`2026-10-12_acceso-memoria-sin-llamada-indirecta.md`](propuestas/2026-10-12_acceso-memoria-sin-llamada-indirecta.md).
 4. **La validación en el dispositivo queda pendiente** en todas las propuestas de PPU y presentación.
-5. **El cambio del motor sigue sin commitear** — el APK lo lleva por `[patch]`, así que un clon limpio
+5. **El camino rápido del alpha pinta píxeles equivocados en una esquina** — la clave de tramo del
+   parche local resume la máscara de fondos y la prioridad del sprite en el mismo número de 16
+   bits, y la prioridad se pisa con la máscara: cuando un sprite cambia de prioridad justo donde un
+   fondo cambia de opacidad, el tramo se pinta con la pareja de capas del primer píxel y salen
+   píxeles distintos de los que da el camino general (8 de 240 en la escena sintética medida). Está
+   sin arreglar:
+   [`2026-10-22_clave-de-tramo-aliase-la-prioridad.md`](propuestas/2026-10-22_clave-de-tramo-aliase-la-prioridad.md).
+6. **Eliminación del PpuShim completada (ADR 42)** — El shim fue retirado del árbol activo de código
+   y archivado con sus 39 ficheros y arneses en [`docs/historico/ppu-shim/`](historico/ppu-shim/README.md).
+   La contingencia ante fallo de GPU o diagnóstico se apoya en el rasterizador por software en CPU de `gba-core`.
+7. **El cambio del motor sigue sin commitear** — el APK lo lleva por `[patch]`, así que un clon limpio
    no reproduce el APK (registrado en dos propuestas).
-6. **La espera activa del bucle principal** contradice la regla «sin busy-waiting» de
+8. **La espera activa del bucle principal** contradice la regla «sin busy-waiting» de
    [`AGENTS.md`](../AGENTS.md) §2.5.
-7. **Un test intermitente** (`test_emulation_worker_lifecycle_and_frame_generation`, 8 de cada 10
+9. **Un test intermitente** (`test_emulation_worker_lifecycle_and_frame_generation`, 8 de cada 10
    corridas falla ya en HEAD): el «131 en verde» depende de la suerte.
 
 ---
 
 ## Índice de Propuestas
 
-58 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
+158 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
 propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
-**58 = 31 `verificada por agente` + 11 `cerrada` + 7 `aprobada` + 3 `pendiente` + 3 `discrepada` +
-3 `revisada por humano`.**
+**158 = 94 `verificada por agente` + 40 `cerrada` + 2 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
 
 ### Pendientes (3) — sin ejecutar
 
 - [`2026-10-10_calibracion-multidispositivo-v2.md`](propuestas/2026-10-10_calibracion-multidispositivo-v2.md)
 - [`2026-10-10_optimizacion-compatibilidad-multidispositivo.md`](propuestas/2026-10-10_optimizacion-compatibilidad-multidispositivo.md)
-- [`2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md`](propuestas/2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md)
-
-### Aprobadas sin cerrar (7) — alcance pactado, trabajo o medida pendientes
-
-- [`2026-10-10_optimizacion-rendimiento-gpu-vulkan-y-calibracion-fps.md`](propuestas/2026-10-10_optimizacion-rendimiento-gpu-vulkan-y-calibracion-fps.md)
-- [`2026-10-12_ppu-60fps-estable.md`](propuestas/2026-10-12_ppu-60fps-estable.md)
-- [`2026-10-13_alpha-real-por-tramos.md`](propuestas/2026-10-13_alpha-real-por-tramos.md)
-- [`2026-10-13_contadores-de-camino-de-la-ppu.md`](propuestas/2026-10-13_contadores-de-camino-de-la-ppu.md)
-- [`2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md`](propuestas/2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md)
-- [`2026-10-14_reactivar-la-calibracion-de-presentacion.md`](propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md)
 - [`2026-10-14_saneamiento-de-la-documentacion.md`](propuestas/2026-10-14_saneamiento-de-la-documentacion.md)
 
-### Discrepadas (3) — la medida contradijo la premisa
+### Aprobadas sin cerrar (2) — alcance pactado, trabajo o medida pendientes
+
+- [`2026-10-10_optimizacion-rendimiento-gpu-vulkan-y-calibracion-fps.md`](propuestas/2026-10-10_optimizacion-rendimiento-gpu-vulkan-y-calibracion-fps.md)
+- [`2026-10-14_reactivar-la-calibracion-de-presentacion.md`](propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md)
+
+### Discrepadas (10) — la medida contradijo la premisa
 
 - [`2026-10-12_acceso-memoria-sin-llamada-indirecta.md`](propuestas/2026-10-12_acceso-memoria-sin-llamada-indirecta.md) — el acceso directo al bus no rinde ≈3 %.
 - [`2026-10-12_telemetria-sin-coste-en-el-apk.md`](propuestas/2026-10-12_telemetria-sin-coste-en-el-apk.md) — la sonda del port mide otro reloj del que se quería medir.
+- [`2026-10-14_bombeo-audio-por-evento.md`](propuestas/2026-10-14_bombeo-audio-por-evento.md)
 - [`2026-10-14_los-registros-del-juego-viven-en-la-cpu.md`](propuestas/2026-10-14_los-registros-del-juego-viven-en-la-cpu.md) — localizar los registros no ahorra: el volcado de frontera lo devuelve.
+- [`2026-10-17_subcamino-de-composicion-con-sprite-translucido.md`](propuestas/2026-10-17_subcamino-de-composicion-con-sprite-translucido.md)
+- [`2026-10-18_bg0-710-pixeles-shim-cuadro-1000.md`](propuestas/2026-10-18_bg0-710-pixeles-shim-cuadro-1000.md)
+- [`2026-10-18_decode-oam-otro-cuadro-regresion.md`](propuestas/2026-10-18_decode-oam-otro-cuadro-regresion.md)
+- [`2026-10-18_fondos-tapan-afines-cuadro-7500.md`](propuestas/2026-10-18_fondos-tapan-afines-cuadro-7500.md)
+- [`2026-10-18_sprites-afines-cuadro-7500.md`](propuestas/2026-10-18_sprites-afines-cuadro-7500.md)
+- [`2026-10-23_optimizacion-subida-diferencial-y-encoder-unico-ppu-nativa.md`](propuestas/2026-10-23_optimizacion-subida-diferencial-y-encoder-unico-ppu-nativa.md)
 
-### Revisada por humano (3)
+### Revisada por humano (6)
 
 - [`2026-10-09_compatibilidad-android-tv-y-armeabi-v7a.md`](propuestas/2026-10-09_compatibilidad-android-tv-y-armeabi-v7a.md)
 - [`2026-10-09_optimizacion-latencia-y-fillrate-gpu-modesta.md`](propuestas/2026-10-09_optimizacion-latencia-y-fillrate-gpu-modesta.md)
 - [`2026-10-14_corregir-afirmaciones-que-el-codigo-contradice.md`](propuestas/2026-10-14_corregir-afirmaciones-que-el-codigo-contradice.md)
+- [`2026-10-17_capa-ganadora-por-pixel-obj-cuadro-1000.md`](propuestas/2026-10-17_capa-ganadora-por-pixel-obj-cuadro-1000.md)
+- [`2026-10-23_eliminar-register-spilling-y-bucle-anidado-fs-comp.md`](propuestas/2026-10-23_eliminar-register-spilling-y-bucle-anidado-fs-comp.md)
+- [`2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md`](propuestas/2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md)
 
-### Cerradas (11)
+### Cerradas (40)
 
 - [`2026-10-09_ajustes-fidelidad-ergonomia-overlay.md`](propuestas/2026-10-09_ajustes-fidelidad-ergonomia-overlay.md)
 - [`2026-10-09_auditoria-tests-de-mutacion.md`](propuestas/2026-10-09_auditoria-tests-de-mutacion.md)
@@ -174,9 +203,38 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-10_ingestion-rom-bios-downloads.md`](propuestas/2026-10-10_ingestion-rom-bios-downloads.md)
 - [`2026-10-10_integracion-codigo-c-recompilado-aot.md`](propuestas/2026-10-10_integracion-codigo-c-recompilado-aot.md)
 - [`2026-10-10_pacing-fotogramas-y-pipeline-video-gba.md`](propuestas/2026-10-10_pacing-fotogramas-y-pipeline-video-gba.md)
+- [`2026-10-12_ppu-60fps-estable.md`](propuestas/2026-10-12_ppu-60fps-estable.md)
+- [`2026-10-13_alpha-real-por-tramos.md`](propuestas/2026-10-13_alpha-real-por-tramos.md)
+- [`2026-10-13_contadores-de-camino-de-la-ppu.md`](propuestas/2026-10-13_contadores-de-camino-de-la-ppu.md)
+- [`2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md`](propuestas/2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md)
 - [`2026-10-13_ppu-efectos-inertes-y-camino-especializado.md`](propuestas/2026-10-13_ppu-efectos-inertes-y-camino-especializado.md)
+- [`2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md`](propuestas/2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md)
+- [`2026-10-14_reloj-barato-en-pump-audio.md`](propuestas/2026-10-14_reloj-barato-en-pump-audio.md)
+- [`2026-10-16_arnes-comparacion-shim-vs-software.md`](propuestas/2026-10-16_arnes-comparacion-shim-vs-software.md)
+- [`2026-10-16_contar-escrituras-de-registros-por-cuadro.md`](propuestas/2026-10-16_contar-escrituras-de-registros-por-cuadro.md)
+- [`2026-10-16_contar-lineas-con-cambio-de-registros.md`](propuestas/2026-10-16_contar-lineas-con-cambio-de-registros.md)
+- [`2026-10-17_buscar-estado-faltante-cuadro-1000.md`](propuestas/2026-10-17_buscar-estado-faltante-cuadro-1000.md)
+- [`2026-10-17_capas-por-aportacion-cuadro-1000.md`](propuestas/2026-10-17_capas-por-aportacion-cuadro-1000.md)
+- [`2026-10-17_captura-por-linea-cuadro-1000.md`](propuestas/2026-10-17_captura-por-linea-cuadro-1000.md)
+- [`2026-10-17_comparar-capas-del-cuadro-fijo.md`](propuestas/2026-10-17_comparar-capas-del-cuadro-fijo.md)
+- [`2026-10-17_diagnostico-efectos-y-ventanas-cuadro-1000.md`](propuestas/2026-10-17_diagnostico-efectos-y-ventanas-cuadro-1000.md)
+- [`2026-10-18_afines-conteo-matriz-7500.md`](propuestas/2026-10-18_afines-conteo-matriz-7500.md)
+- [`2026-10-18_buscar-escena-bg0-sprites-decode-oam.md`](propuestas/2026-10-18_buscar-escena-bg0-sprites-decode-oam.md)
+- [`2026-10-18_instrumentar-copia-limpia-gba-core.md`](propuestas/2026-10-18_instrumentar-copia-limpia-gba-core.md)
+- [`2026-10-18_instrumentar-render-sprites-afines.md`](propuestas/2026-10-18_instrumentar-render-sprites-afines.md)
+- [`2026-10-23_eliminacion-del-ppu-shim.md`](propuestas/2026-10-23_eliminacion-del-ppu-shim.md)
+- [`2026-10-23_reorganizar-examples-y-archivar-obsoletos.md`](propuestas/2026-10-23_reorganizar-examples-y-archivar-obsoletos.md)
+- [`2026-10-23_resolucion-auditoria-rant-md.md`](propuestas/2026-10-23_resolucion-auditoria-rant-md.md)
+- [`2026-10-23_resolucion-inconsistencias-rant-md.md`](propuestas/2026-10-23_resolucion-inconsistencias-rant-md.md)
+- [`2026-10-23_resolucion-quejas-comprension-y-legibilidad-rant.md`](propuestas/2026-10-23_resolucion-quejas-comprension-y-legibilidad-rant.md)
+- [`2026-10-24_paquete-1-autonomia-ppu-controles-y-primer-arranque.md`](propuestas/2026-10-24_paquete-1-autonomia-ppu-controles-y-primer-arranque.md)
+- [`2026-10-24_paquete-2-vigencia-y-clasificacion-adrs.md`](propuestas/2026-10-24_paquete-2-vigencia-y-clasificacion-adrs.md)
+- [`2026-10-24_paquete-3-rigor-anatomia-src-c-y-diataxis.md`](propuestas/2026-10-24_paquete-3-rigor-anatomia-src-c-y-diataxis.md)
+- [`2026-10-24_resolucion-cuarta-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-cuarta-auditoria-rant-md.md)
+- [`2026-10-24_resolucion-segunda-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-segunda-auditoria-rant-md.md)
+- [`2026-10-24_resolucion-tercera-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-tercera-auditoria-rant-md.md)
 
-### Verificadas por agente (31) — con lo medido dentro; varias esperan el televisor
+### Verificadas por agente (94) — con lo medido dentro; varias esperan el televisor
 
 - [`2026-10-08_controles-tactiles-haptica.md`](propuestas/2026-10-08_controles-tactiles-haptica.md)
 - [`2026-10-08_crate-nativo-android.md`](propuestas/2026-10-08_crate-nativo-android.md)
@@ -209,28 +267,98 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-13_arnes-de-fotogramas-dorados.md`](propuestas/2026-10-13_arnes-de-fotogramas-dorados.md)
 - [`2026-10-14_acotar-el-techo-del-reloj-por-instruccion.md`](propuestas/2026-10-14_acotar-el-techo-del-reloj-por-instruccion.md)
 - [`2026-10-14_medir-la-frontera-entre-bloques.md`](propuestas/2026-10-14_medir-la-frontera-entre-bloques.md)
+- [`2026-10-16_fase-1-1-correccion-ppu-shim-vram-fondos-y-sprites.md`](propuestas/2026-10-16_fase-1-1-correccion-ppu-shim-vram-fondos-y-sprites.md)
+- [`2026-10-16_fase-1-2-intercalado-prioridades-bg-obj-y-descarte-obj-window.md`](propuestas/2026-10-16_fase-1-2-intercalado-prioridades-bg-obj-y-descarte-obj-window.md)
+- [`2026-10-16_fase-1-3-soporte-sprites-8bpp-gpu.md`](propuestas/2026-10-16_fase-1-3-soporte-sprites-8bpp-gpu.md)
+- [`2026-10-16_fase-1-ppu-shim-gpu.md`](propuestas/2026-10-16_fase-1-ppu-shim-gpu.md)
+- [`2026-10-17_camino-rapido-contra-general-cuadro-1000.md`](propuestas/2026-10-17_camino-rapido-contra-general-cuadro-1000.md)
+- [`2026-10-17_capa-bajo-mezcla-ninguno-cuadro-1000.md`](propuestas/2026-10-17_capa-bajo-mezcla-ninguno-cuadro-1000.md)
+- [`2026-10-17_capa-debajo-del-sprite-cuadro-1000.md`](propuestas/2026-10-17_capa-debajo-del-sprite-cuadro-1000.md)
+- [`2026-10-17_contenido-bg-shim-frente-a-fondo-texto-cuadro-1000.md`](propuestas/2026-10-17_contenido-bg-shim-frente-a-fondo-texto-cuadro-1000.md)
+- [`2026-10-17_contenido-bg2-cuadro-1000.md`](propuestas/2026-10-17_contenido-bg2-cuadro-1000.md)
+- [`2026-10-17_diagnostico-afin-y-por-linea.md`](propuestas/2026-10-17_diagnostico-afin-y-por-linea.md)
+- [`2026-10-17_frente-a-frente-del-estado-por-linea.md`](propuestas/2026-10-17_frente-a-frente-del-estado-por-linea.md)
+- [`2026-10-17_identificar-color-x-del-shim-cuadro-1000.md`](propuestas/2026-10-17_identificar-color-x-del-shim-cuadro-1000.md)
+- [`2026-10-17_localizar-pixeles-obj-y-contenido-bg-cuadro-1000.md`](propuestas/2026-10-17_localizar-pixeles-obj-y-contenido-bg-cuadro-1000.md)
+- [`2026-10-17_orden-de-pintado-del-shim-cuadro-1000.md`](propuestas/2026-10-17_orden-de-pintado-del-shim-cuadro-1000.md)
+- [`2026-10-17_origen-del-color-x-en-el-shim-cuadro-1000.md`](propuestas/2026-10-17_origen-del-color-x-en-el-shim-cuadro-1000.md)
+- [`2026-10-17_shim-contra-aportacion-cuadro-1000.md`](propuestas/2026-10-17_shim-contra-aportacion-cuadro-1000.md)
+- [`2026-10-17_shim-contra-fondo-vacio-cuadro-1000.md`](propuestas/2026-10-17_shim-contra-fondo-vacio-cuadro-1000.md)
+- [`2026-10-18_afines-conteo-matriz-7500.resultado.md`](propuestas/2026-10-18_afines-conteo-matriz-7500.resultado.md)
+- [`2026-10-18_bldcnt-bldalpha-cuadro-1000.md`](propuestas/2026-10-18_bldcnt-bldalpha-cuadro-1000.md)
+- [`2026-10-18_bldcnt-por-linea-cuadro-1000.md`](propuestas/2026-10-18_bldcnt-por-linea-cuadro-1000.md)
+- [`2026-10-18_buscar-cuadros-con-x-fundido.md`](propuestas/2026-10-18_buscar-cuadros-con-x-fundido.md)
+- [`2026-10-18_causa-errores-6000-7500-8000.md`](propuestas/2026-10-18_causa-errores-6000-7500-8000.md)
+- [`2026-10-18_decode-oam-respeta-obj-apagado-cuadro-1000.md`](propuestas/2026-10-18_decode-oam-respeta-obj-apagado-cuadro-1000.md)
+- [`2026-10-18_direccion-texel-composicion-afines.md`](propuestas/2026-10-18_direccion-texel-composicion-afines.md)
+- [`2026-10-18_fundido-bldalpha-otros-cuadros.md`](propuestas/2026-10-18_fundido-bldalpha-otros-cuadros.md)
+- [`2026-10-18_medir-working-tree-gba-core.md`](propuestas/2026-10-18_medir-working-tree-gba-core.md)
+- [`2026-10-18_pixeles-afines-cuadro-7500.md`](propuestas/2026-10-18_pixeles-afines-cuadro-7500.md)
+- [`2026-10-18_referencia-afines-gba-core.md`](propuestas/2026-10-18_referencia-afines-gba-core.md)
+- [`2026-10-18_residuo-x-con-correccion-obj-cuadro-1000.md`](propuestas/2026-10-18_residuo-x-con-correccion-obj-cuadro-1000.md)
+- [`2026-10-18_revisar-aislamiento-afines.md`](propuestas/2026-10-18_revisar-aislamiento-afines.md)
+- [`2026-10-18_revisar-comparacion-shim-afin-pixeles.md`](propuestas/2026-10-18_revisar-comparacion-shim-afin-pixeles.md)
+- [`2026-10-18_subida-vram-bg-shim-cuadro-1000.md`](propuestas/2026-10-18_subida-vram-bg-shim-cuadro-1000.md)
+- [`2026-10-18_tiles-afines-cuadro-7500.md`](propuestas/2026-10-18_tiles-afines-cuadro-7500.md)
+- [`2026-10-19_afin-cuadro-5300.md`](propuestas/2026-10-19_afin-cuadro-5300.md)
+- [`2026-10-19_bg1-o-sprites-sin-bg0-5300.md`](propuestas/2026-10-19_bg1-o-sprites-sin-bg0-5300.md)
+- [`2026-10-19_buscar-escena-afin-visible.md`](propuestas/2026-10-19_buscar-escena-afin-visible.md)
+- [`2026-10-19_causa-diferencias-shim-5300.md`](propuestas/2026-10-19_causa-diferencias-shim-5300.md)
+- [`2026-10-19_color-pixeles-afines-vs-fondo.md`](propuestas/2026-10-19_color-pixeles-afines-vs-fondo.md)
+- [`2026-10-19_composicion-pixeles-afines.md`](propuestas/2026-10-19_composicion-pixeles-afines.md)
+- [`2026-10-19_comprobar-bldcnt-shim-5300.md`](propuestas/2026-10-19_comprobar-bldcnt-shim-5300.md)
+- [`2026-10-19_desplazamiento-fondos-lineas-sin-afines-5300.md`](propuestas/2026-10-19_desplazamiento-fondos-lineas-sin-afines-5300.md)
+- [`2026-10-19_fondos-modo-lineas-sin-afines-5300.md`](propuestas/2026-10-19_fondos-modo-lineas-sin-afines-5300.md)
+- [`2026-10-19_mezcla-encendida-control-shim-5300.md`](propuestas/2026-10-19_mezcla-encendida-control-shim-5300.md)
+- [`2026-10-19_opacidad-bg0-ppu-5300.md`](propuestas/2026-10-19_opacidad-bg0-ppu-5300.md)
+- [`2026-10-19_por-que-bg1-no-afecta-shim-5300.md`](propuestas/2026-10-19_por-que-bg1-no-afecta-shim-5300.md)
+- [`2026-10-19_ppu-nativa-fase-1.md`](propuestas/2026-10-19_ppu-nativa-fase-1.md)
+- [`2026-10-19_scroll-por-cuadro-shim-5300.md`](propuestas/2026-10-19_scroll-por-cuadro-shim-5300.md)
+- [`2026-10-19_shim-frente-emulador-5300.md`](propuestas/2026-10-19_shim-frente-emulador-5300.md)
+- [`2026-10-19_verificar-comparacion-afin-replay.md`](propuestas/2026-10-19_verificar-comparacion-afin-replay.md)
+- [`2026-10-20_ppu-nativa-bandera-en-runtime.md`](propuestas/2026-10-20_ppu-nativa-bandera-en-runtime.md)
+- [`2026-10-21_fondo-afin-bg2-modo-1.md`](propuestas/2026-10-21_fondo-afin-bg2-modo-1.md)
+- [`2026-10-21_ppu-nativa-activa-por-defecto.md`](propuestas/2026-10-21_ppu-nativa-activa-por-defecto.md)
+- [`2026-10-21_ppu-nativa-sin-storage-en-vertices.md`](propuestas/2026-10-21_ppu-nativa-sin-storage-en-vertices.md)
+- [`2026-10-21_ventana-obj-camino-rapido.md`](propuestas/2026-10-21_ventana-obj-camino-rapido.md)
+- [`2026-10-22_arnes-comparacion-visual-y-causal.md`](propuestas/2026-10-22_arnes-comparacion-visual-y-causal.md)
+- [`2026-10-22_arnes-de-experimentos-comun.md`](propuestas/2026-10-22_arnes-de-experimentos-comun.md)
+- [`2026-10-22_clave-de-tramo-aliase-la-prioridad.md`](propuestas/2026-10-22_clave-de-tramo-aliase-la-prioridad.md)
+- [`2026-10-22_contrato-de-telemetria.md`](propuestas/2026-10-22_contrato-de-telemetria.md)
+- [`2026-10-22_sincronizar-referencia-visor-y-temblor.md`](propuestas/2026-10-22_sincronizar-referencia-visor-y-temblor.md)
+- [`2026-10-22_visor-doble-interactivo-ppu.md`](propuestas/2026-10-22_visor-doble-interactivo-ppu.md)
+- [`2026-10-23_lut-vertical-en-produccion-y-salto-ppu-cpu.md`](propuestas/2026-10-23_lut-vertical-en-produccion-y-salto-ppu-cpu.md)
+- [`2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md`](propuestas/2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md)
+- [`2026-10-23_ppu-nativa-paleta-lut-vertical.md`](propuestas/2026-10-23_ppu-nativa-paleta-lut-vertical.md)
 
-### Esperando el televisor: 28 propuestas con `Revisión humana` pendiente
+### Modificadas (2) — cambiadas sobre la marcha
 
-Todas piden lo mismo: una sesión en el dispositivo. Es el cuello de botella del proyecto ahora mismo.
+- [`2026-10-19_scroll-por-linea-copia-shim-5300.md`](propuestas/2026-10-19_scroll-por-linea-copia-shim-5300.md)
+- [`2026-10-19_sin-mezcla-corregida-shim-5300.md`](propuestas/2026-10-19_sin-mezcla-corregida-shim-5300.md)
 
-- [`2026-10-09_ajustes-fidelidad-ergonomia-overlay.md`](propuestas/2026-10-09_ajustes-fidelidad-ergonomia-overlay.md)
-- [`2026-10-09_compatibilidad-android-tv-y-armeabi-v7a.md`](propuestas/2026-10-09_compatibilidad-android-tv-y-armeabi-v7a.md)
+### Descartadas (1) — la medición las dejó fuera
+
+- [`2026-10-19_sin-mezcla-shim-5300.md`](propuestas/2026-10-19_sin-mezcla-shim-5300.md)
+
+### Esperando el televisor: propuestas con `Revisión humana` pendiente
+
+Son 85 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuello de botella del proyecto ahora mismo.
+
 - [`2026-10-09_correccion-escala-y-renderizado-overlay.md`](propuestas/2026-10-09_correccion-escala-y-renderizado-overlay.md)
 - [`2026-10-09_fidelidad-visual-overlay-prototipo.md`](propuestas/2026-10-09_fidelidad-visual-overlay-prototipo.md)
 - [`2026-10-09_manejo-errores-y-compatibilidad-emulador.md`](propuestas/2026-10-09_manejo-errores-y-compatibilidad-emulador.md)
-- [`2026-10-09_separacion-cuencas-y-orientacion-overlay.md`](propuestas/2026-10-09_separacion-cuencas-y-orientacion-overlay.md)
 - [`2026-10-10_calibracion-multidispositivo-v2.md`](propuestas/2026-10-10_calibracion-multidispositivo-v2.md)
 - [`2026-10-10_contador-fps-pantalla.md`](propuestas/2026-10-10_contador-fps-pantalla.md)
 - [`2026-10-10_fix-pipeline-multihilo-mailbox-y-perf-txt.md`](propuestas/2026-10-10_fix-pipeline-multihilo-mailbox-y-perf-txt.md)
 - [`2026-10-10_medicion-rendimiento-por-fase.md`](propuestas/2026-10-10_medicion-rendimiento-por-fase.md)
 - [`2026-10-10_separacion-hilos-emulacion-y-renderizado.md`](propuestas/2026-10-10_separacion-hilos-emulacion-y-renderizado.md)
+- [`2026-10-12_acceso-memoria-sin-llamada-indirecta.md`](propuestas/2026-10-12_acceso-memoria-sin-llamada-indirecta.md) — el acceso directo al bus no rinde ≈3 %.
 - [`2026-10-12_compresion-librerias-nativas-apk.md`](propuestas/2026-10-12_compresion-librerias-nativas-apk.md)
 - [`2026-10-12_drain-hotspots-sin-perdida.md`](propuestas/2026-10-12_drain-hotspots-sin-perdida.md)
 - [`2026-10-12_ejecucion-nativa-de-bios-real.md`](propuestas/2026-10-12_ejecucion-nativa-de-bios-real.md)
 - [`2026-10-12_nombre-apk-segun-perfil.md`](propuestas/2026-10-12_nombre-apk-segun-perfil.md)
 - [`2026-10-12_ppu-60fps-estable.md`](propuestas/2026-10-12_ppu-60fps-estable.md)
-- [`2026-10-12_telemetria-sin-coste-en-el-apk.md`](propuestas/2026-10-12_telemetria-sin-coste-en-el-apk.md)
+- [`2026-10-12_telemetria-sin-coste-en-el-apk.md`](propuestas/2026-10-12_telemetria-sin-coste-en-el-apk.md) — la sonda del port mide otro reloj del que se quería medir.
 - [`2026-10-13_alpha-real-por-tramos.md`](propuestas/2026-10-13_alpha-real-por-tramos.md)
 - [`2026-10-13_arnes-de-fotogramas-dorados.md`](propuestas/2026-10-13_arnes-de-fotogramas-dorados.md)
 - [`2026-10-13_contadores-de-camino-de-la-ppu.md`](propuestas/2026-10-13_contadores-de-camino-de-la-ppu.md)
@@ -238,14 +366,75 @@ Todas piden lo mismo: una sesión en el dispositivo. Es el cuello de botella del
 - [`2026-10-13_ppu-efectos-inertes-y-camino-especializado.md`](propuestas/2026-10-13_ppu-efectos-inertes-y-camino-especializado.md)
 - [`2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md`](propuestas/2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md)
 - [`2026-10-14_acotar-el-techo-del-reloj-por-instruccion.md`](propuestas/2026-10-14_acotar-el-techo-del-reloj-por-instruccion.md)
-- [`2026-10-14_los-registros-del-juego-viven-en-la-cpu.md`](propuestas/2026-10-14_los-registros-del-juego-viven-en-la-cpu.md)
+- [`2026-10-14_corregir-afirmaciones-que-el-codigo-contradice.md`](propuestas/2026-10-14_corregir-afirmaciones-que-el-codigo-contradice.md)
+- [`2026-10-14_los-registros-del-juego-viven-en-la-cpu.md`](propuestas/2026-10-14_los-registros-del-juego-viven-en-la-cpu.md) — localizar los registros no ahorra: el volcado de frontera lo devuelve.
 - [`2026-10-14_medir-la-frontera-entre-bloques.md`](propuestas/2026-10-14_medir-la-frontera-entre-bloques.md)
 - [`2026-10-14_reactivar-la-calibracion-de-presentacion.md`](propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md)
+- [`2026-10-14_reloj-barato-en-pump-audio.md`](propuestas/2026-10-14_reloj-barato-en-pump-audio.md)
 - [`2026-10-14_saneamiento-de-la-documentacion.md`](propuestas/2026-10-14_saneamiento-de-la-documentacion.md)
+- [`2026-10-16_arnes-comparacion-shim-vs-software.md`](propuestas/2026-10-16_arnes-comparacion-shim-vs-software.md)
+- [`2026-10-16_contar-escrituras-de-registros-por-cuadro.md`](propuestas/2026-10-16_contar-escrituras-de-registros-por-cuadro.md)
+- [`2026-10-16_contar-lineas-con-cambio-de-registros.md`](propuestas/2026-10-16_contar-lineas-con-cambio-de-registros.md)
+- [`2026-10-17_buscar-estado-faltante-cuadro-1000.md`](propuestas/2026-10-17_buscar-estado-faltante-cuadro-1000.md)
+- [`2026-10-17_camino-rapido-contra-general-cuadro-1000.md`](propuestas/2026-10-17_camino-rapido-contra-general-cuadro-1000.md)
+- [`2026-10-17_capa-bajo-mezcla-ninguno-cuadro-1000.md`](propuestas/2026-10-17_capa-bajo-mezcla-ninguno-cuadro-1000.md)
+- [`2026-10-17_capa-debajo-del-sprite-cuadro-1000.md`](propuestas/2026-10-17_capa-debajo-del-sprite-cuadro-1000.md)
+- [`2026-10-17_capas-por-aportacion-cuadro-1000.md`](propuestas/2026-10-17_capas-por-aportacion-cuadro-1000.md)
+- [`2026-10-17_captura-por-linea-cuadro-1000.md`](propuestas/2026-10-17_captura-por-linea-cuadro-1000.md)
+- [`2026-10-17_contenido-bg-shim-frente-a-fondo-texto-cuadro-1000.md`](propuestas/2026-10-17_contenido-bg-shim-frente-a-fondo-texto-cuadro-1000.md)
+- [`2026-10-17_contenido-bg2-cuadro-1000.md`](propuestas/2026-10-17_contenido-bg2-cuadro-1000.md)
+- [`2026-10-17_diagnostico-efectos-y-ventanas-cuadro-1000.md`](propuestas/2026-10-17_diagnostico-efectos-y-ventanas-cuadro-1000.md)
+- [`2026-10-17_frente-a-frente-del-estado-por-linea.md`](propuestas/2026-10-17_frente-a-frente-del-estado-por-linea.md)
+- [`2026-10-17_identificar-color-x-del-shim-cuadro-1000.md`](propuestas/2026-10-17_identificar-color-x-del-shim-cuadro-1000.md)
+- [`2026-10-17_localizar-pixeles-obj-y-contenido-bg-cuadro-1000.md`](propuestas/2026-10-17_localizar-pixeles-obj-y-contenido-bg-cuadro-1000.md)
+- [`2026-10-17_orden-de-pintado-del-shim-cuadro-1000.md`](propuestas/2026-10-17_orden-de-pintado-del-shim-cuadro-1000.md)
+- [`2026-10-17_origen-del-color-x-en-el-shim-cuadro-1000.md`](propuestas/2026-10-17_origen-del-color-x-en-el-shim-cuadro-1000.md)
+- [`2026-10-17_shim-contra-aportacion-cuadro-1000.md`](propuestas/2026-10-17_shim-contra-aportacion-cuadro-1000.md)
+- [`2026-10-17_shim-contra-fondo-vacio-cuadro-1000.md`](propuestas/2026-10-17_shim-contra-fondo-vacio-cuadro-1000.md)
+- [`2026-10-17_subcamino-de-composicion-con-sprite-translucido.md`](propuestas/2026-10-17_subcamino-de-composicion-con-sprite-translucido.md)
+- [`2026-10-18_afines-conteo-matriz-7500.md`](propuestas/2026-10-18_afines-conteo-matriz-7500.md)
+- [`2026-10-18_bg0-710-pixeles-shim-cuadro-1000.md`](propuestas/2026-10-18_bg0-710-pixeles-shim-cuadro-1000.md)
+- [`2026-10-18_bldcnt-bldalpha-cuadro-1000.md`](propuestas/2026-10-18_bldcnt-bldalpha-cuadro-1000.md)
+- [`2026-10-18_bldcnt-por-linea-cuadro-1000.md`](propuestas/2026-10-18_bldcnt-por-linea-cuadro-1000.md)
+- [`2026-10-18_buscar-cuadros-con-x-fundido.md`](propuestas/2026-10-18_buscar-cuadros-con-x-fundido.md)
+- [`2026-10-18_buscar-escena-bg0-sprites-decode-oam.md`](propuestas/2026-10-18_buscar-escena-bg0-sprites-decode-oam.md)
+- [`2026-10-18_causa-errores-6000-7500-8000.md`](propuestas/2026-10-18_causa-errores-6000-7500-8000.md)
+- [`2026-10-18_decode-oam-otro-cuadro-regresion.md`](propuestas/2026-10-18_decode-oam-otro-cuadro-regresion.md)
+- [`2026-10-18_decode-oam-respeta-obj-apagado-cuadro-1000.md`](propuestas/2026-10-18_decode-oam-respeta-obj-apagado-cuadro-1000.md)
+- [`2026-10-18_direccion-texel-composicion-afines.md`](propuestas/2026-10-18_direccion-texel-composicion-afines.md)
+- [`2026-10-18_fondos-tapan-afines-cuadro-7500.md`](propuestas/2026-10-18_fondos-tapan-afines-cuadro-7500.md)
+- [`2026-10-18_fundido-bldalpha-otros-cuadros.md`](propuestas/2026-10-18_fundido-bldalpha-otros-cuadros.md)
+- [`2026-10-18_instrumentar-copia-limpia-gba-core.md`](propuestas/2026-10-18_instrumentar-copia-limpia-gba-core.md)
+- [`2026-10-18_instrumentar-render-sprites-afines.md`](propuestas/2026-10-18_instrumentar-render-sprites-afines.md)
+- [`2026-10-18_pixeles-afines-cuadro-7500.md`](propuestas/2026-10-18_pixeles-afines-cuadro-7500.md)
+- [`2026-10-18_referencia-afines-gba-core.md`](propuestas/2026-10-18_referencia-afines-gba-core.md)
+- [`2026-10-18_residuo-x-con-correccion-obj-cuadro-1000.md`](propuestas/2026-10-18_residuo-x-con-correccion-obj-cuadro-1000.md)
+- [`2026-10-18_sprites-afines-cuadro-7500.md`](propuestas/2026-10-18_sprites-afines-cuadro-7500.md)
+- [`2026-10-18_subida-vram-bg-shim-cuadro-1000.md`](propuestas/2026-10-18_subida-vram-bg-shim-cuadro-1000.md)
+- [`2026-10-18_tiles-afines-cuadro-7500.md`](propuestas/2026-10-18_tiles-afines-cuadro-7500.md)
+- [`2026-10-19_ppu-nativa-fase-1.md`](propuestas/2026-10-19_ppu-nativa-fase-1.md)
+- [`2026-10-20_ppu-nativa-bandera-en-runtime.md`](propuestas/2026-10-20_ppu-nativa-bandera-en-runtime.md)
+- [`2026-10-21_fondo-afin-bg2-modo-1.md`](propuestas/2026-10-21_fondo-afin-bg2-modo-1.md)
+- [`2026-10-21_ppu-nativa-activa-por-defecto.md`](propuestas/2026-10-21_ppu-nativa-activa-por-defecto.md)
+- [`2026-10-21_ppu-nativa-sin-storage-en-vertices.md`](propuestas/2026-10-21_ppu-nativa-sin-storage-en-vertices.md)
+- [`2026-10-21_ventana-obj-camino-rapido.md`](propuestas/2026-10-21_ventana-obj-camino-rapido.md)
+- [`2026-10-22_arnes-de-experimentos-comun.md`](propuestas/2026-10-22_arnes-de-experimentos-comun.md)
+- [`2026-10-22_clave-de-tramo-aliase-la-prioridad.md`](propuestas/2026-10-22_clave-de-tramo-aliase-la-prioridad.md)
+- [`2026-10-22_contrato-de-telemetria.md`](propuestas/2026-10-22_contrato-de-telemetria.md)
+- [`2026-10-22_sincronizar-referencia-visor-y-temblor.md`](propuestas/2026-10-22_sincronizar-referencia-visor-y-temblor.md)
+- [`2026-10-22_visor-doble-interactivo-ppu.md`](propuestas/2026-10-22_visor-doble-interactivo-ppu.md)
+- [`2026-10-23_eliminacion-del-ppu-shim.md`](propuestas/2026-10-23_eliminacion-del-ppu-shim.md)
+- [`2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md`](propuestas/2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md)
+- [`2026-10-23_ppu-nativa-paleta-lut-vertical.md`](propuestas/2026-10-23_ppu-nativa-paleta-lut-vertical.md)
+- [`2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md`](propuestas/2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md)
+- [`2026-10-24_resolucion-cuarta-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-cuarta-auditoria-rant-md.md)
+- [`2026-10-24_resolucion-tercera-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-tercera-auditoria-rant-md.md)
 
 ---
 
 ## Registro de Hallazgos
+
+> **Naturaleza histórica de este registro:** Este apartado conserva de forma acumulativa e inmutable los hallazgos fuera de alcance documentados en la sección `### Fuera de alcance` al cerrar cada propuesta de cambio (auditados automáticamente por `python scripts/auditar_hallazgos.py`). Muchos de estos hallazgos ya han sido resueltos en propuestas posteriores o corresponden a notas técnicas y limitaciones físicas de hardware. Para consultar la lista viva de **tareas pendientes y accionables de desarrollo**, véase [`docs/PENDIENTES.md`](PENDIENTES.md).
 
 #### [`2026-10-08_controles-tactiles-haptica.md`](propuestas/2026-10-08_controles-tactiles-haptica.md)
 
@@ -381,6 +570,13 @@ Todas piden lo mismo: una sesión en el dispositivo. Es el cuello de botella del
 - **El despacho indirecto por la tabla `RtApi` no cuesta en este host** (−0,01 ns frente a una llamada directa): la diferencia de 2,8× que midió [`2026-10-12_acceso-memoria-sin-llamada-indirecta.md`](2026-10-12_acceso-memoria-sin-llamada-indirecta.md) era el *trabajo* del accesor, no el salto indirecto. En el ARM del televisor el predictor puede portarse distinto y conviene confirmarlo allí. — impacto: medio
 - La media **dinámica** de ciclos por petición (6,55-6,59) es menor que la **estática** del censo (9,22): las escenas calientes son más densas en accesos al bus, que son los que fuerzan el volcado. — impacto: bajo
 
+#### [`2026-10-14_corregir-afirmaciones-que-el-codigo-contradice.md`](propuestas/2026-10-14_corregir-afirmaciones-que-el-codigo-contradice.md)
+
+- `docs/explicacion/arquitectura-c-recompilado.md` conserva cifras caducas fuera de las dos líneas del alcance: «más de 115.000 instrucciones descubiertas» y una tabla de unidades de traducción que describe 2-3 archivos cuando `src-c/` tiene 12. Corregirlo necesita una medición fresca de `src-c/`. — impacto: medio
+- El `README.md` raíz sigue describiendo el flujo `recomp.exe play` y una carpeta `mods/` que no existe (verificado con `ls`), y sólo menciona Android una vez. — impacto: bajo
+- `pack.toml` declara `version = "0.1.0"` mientras la app es `0.0.2` (`Cargo.toml`, `AndroidManifest.xml`) — impacto: bajo
+- El número de tests en la documentación puede volver a quedar obsoleto en silencio: ningún test lo deriva del árbol, sólo se prohíben las frases viejas. Un guardián que cuente `#[test]` y lo compare sería la solución, pero excede los criterios de esta propuesta. — impacto: bajo
+
 #### [`2026-10-14_los-registros-del-juego-viven-en-la-cpu.md`](propuestas/2026-10-14_los-registros-del-juego-viven-en-la-cpu.md)
 
 - Los grupos de cadena con **muchas salidas** (1.518 puertas y 5.256 `goto` en 089f2d69) hacen que cualquier esquema de volcado por `return` explote: si algún día se retoma, el volcado debe ser **parcial** (solo los registros vivos) y decidido por el analizador de flujo. — impacto: medio
@@ -400,15 +596,141 @@ Todas piden lo mismo: una sesión en el dispositivo. Es el cuello de botella del
 - La espera de `present` podría solaparse con la emulación en otro hilo; no se aborda aquí. — impacto: medio
 - La cabecera de telemetría ya registra el modo real del swapchain: el barrido no es imprescindible para saber el modo, solo para saber si la configuración ayudaría. — impacto: bajo
 
-#### [`2026-10-14_corregir-afirmaciones-que-el-codigo-contradice.md`](propuestas/2026-10-14_corregir-afirmaciones-que-el-codigo-contradice.md)
+#### [`2026-10-14_reloj-barato-en-pump-audio.md`](propuestas/2026-10-14_reloj-barato-en-pump-audio.md)
 
-- `docs/explicacion/arquitectura-c-recompilado.md` conserva cifras caducas fuera de las dos líneas del alcance: «más de 115.000 instrucciones descubiertas» y una tabla de unidades de traducción que describe 2-3 archivos cuando `src-c/` tiene 12. — impacto: medio
-- El `README.md` raíz sigue describiendo el flujo `recomp.exe play` y una carpeta `mods/` que no existe (verificado con `ls`), y sólo menciona Android una vez — impacto: bajo
-- `pack.toml` declara `version = "0.1.0"` mientras la app es `0.0.2` (`Cargo.toml`, `AndroidManifest.xml`) — impacto: bajo
-- El número de tests en la documentación puede volver a quedar obsoleto en silencio: ningún test lo deriva del árbol, sólo se prohíben las frases viejas. Un guardián que cuente `#[test]` y lo compare sería la solución, pero excede los criterios de esta propuesta — impacto: bajo
+- `BlockTable::from_blocks` en `src/recomp.rs` aloja un vector `rom` indexado por byte de hasta ~128 MB en 64 bits con <0,2 % de densidad, penalizando la caché L2/L3 en cada despacho. — impacto: medio
+- `render_scanline` y `render_sprites` en `../gba-recomp/crates/gba-core/src/ppu.rs` evalúan coordenadas y lecturas de VRAM de sprites antes de descartar píxeles ya ocluidos por un sprite de mayor prioridad. — impacto: medio
+- `EmulationWorker` en `src/pipeline.rs` realiza una copia extra de 153,6 KB por fotograma desde `runner.frame_rgba()` hacia el búfer del pool en lugar de componer directamente en el búfer destino. — impacto: bajo
+- `record_hotspot` en `src/recomp.rs` adquiere el `Mutex` global `HOTSPOTS` en cada instrucción ejecutada por el intérprete de respaldo. — impacto: bajo
+
+#### [`2026-10-16_arnes-comparacion-shim-vs-software.md`](propuestas/2026-10-16_arnes-comparacion-shim-vs-software.md)
+
+- **Captura única por cuadro (causa probable de las bandas):** el plan de Fase 1 (paso 4) y `src/pipeline.rs` toman VRAM, OAM, paleta e I/O una sola vez por cuadro, después de `step_frame()`. El shim aplica ese estado a todas las líneas, aunque el juego cambie registros a mitad del cuadro (como ocurre con los efectos de las capturas 5 y 6). Esto contradice la premisa de la Fase 1 y necesita una propuesta propia de estado por línea. — impacto: sin declarar
+- **Ventanas y blend:** `src/ppu_shim.wgsl` no tiene ninguna mención a ventanas ni blend en la revisión de hoy. La Fase 1.4 lo tiene previsto. — impacto: sin declarar
+- **Solo modo 0:** `decode_io_regs` y `render_frame` solo tratan el modo 0 (comentario en `ppu_shim.rs`). Las escenas en otros modos (por ejemplo, la pantalla de título) no quedan cubiertas. — impacto: sin declarar
+
+#### [`2026-10-16_fase-1-1-correccion-ppu-shim-vram-fondos-y-sprites.md`](propuestas/2026-10-16_fase-1-1-correccion-ppu-shim-vram-fondos-y-sprites.md)
+
+- *Modos afines rotados (Modo 1 y 2):* Fire Emblem opera en Modo 0; los modos afines quedan para cuando se requiera cinemáticas rotadas complejas. — impacto: sin declarar
+- *Fase 2 (Bus & Timing Shim):* La sustitución de `RtApi` y reloj AOT se abordará tras estabilizar la imagen visual. — impacto: sin declarar
+
+#### [`2026-10-16_fase-1-2-intercalado-prioridades-bg-obj-y-descarte-obj-window.md`](propuestas/2026-10-16_fase-1-2-intercalado-prioridades-bg-obj-y-descarte-obj-window.md)
+
+- *Soporte completo de máscaras de ventana por hardware (WIN0, WIN1, WINOBJ):* Los efectos de recorte geométrico por ventana se abordarán si una escena de batalla o transición específica lo requiere. — impacto: sin declarar
+
+#### [`2026-10-16_fase-1-ppu-shim-gpu.md`](propuestas/2026-10-16_fase-1-ppu-shim-gpu.md)
+
+- *Fase 2 (Bus & Timing Shim):* La eliminación de `a->tick` y la sustitución de la memoria plana de IWRAM/EWRAM se reservan para la Fase 2, una vez validada la fidelidad gráfica. — impacto: sin declarar
+- *Fase 3 (Audio Shim):* El desacoplamiento del motor `m4a` hacia AAudio/Oboe se abordará en la Fase 3. — impacto: sin declarar
+- *Efectos afines avanzados (Modo 1/2 y rotación de fondos):* Fire Emblem 7 opera en Modo 0 para menús y batallas; el soporte de fondos afines rotados queda diferido si no es requerido por el juego. — impacto: sin declarar
+
+#### [`2026-10-17_diagnostico-afin-y-por-linea.md`](propuestas/2026-10-17_diagnostico-afin-y-por-linea.md)
+
+- `src/ppu_shim.rs` sigue tomando un único estado por fotograma: con 81 % de los cuadros de la introducción escribiendo E/S a mitad de cuadro, ninguna mejora del shim puede reproducirlos hasta que reciba estado por línea. — impacto: medio. — impacto: medio
+- `BgLayerConfig.mosaic` sigue leyendo el bit 6 de `BGnCNT` como mosaico en BG2/BG3, donde ese bit es afín: hoy es inocuo porque el juego no usa BG2/BG3 afines en la introducción (0 de 1.112 cuadros), pero etiqueta mal el campo. — impacto: bajo. — impacto: bajo
+- El informe guarda cuántas líneas difieren de la línea 0, no cuáles: una sola escritura en mitad del cuadro y una tabla por línea de barrido producen el mismo número, así que el barrido no distingue ambos casos. — impacto: bajo. — impacto: bajo
+
+#### [`2026-10-17_frente-a-frente-del-estado-por-linea.md`](propuestas/2026-10-17_frente-a-frente-del-estado-por-linea.md)
+
+- La mezcla (`BLDCNT`/`BLDALPHA`/`BLDY`) y las ventanas (`WIN0`/`WIN1`/`OBJWIN`) siguen sin existir en el shim: el experimento las mide, pero no las corrige. — impacto: medio. — impacto: medio
+- El residuo de 1,33 % medio en cuadros sin mezcla (picos de 3,3 %) no está explicado: apunta a VRAM que cambia dentro del cuadro o al dibujado de sprites, y necesita su propio experimento. — impacto: bajo. — impacto: bajo
+- El ejemplo necesita GPU y tarda unos 5 s por cuadro cuando hay decenas de estados, así que no puede entrar en la suite de CI: las pruebas solo leen el informe ya generado. — impacto: bajo. — impacto: bajo
+
+#### [`2026-10-17_localizar-pixeles-obj-y-contenido-bg-cuadro-1000.md`](propuestas/2026-10-17_localizar-pixeles-obj-y-contenido-bg-cuadro-1000.md)
+
+- El índice de propuestas de `docs/BACKLOG.md` sigue en 58 fichas y no incluye las propuestas del 2026-10-16 ni las del 2026-10-17, así que su recuento por estado ya no cuadra. — impacto: bajo. — impacto: bajo
+
+#### [`2026-10-17_subcamino-de-composicion-con-sprite-translucido.md`](propuestas/2026-10-17_subcamino-de-composicion-con-sprite-translucido.md)
+
+- La vía por tramos construye sus tramos solo con WIN0 y WIN1 e ignora la ventana de sprites (`obj_window`), que el camino general sí consulta en `control_at`. Con OBJWIN parcial y alpha del modo 1, los píxeles dentro de la máscara usarían el control de fuera. No se observó en este cuadro porque `DISPCNT` = `0x1F00` (sin ventanas); se detectó leyendo el código, no midiendo. — impacto: medio. — impacto: medio
+- La instrumentación y el ejemplo viven en `../gba-recomp` sin commit; el motor local queda con tres contadores y dos interruptores nuevos que solo afectan a builds con `perf-video`. — impacto: bajo. — impacto: bajo
+
+#### [`2026-10-19_ppu-nativa-fase-1.md`](propuestas/2026-10-19_ppu-nativa-fase-1.md)
+
+- El `Cargo.toml` versionado fija `gba-core` al rev `de4edf59` y a la vez lo redirige con `[patch]` a `../gba-recomp`; ese rev no tiene sección `[features]`, así que sin la carpeta hermana el proyecto no compila. — impacto: alto
+- La captura por línea de `gba-core` (`CapturaLinea`) clona VRAM, IO, paleta y OAM completos por línea visible: unos 99 KB por línea y 15,8 MB por cuadro. — impacto: medio
+- El rev fijado `de4edf59` de `gba-recomp` no tiene ni la captura por línea ni la feature `perf-video`: solo viven en el worktree local que trae el `[patch]` de `Cargo.toml`, así que el arnés de comparación no es reproducible con el rev fijado. — impacto: medio
+- El runtime toma VRAM, OAM, paleta e I/O una sola vez por cuadro (`src/pipeline.rs`), así que el estado por línea no existe en producción: la fase 1b necesita tocar el motor o llevar su propia ruta de depuración. — impacto: medio
+- `src/ppu_shim.rs`, `src/ppu_shim.wgsl`, `src/ppu_shim_tests.rs` y `examples/` siguen sin versionar: el shim actual, que el criterio de regresión quiere congelar, todavía no está en el repositorio. — impacto: medio
+- Los once volcados `volcados/afin-*-5300.txt` son byte-idénticos (mismo SHA-256), así que diez de los experimentos repetidos no midieron nada nuevo. — impacto: medio
+- El validador Diátaxis excluye `docs/propuestas/**` y `docs/BACKLOG.md` de las páginas que revisa, así que un ancla rota en esos ficheros no se detecta: el enlace del README de propuestas apuntaba a un ancla que el generador del índice dejaba obsoleta en cada regeneración y el validador daba 0 avisos. — impacto: medio
+- Los dos cuadros de aceptación (5300 y 7500) no usan fondos en modo bitmap (3-5) ni fondos afines, así que las exclusiones de §7 no están cubiertas por ningún criterio: un juego que los use se dibujaría mal con la PPU nativa. La fase 1 solo dibuja fondos de tiles (modos 0 y 1) y sprites (afines incluidos). — impacto: medio
+- `src/ppu_nativa.rs`, `src/ppu_nativa.wgsl`, `src/ppu_nativa_tests.rs`, `tests/ppu_nativa_tests.rs`, `tests/datos/`, `examples/` y `scripts/diagnostico/mutar_ppu_nativa.py` siguen **sin versionar**: el módulo nuevo, que la fase 1 entrega, todavía no está en el repositorio. — impacto: medio
+- El arnés de comparación depende de `FE_ROM` y de la feature `proto` (y por tanto del worktree local de `gba-recomp`): sin la carpeta hermana, los dos criterios que comparan píxeles no se pueden ejecutar y se omiten con un mensaje. — impacto: medio
+- La comparación sin mezcla (shim frente a la PPU con la mezcla apagada) no cubre la segunda capa ni el fondo, porque en la salida sin mezcla solo manda la capa superior: si el criterio normal falla por ahí, el arnés actual no lo distinguiría. — impacto: bajo
+- La PPU nativa reserva seis texturas (cuatro de fondos, la de sprites y la de sprites en modo ventana) más los búferes de configuración; en el dispositivo eso es memoria de vídeo que el shim no gastaba, y no se ha medido. — impacto: bajo
+
+#### [`2026-10-20_ppu-nativa-bandera-en-runtime.md`](propuestas/2026-10-20_ppu-nativa-bandera-en-runtime.md)
+
+- La referencia técnica generada (`docs/referencia/api-modulos-rust.md`) no cubre `src/ppu_nativa.rs` (el generador tiene una lista curada de módulos), así que la constante `NOMBRE_BANDERA` y la función `bandera_activada` no aparecen en ella aunque `--check` pasa. — impacto: bajo. — impacto: bajo
+- Al retirar la marca, el pipeline de la PPU nativa sigue construido y con sus texturas reservadas en memoria de vídeo hasta que la app se reinicia: se deja de usar, pero no se libera. — impacto: bajo. — impacto: bajo
+- El script de empaquetado anuncia la firma v1, pero `apksigner` no la aplica: con `minSdkVersion 26` la firma v1 queda sin efecto y el verificador la da por ausente. — impacto: bajo. — impacto: bajo
+
+#### [`2026-10-21_fondo-afin-bg2-modo-1.md`](propuestas/2026-10-21_fondo-afin-bg2-modo-1.md)
+
+- La PPU nativa compone con el estado de fin de cuadro: en el cuadro 900 el juego escribe `BG2X`/`BG2Y` durante el cuadro, así que frente a la referencia **por línea** quedan 13247 diferencias de 38400 (las dos referencias difieren en eso). — impacto: medio
+- El shim solo tiene capas de fondo del modo 0 (scroll, sin transformación): no dibuja el fondo afín BG2, así que con la PPU nativa apagada (archivo de marca `ppu-nativa-off.flag`) los menús con el fondo girando salen sin esa capa. — impacto: medio
+- La PPU nativa sigue sin dibujar el modo 2 (BG2 y BG3 afines) ni los modos 3, 4 y 5 (bitmap): el juego no los usa, pero un fondo de bits saldría en negro y el modo 2 no se deformaría. — impacto: medio
+
+#### [`2026-10-21_ppu-nativa-activa-por-defecto.md`](propuestas/2026-10-21_ppu-nativa-activa-por-defecto.md)
+
+- El guardián de errores de `wgpu` solo cubre la **construcción** del pipeline: un error de validación que aparezca más tarde, al ejecutar un fotograma, seguiría entrando en pánico. — impacto: medio
+- La marca antigua `ppu-nativa.flag` **deja de leerse**: si sigue en el almacenamiento de algún dispositivo, ya no hace nada (la PPU nativa está activa por defecto). Para apagarla hay que crear `ppu-nativa-off.flag`. — impacto: bajo
+- Al retirar la marca de apagado, el pipeline de la PPU nativa sigue construido y con sus texturas reservadas en memoria de vídeo hasta que la app se reinicia: se deja de usar, pero no se libera. — impacto: bajo
+
+#### [`2026-10-21_ppu-nativa-sin-storage-en-vertices.md`](propuestas/2026-10-21_ppu-nativa-sin-storage-en-vertices.md)
+
+- La clave de profundidad que desempata los sprites es `prioridad * 128 + índice de OAM`, y cabe en el rango `[0, 1]` del adjunto de profundidad solo porque `MAX_SPRITES` es 128 y la prioridad máxima es 3 (`3 * 128 + 127 = 511 < 512`): si el máximo de sprites creciera, la clave se saldría del rango y el desempate dejaría de ser correcto. — impacto: bajo
+- Los búferes de sprites reservan 128 entradas (8 KB el *storage buffer* y 3 KB el de instancias) aunque en un cuadro normal haya menos de veinte sprites: el tamaño reservado no se ajusta al cuadro y la memoria de vídeo no se devuelve. — impacto: bajo
+- La geometría de cada sprite está duplicada: la misma información viaja en el *storage buffer* (que lee el fragmento) y en el búfer de instancias (que lee el vértice), en dos formatos distintos. — impacto: bajo
+
+#### [`2026-10-21_ventana-obj-camino-rapido.md`](propuestas/2026-10-21_ventana-obj-camino-rapido.md)
+
+- El atajo por tramos sigue sin componer la máscara de la ventana de sprites: con el arreglo esas líneas van píxel a píxel, pero se podría componer por tramos con la máscara y recuperar parte del rendimiento. Es la mejora que quedó anotada en el §2 de esta propuesta. — impacto: medio
+- `lineas_efecto_alpha` ya no cuenta las líneas con alpha real que además tienen la ventana de sprites, así que el reparto por modo del efecto no cubre esas líneas. — impacto: bajo
+- La ventana de sprites sigue sin estar soportada por hardware en el shim de GPU del port (`src/ppu_shim.rs`), que es un camino distinto del de la PPU por software. — impacto: bajo
+- Al auditar las rutas absolutas se vio que el hallazgo del BACKLOG que accuse la ruta local `C:/Users/<usuario>/Downloads/...` en `docs/propuestas/2026-10-12_drain-hotspots-sin-perdida.md` ya no se cumple: ese archivo no contiene ninguna ruta de usuario. — impacto: bajo
+
+#### [`2026-10-22_arnes-de-experimentos-comun.md`](propuestas/2026-10-22_arnes-de-experimentos-comun.md)
+
+- `ppu_banda_nativa`, `shim_capa_x`, `shim_vram_bg` y otros conservan campos (`Pixel.idx`, `Replica.entrada`) que nunca se leen. Son advertencias anteriores al cambio y arreglarlas obliga a tocar sus `main`. Impacto: bajo. — impacto: bajo
+- El recuento de tests del checklist de `AGENTS.md` decía 264 cuando ya había 285. Corregido el 2026-10-22: ahora dice 285 (184 en `src/` + 101 en `tests/`). — impacto: bajo
+
+#### [`2026-10-22_clave-de-tramo-aliase-la-prioridad.md`](propuestas/2026-10-22_clave-de-tramo-aliase-la-prioridad.md)
+
+- El defecto vive en el parche local (`../gba-recomp`), cuyo trabajo sigue sin commitear: el APK lo lleva por `[patch]`, así que un clon limpio compila el upstream fijado, que no tiene camino rápido y, por tanto, no tiene este defecto. — impacto: medio
+- La PPU nativa del port (`src/ppu_nativa.rs`) compone siempre por píxel en la GPU: no sufre este defecto, pero tampoco se benefica del atajo por tramos, así que su coste por fotograma es el de la composición completa. — impacto: bajo
+
+#### [`2026-10-22_contrato-de-telemetria.md`](propuestas/2026-10-22_contrato-de-telemetria.md)
+
+- La línea `# ppucamino` repite la clave `rectas` con dos significados: el número absoluto de líneas por la vía rápida y, entre paréntesis al final, el porcentaje. El analizador lo resuelve cortando la línea por el paréntesis (`split("(")[0]`), así que la clave no es unívoca y ningún esquema podría declararla tal cual. — impacto: medio
+- Las otras tres líneas `#` (`ppu_hw`, `regiones`, `ppucamino`) también tienen su contrato escrito a mano, en el escritor de Rust y en el informe de Python. No pierden datos (el lector las barre por clave), pero añadir un campo obliga a tocar los dos sitios sin que nada avise: es el mismo problema que esta propuesta resuelve para la línea `t=`. — impacto: medio
+- La cabecera `# backend=… modo=… ppu=recto-N` no la lee el analizador: no hay rama que la case y sus campos no llegan al informe. Además `ppu=recto-N` es la versión del camino de composición de la PPU, no la del formato de la telemetría: son dos cosas distintas que se parecen, y el esquema no debe confundirlas. — impacto: bajo
+- `blazing-perf.txt` se trunca en cada arranque (`File::create` en `init_perf_file`), así que no queda histórico entre sesiones: para comparar dos sesiones hay que copiar el archivo a mano antes de reiniciar la aplicación. — impacto: bajo
+- El informe comparativo (`--comparar`) sigue mostrando solo los promedios: no incluye el «peor fotograma» que ahora calcula el lector, así que comparar dos sesiones no dice si el tirón aislado mejoró. — impacto: bajo
+- El conteo de tests del checklist de `AGENTS.md` §6 hay que actualizarlo a mano en cada cambio que añada tests, y así se ha desfasado varias veces (corregido el 2026-10-22 a 285: 184 en `src/` + 101 en `tests/`; el número volverá a desfasarse). — impacto: bajo
+
+
+#### [2026-10-22_sincronizar-referencia-visor-y-temblor.md](propuestas/2026-10-22_sincronizar-referencia-visor-y-temblor.md)
+
+- Corrección de sincronización de scanline / multiplexado en el shader WGSL para efectos de scroll en línea (impacto medio): el visor ahora detecta y explica con precisión matemática en el `.txt` cada caso de vibración o cartel de unidad, pero la renderización por scanlines en la GPU nativa formará parte de una propuesta de renderizado posterior una vez clasificados los patrones observados. — impacto: medio
+
+#### [2026-10-23_optimizacion-subida-diferencial-y-encoder-unico-ppu-nativa.md](propuestas/2026-10-23_optimizacion-subida-diferencial-y-encoder-unico-ppu-nativa.md)
+
+- `src/ppu_nativa.rs`: la subida de sprites (`sprites_buffer` e instancias) no es diferencial; son pocos bytes, impacto: `bajo`. — impacto: sin declarar
+- `src/ppu_nativa.wgsl`: en `fs_comp`, la indexación dinámica `cfg_capa.capas[b]` y `prio[b]` dentro del bucle anidado `4 × 4` sobre una estructura local de `272 bytes` (`ConfigCapa`) fuerza *register spilling* a memoria privada (*stack*) en GPUs móviles como la Mali-G31 (OpenGL ES 3.0 no permite indexar registros con variables no constantes), lo que domina el tiempo de ejecución del fragment shader y bloquea `present` en dos intervalos de VSync (`~31 ms`), impacto: `alto`. — impacto: sin declarar
+
+#### [2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md](propuestas/2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md)
+
+- En el motor base `gba-core` (`crates/gba-core/src/ppu.rs`, línea 976), la clave rápida `clave_de_tramo` calcula `mascara | if prioridad != 0xFF { 0x100 | prioridad as u16 } else { 0 }` sin desplazar `prioridad`, por lo que un sprite con `prioridad = 2` activa el bit 1 (`0x0002`), colisionando con el bit de opacidad de `BG1` en `mascara` durante `compose_alpha_tramos` (causa de los 77 píxeles de diferencia en el bocadillo `¡Aquí! ▼` del `cuadro 9254`, donde la PPU nativa dibuja correctamente el borde del globo encima del retrato y la PPU por software de `gba-core` pisa el borde). No se modifica `gba-core` por la restricción de congelación de `tests/datos/ppu-nativa-hashes-base.txt` (`impacto: bajo`). — impacto: bajo
+
+#### [2026-10-24_resolucion-tercera-auditoria-rant-md.md](propuestas/2026-10-24_resolucion-tercera-auditoria-rant-md.md)
+
+- **Captura real del blob binario de IWRAM (32 KB):** La captura del volcado en memoria viva para recompilar las 10 subrutinas de combate (`0x030035C8`, etc.) es un desarrollo técnico sustantivo de instrumentación en el arnés de ejecución determinista registrado en [`docs/PENDIENTES.md`](../PENDIENTES.md). — impacto: medio
+- **Selector SAF interactivo en Android:** El reemplazo del acceso directo a `/sdcard/Download/` por un selector gráfico `ACTION_OPEN_DOCUMENT` es una tarea de UI nativa Android registrada en [`docs/PENDIENTES.md`](../PENDIENTES.md). — impacto: bajo
 
 ## Checklist de Pre-Commit
 
-Los 5 criterios obligatorios antes de un `commit`/`push` están en [`AGENTS.md`](../AGENTS.md) §6. Aquí
+Los 5 criterios obligatorios antes de un `commit`/`push` están en [`AGENTS.md`](../AGENTS.md#checklist-obligatorio-de-pre-commit-gatekeeper) §7. Aquí
 solo el resumen: suite en verde, validación Diátaxis sin errores, referencias de API sincronizadas,
 auditoría de labels Aprobada y auditoría de rutas absolutas limpia.

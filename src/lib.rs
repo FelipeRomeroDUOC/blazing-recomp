@@ -3,20 +3,22 @@
 //! Este crate es la biblioteca dinámica (`cdylib`) que Android carga al
 //! arrancar la NativeActivity. Fases integradas:
 //!
-//! - Fase 4 (propuesta `2026-10-08_renderizado-gpu-android`): presentación
-//!   GPU vía [`screen::present::Presenter`] (wgpu: Vulkan/GLES), LUT de
-//!   color y temporización temporal del panel.
-//! - Fase 5.1 (propuesta `2026-10-08_controles-tactiles-haptica`): entrada
-//!   táctil ergonómica (cruceta con cuenca, clúster diagonal GBA SP con
-//!   L/B/A/R, Select/Start), auto-rotación de hitboxes, bandera
-//!   `touch_enabled` y respuesta háptica por vibración vía JNI.
+//! - Renderizado GPU nativo (ADR 42): composición acelerada directamente
+//!   en GPU mediante [`crate::ppu_nativa::NativePpu`] con shaders WGSL, tabla
+//!   LUT vertical de paleta y presentación sobre superficie Android en
+//!   [`crate::present`] (wgpu: Vulkan con respaldo automático a OpenGL ES).
+//! - Entrada táctil ergonómica: cruceta con cuenca, clúster diagonal GBA SP con
+//!   L/B/A/R, Select/Start, auto-rotación de hitboxes, bandera `touch_enabled` y
+//!   respuesta háptica por vibración vía JNI.
 //!
 //! La lógica geométrica de entrada vive en [`crate::input`] (pura,
 //! testeable en host, sin dependencias de Android). Todo lo que toca
 //! JNI, NativeActivity o Logcat está tras `cfg(target_os = "android")`.
 //!
-//! El motor `gba-core` ejecuta la lógica del juego y compone cada fotograma
-//! en la PPU; la presentación lo muestra con la sincronía del panel.
+//! El motor `gba-core` ejecuta la lógica del juego (acelerada por los bloques
+//! C11 nativos de `libblazing_recompiled.so` cargados por [`crate::recomp`]),
+//! y la PPU nativa compone cada fotograma en la GPU coordinada con el refresco
+//! del panel.
 
 // ---------------------------------------------------------------------------
 // Módulos puros, compilables y testeables en host.
@@ -30,8 +32,11 @@ pub mod storage;
 pub mod recomp;
 pub mod fps;
 pub mod perf;
+pub mod telemetria;
 pub mod pipeline;
 pub mod present;
+
+pub mod ppu_nativa;
 
 
 // ---------------------------------------------------------------------------

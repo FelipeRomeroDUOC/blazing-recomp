@@ -52,7 +52,7 @@ PAGINAS_INDICE = {"readme.md", "index.md"}
 
 RE_ENLACE = re.compile(r"!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 RE_ENLACE_REF = re.compile(r"^\s{0,3}\[[^\]]+\]:\s*<?(\S+?)>?\s*$", re.MULTILINE)
-RE_ENCABEZADO = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
+RE_ENCABEZADO = re.compile(r"^(#{1,6})\s+(.*?)(?:\s+#+)?\s*$")
 RE_ESQUEMA = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:")
 RE_APERTURA_CERCA = re.compile(r"^\s{0,3}(`{3,}|~{3,})(.*)$")
 
@@ -326,9 +326,9 @@ def paginas_markdown(docs_dir):
         partes = ruta.relative_to(docs_dir).parts
         if any(p.startswith(".") for p in partes):
             continue
-        if any(p in {"propuestas", "prototipos"} for p in partes):
+        if any(p in {"propuestas", "prototipos", "fuentes"} for p in partes):
             continue
-        if ruta.name.lower() == "backlog.md":
+        if ruta.name.lower() in {"backlog.md", "pendientes.md"}:
             continue
         paginas.append(ruta)
     return paginas

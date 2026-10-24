@@ -2,7 +2,7 @@
 
 Fecha: 2026-10-12
 Nivel: 2
-Estado: aprobada (alcance completo: pasos 1, 2 y 3, aprobado por el usuario)
+Estado: cerrada (obsoleta; superada por la implementacion de la PPU nativa en GPU)
 Ejecución: pasos 1, 2 y 3 implementados y verificados con código; medición del dispositivo recibida
 El escenario de presupuesto **no se cumple todavía**: las caídas por debajo de 58 FPS bajan 3,5×, pero no llegan a cero (ver «Medición en el dispositivo»). La marca del apartado «Revisión humana» sigue siendo de la persona.
 

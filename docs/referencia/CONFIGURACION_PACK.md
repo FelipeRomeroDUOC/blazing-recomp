@@ -1,29 +1,38 @@
 ---
 tipo: referencia
 verificado: si
+actualizado: 2026-10-24
 ---
 
 # Especificación Técnica: Configuración de Empaquetado (`pack.toml`)
 
-Esta especificación documenta todas las secciones, claves y valores admitidos por el archivo de manifiesto [`pack.toml`](../../pack.toml), el cual define cómo se compila, empaqueta y ejecuta la versión nativa de **Fire Emblem: The Blazing Blade** en `blazing-recomp`.
+Esta especificación documenta las secciones, claves y valores del archivo de manifiesto [`pack.toml`](../../pack.toml), utilizado por la herramienta upstream `recomp build` / `gba-pack` para guiar la traducción estática inicial de la ROM oficial a código C11.
 
 ---
 
 ## Descripción general
 
-`pack.toml` es el manifiesto declarativo del proyecto. Define qué ROM y BIOS se utilizarán (mediante hashes SHA-256 inmutables, sin almacenar archivos binarios propietarios), qué módulos del motor de Rust (`gba-core`) se habilitan en tiempo de ejecución y qué formato de salida se genera.
+> [!NOTE]
+> **Alcance arquitectónico y delimitación de `pack.toml`:**  
+> Este manifiesto es procesado **únicamente por el generador de código estático upstream (`recomp build`)**. El runtime en Rust (`blazing-recomp`), el visor de pruebas y el script de empaquetado del APK para Android (`scripts/package_apk.ps1`) **no leen este archivo en tiempo de ejecución**.
+> 
+> En particular:
+> - El campo `platforms = ["macos", "windows", "linux"]` en `[package]` aplica exclusivamente al empaquetador de escritorio upstream. La compilación cruzada para Android está gobernada por `cargo-ndk` y `scripts/package_apk.ps1` (`arm64-v8a`, `armeabi-v7a`, `x86_64`).
+> - La sección `[runtime]` define los módulos enlazados en el binario de escritorio upstream; en Android no tiene ningún efecto en tiempo de ejecución, ya que el ciclo de vida, la GPU (`NativePpu`), el audio y los fallbacks se configuran en código Rust en `src/` y mediante dependencias de `Cargo.toml`.
+
+`pack.toml` es el manifiesto declarativo de entrada para la herramienta de recompilación upstream. Define qué ROM y BIOS se utilizarán (mediante hashes SHA-256 inmutables, sin almacenar archivos binarios propietarios), qué archivo de etiquetas se incluye y cómo `recomp build` estructura la salida en C11.
 
 ---
 
-## 2. Secciones del Manifiesto
+## Secciones del manifiesto
 
-### 2.1 `[package]` — Metadatos del Entregable
+### `[package]` — Metadatos del entregable
 Controla la identidad del paquete y las plataformas destino:
 
 ```toml
 [package]
 name = "blazing-recomp"
-version = "0.1.0"
+version = "0.0.2"
 platforms = ["windows", "linux", "macos"]
 icon = "assets/icon.png"   # Opcional: PNG cuadrado (mínimo 256x256, ideal 1024x1024)
 ```
@@ -31,13 +40,13 @@ icon = "assets/icon.png"   # Opcional: PNG cuadrado (mínimo 256x256, ideal 1024
 | Clave | Tipo | Por defecto | Descripción |
 | :--- | :--- | :--- | :--- |
 | `name` | String | *(Obligatorio)* | Nombre base del ejecutable nativo generado. |
-| `version` | String | `"0.1.0"` | Versión SemVer del port. |
+| `version` | String | `"0.0.2"` | Versión SemVer del port (alineada con `Cargo.toml`). |
 | `platforms` | Array de Strings | `["macos", "windows", "linux"]` | Plataformas de escritorio soportadas. Para Android se usa la compilación cruzada mediante NDK. |
 | `icon` | Path (relativo) | Ninguno | Ruta a un icono maestro PNG a partir del cual se generan los iconos nativos (.ico, .icns). |
 
 ---
 
-### 2.2 `[image]` — Verificación de ROM y BIOS
+### `[image]` — Verificación de ROM y BIOS
 Garantiza el modelo libre de propiedad intelectual (*Clean-Room / IP-Free*):
 
 ```toml
@@ -53,7 +62,7 @@ bios-sha256 = "fd2547724b505f487e6dcb29ec2ecff3af35a841a77ab2e85fd87350abd36570"
 
 ---
 
-### 2.3 `[labels]` — Mapa de Funciones y Símbolos
+### `[labels]` — Mapa de funciones y símbolos
 Vincula el archivo de etiquetas para la recompilación:
 
 ```toml
@@ -67,8 +76,11 @@ file = "blazing.labels.toml"
 
 ---
 
-### 2.4 `[runtime]` — Módulos del Motor en Ejecución
-Configura qué subsistemas emulados se enlazan en la biblioteca nativa:
+### `[runtime]` — Módulos del motor en ejecución (arnés de escritorio upstream)
+Configura qué subsistemas emulados se enlazan cuando la herramienta `recomp` genera un binario de escritorio empaquetado.
+
+> [!NOTE]
+> En la aplicación móvil de Android (`blazing-recomp`), estas opciones no tienen efecto en tiempo de ejecución: los subsistemas se inicializan directamente en código Rust nativo (`src/platform.rs`, `src/ppu_nativa.rs`, `src/runner.rs`) y se compilan según las features de Cargo.
 
 ```toml
 [runtime]
@@ -89,7 +101,7 @@ interpreter = true
 
 ---
 
-### 2.5 `[build]` — Opciones de Compilación de C
+### `[build]` — Opciones de compilación de C
 Ajusta qué compilador se invoca durante la generación de código:
 
 ```toml
@@ -103,7 +115,7 @@ compiler = "clang"
 
 ---
 
-### 2.6 `[output]` — Artefactos Generados
+### `[output]` — Artefactos generados
 Controla qué archivos emite el pipeline de empaquetado:
 
 ```toml

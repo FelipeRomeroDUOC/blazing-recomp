@@ -5,7 +5,6 @@ Cosecha automatizada de destinos de Jump Tables (mov pc, rx), funciones hoja (le
 y subrutinas ARM en la ROM de Fire Emblem (Europe) para cobertura nativa AOT completa.
 """
 
-import os
 import sys
 import struct
 import re
