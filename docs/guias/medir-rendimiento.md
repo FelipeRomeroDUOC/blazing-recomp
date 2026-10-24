@@ -1,6 +1,7 @@
 ---
 tipo: guia-practica
 verificado: si
+actualizado: 2026-10-24
 ---
 
 # Cómo medir el rendimiento por fase del fotograma
@@ -12,12 +13,31 @@ Esta guía práctica explica cómo recopilar y leer el archivo de telemetría de
 ## Requisitos
 
 - Tener instalada la aplicación Blazing Recomp en el dispositivo (móvil, tablet, Android TV o emulador).
-- Haber concedido permisos de almacenamiento a la aplicación (para acceso a la carpeta `Download/`).
+- Acceso a la telemetría en el almacenamiento:
+  - **Ruta recomendada (sin permisos):** Directorio privado de la app (`Android/data/com.blazingrecomp.game/files/`), accesible inmediatamente vía ADB sin requerir permisos especiales en Android 10+.
+  - **Ruta compartida:** Carpeta `Download/` (requiere concesión de permisos de almacenamiento si se accede directamente desde el sistema).
 - Contar con un explorador de archivos en el dispositivo o conexión `adb`.
+- Para comparaciones pareadas en host (`recomp runc`), disponer del repositorio hermano clonado en `../gba-recomp` (ver [Guía de mapeo AOT](mapear-labels-aot.md#requisitos)).
 
 ---
 
 ## Pasos
+
+### 0. Inicio rápido (diagnóstico en 3 minutos)
+Si necesitas obtener un diagnóstico inmediato de FPS y cuellos de botella sin configurar opciones avanzadas:
+
+1. **Jugar al menos 30 segundos** en la escena que desees perfilar con la ROM cargada para acumular telemetría.
+2. **Extraer el volcado de rendimiento mediante ADB:**
+   ```bash
+   adb pull /sdcard/Download/blazing-perf.txt .
+   ```
+3. **Generar el reporte de rendimiento y hotspots:**
+   ```bash
+   python scripts/diagnostico/analizar_telemetria.py --archivo blazing-perf.txt --top 10
+   ```
+   *Obtendrás al instante la tasa media de FPS, el porcentaje derivado a AOT vs. intérprete y el desglose de tiempo por fases de fotograma.*
+
+---
 
 ### 1. Iniciar la medición durante el juego
 1. Inicia **Blazing Recomp** con la copia verificada de la ROM oficial y el BIOS.
@@ -124,7 +144,7 @@ reparte las líneas de la PPU entre los caminos de composición.
 | `# hotspots top=ADDR (N) ...` | Las 6 direcciones de código más ejecutadas en el intérprete desde el volcado anterior, con su número de ejecuciones. |
 | `# regiones rom=I/N iwram=I/N ewram=I/N bios=I/N` | Ejecución **acumulada desde el arranque de la sesión**, por región de memoria. Cada par es `I` = pasos de intérprete y `N` = bloques nativos AOT. |
 | `# ppucamino rectas=N mezcla=N ventana=N semi=N inertes=N efecto=N efalpha=N efbrillo=N efoscuro=N (rectas=X%)` | Líneas de la PPU **acumuladas desde el arranque de la sesión**, repartidas por camino de composición: `rectas` = vía rápida (tramos de control constante), y los descartes por efectos de color que necesitan las dos capas (`mezcla`), ventana de sprites (`ventana`) o sprite translúcido (`semi`). `inertes` y `efecto` desglosan las `rectas`: las que lo son porque el efecto es la identidad, y las que aplicaron un aclarado u oscurecido real. `efalpha`, `efbrillo` y `efoscuro` reparten las líneas con efecto real por modo. |
-| `# ppu_hw gpu=N sw=N modo0=N win=N blend=N spr_total=N spr_8bpp=N spr_afin=N nativa=N` | Censo de **la ventana de 1 s** a la que acompaña: `gpu` = fotogramas dibujados en la GPU, `sw` = fotogramas que ebieron por la subida del framebuffer por software, `modo0`/`win`/`blend` = fotogramas en Modo 0, con ventanas de hardware activas y con efectos de mezcla, `spr_total`/`spr_8bpp`/`spr_afin` = promedios de sprites activos, de 8bpp y afines, y `nativa` = cuántos de esos fotogramas los dibujó la **PPU nativa** (los que fueron por GPU con el shim no cuentan). |
+| `# ppu_hw gpu=N sw=N modo0=N win=N blend=N spr_total=N spr_8bpp=N spr_afin=N nativa=N` | Censo de **la ventana de 1 s** a la que acompaña: `gpu` = fotogramas dibujados en la GPU, `sw` = fotogramas que debieron recurrir a la subida del framebuffer por software, `modo0`/`win`/`blend` = fotogramas en Modo 0, con ventanas de hardware activas y con efectos de mezcla, `spr_total`/`spr_8bpp`/`spr_afin` = promedios de sprites activos, de 8bpp y afines, y `nativa` = cuántos de esos fotogramas los dibujó la **PPU nativa** en GPU (los que fueron por el camino de fallback por software no cuentan). |
 
 Sobre `# ppucamino`: las **cuatro primeras** cuentas (`rectas`, `mezcla`, `ventana`, `semi`) suman las
 líneas dibujadas y cada línea cae en una sola razón —la primera que impide usar la vía rápida—, así
@@ -174,14 +194,7 @@ al 2026-10-12 (sin líneas `# regiones`) el analizador lo avisa y omite esa secc
 
 ### Líneas de calibración de presentación
 
-La calibración de presentación está **activa** mientras dure el experimento
-[`2026-10-14_reactivar-la-calibracion-de-presentacion.md`](../propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md)
-(constante `CALIBRAR_PRESENTACION` en `src/platform.rs`); fuera de él queda **desactivada por defecto**,
-porque la medición en tablet mostró que solo la reducción de resolución baja el coste de `present`
-(51,4 ms → 2,9 ms; 18 → 53-60 FPS) y se decidió preservar la nitidez nativa. Con la calibración activa,
-los primeros ~12-15 s de sesión recorren configuraciones del *swapchain* (latencia de fotogramas, modo de
-presentación y una sonda de resolución reducida). Esas líneas empiezan por `#` y acompañan a las ventanas
-`t=` que describen: las líneas `t=` que siguen a un `# tramo` pertenecen a esa configuración.
+En el estado actual de desarrollo, la calibración de presentación está **activa en el código** (`CALIBRAR_PRESENTACION = true` en `src/platform.rs`) debido al experimento de medición en Android TV Stick ([`2026-10-14_reactivar-la-calibracion-de-presentacion.md`](../propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md), ADR 40). Su desactivación definitiva a `false` tras concluir las pruebas en televisión está registrada como tarea abierta en [`docs/PENDIENTES.md`](../PENDIENTES.md). Mientras la constante valga `true`, los primeros ~12-15 s de sesión recorren configuraciones del *swapchain* (latencia de fotogramas, modo de presentación y una sonda de resolución reducida). Esas líneas empiezan por `#` y acompañan a las ventanas `t=` que describen: las líneas `t=` que siguen a un `# tramo` pertenecen a esa configuración.
 
 | Línea | Significado |
 | :--- | :--- |
@@ -200,9 +213,7 @@ Dos de los tramos son **sondas de diagnóstico**: se miden, pero nunca se adopta
 
 La calibración no altera el resto del formato: el encabezado y las líneas `t=` siguen igual.
 
-El encabezado informa además del backend realmente activo (`backend=Vulkan` o `backend=OpenGL`). Durante el
-experimento de presentación la aplicación prefiere OpenGL ES, así que **solo deben compararse registros
-del mismo backend**: un log con `backend=OpenGL` mide el camino de OpenGL ES, no el de Vulkan.
+El encabezado informa además del backend realmente activo (`backend=Vulkan` o `backend=OpenGL`). La aplicación establece **Vulkan como backend preferente** (`PREFERIR_OPENGL_ES = false`), con respaldo automático a OpenGL ES en dispositivos sin soporte de Vulkan. Al realizar análisis comparativos, **solo deben contrastarse registros del mismo backend**: un log con `backend=OpenGL` mide el camino de OpenGL ES, mientras que uno con `backend=Vulkan` mide el pipeline de Vulkan.
 
 ---
 
@@ -215,7 +226,7 @@ referencia con **0 diferencias de 38.400 píxeles** en los dos cuadros de acepta
 
 Es la ruta de dibujo **por defecto**: un APK recién instalado ya compone con ella, sin tocar
 nada ([`2026-10-21_ppu-nativa-activa-por-defecto.md`](../propuestas/2026-10-21_ppu-nativa-activa-por-defecto.md)).
-Para volver al shim —y comparar A/B en el propio dispositivo— se crea un archivo de marca,
+Para desactivar la PPU nativa en GPU y conmutar en caliente al rasterizador por software en CPU provisto por `gba-core` —y comparar A/B en el propio dispositivo— se crea un archivo de marca,
 sin recompilar:
 
 1. Crea un archivo vacío llamado `ppu-nativa-off.flag` en el almacenamiento del dispositivo.
@@ -223,8 +234,8 @@ sin recompilar:
    sin reiniciar.
 3. Para volver a la PPU nativa, borra el archivo: el control vuelve a ella en el siguiente tick.
 
-> El archivo `ppu-nativa.flag` de las pruebas anteriores **ya no se lee**: encendía la PPU
-> nativa cuando la ruta por defecto era el shim. Si sigue en el almacenamiento, no hace nada.
+> El archivo histórico `ppu-nativa.flag` de las pruebas anteriores **ya no se lee**: encendía la PPU
+> nativa cuando la ruta por defecto era el software. Si sigue en el almacenamiento, no hace nada.
 
 Rutas candidatas, por orden de búsqueda. La primera es la única que no depende de permisos:
 
@@ -243,9 +254,9 @@ el directorio interno privado de la app.
 Con `adb`:
 
 ```bash
-# Volver al shim
+# Conmutar al rasterizado por software en CPU
 adb shell touch /sdcard/Android/data/com.blazingrecomp.game/files/ppu-nativa-off.flag
-# Volver a la PPU nativa
+# Volver a la PPU nativa en GPU
 adb shell rm /sdcard/Android/data/com.blazingrecomp.game/files/ppu-nativa-off.flag
 ```
 
@@ -259,22 +270,26 @@ fotogramas que dibujó la PPU nativa en esa ventana:
 ```
 
 `nativa=60` (o cercano a 60) sobre `gpu=60` es la prueba de que la PPU nativa es quien está
-dibujando; con el shim, `nativa` valdría 0. La marca también queda registrada en el archivo
+dibujando; con el renderizado por software en CPU, `nativa` valdrá 0. La marca también queda registrada en el archivo
 como `# ppu_nativa=ON` y `# ppu_nativa=OFF` en el momento del cambio.
 
-**Lo que esta prueba NO mide.** La PPU nativa no sustituye al rasterizado por software: el
-motor sigue rasterizando en CPU, así que el **FPS no mejora** por encenderla. Lo que se
-comprueba es la **imagen**: escenas con mezcla alfa, ventanas de hardware y sprites
-translúcidos, que es justo lo que el shim no implementaba.
+**Rendimiento y ahorro de CPU.** Cuando la PPU nativa está activa, la CPU omite la
+rasterización por software línea por línea (`omitir_ppu_software = true`), reduciendo
+drásticamente el consumo de CPU y batería. Al colocar `ppu-nativa-off.flag`, el motor reanuda
+el cálculo por software en CPU, lo que permite comparar visualmente y a nivel de rendimiento
+el comportamiento de ambas vías.
+
+> [!NOTE] Delimitación normativa y ADR 42
+> La conmutación al renderizado por software en CPU está autorizada por el [ADR 42](../explicacion/DECISIONES.md#42-eliminación-definitiva-de-ppushim-software-en-favor-de-pipeline-gpu-directo-nativeppu) **exclusivamente como red de contingencia y diagnóstico de rendimiento**. La vía de producción del proyecto es estrictamente la PPU nativa en GPU.
 
 ### Si el dispositivo no puede con la PPU nativa
 
 La construcción del pipeline de la PPU nativa va dentro de un **guardián de errores** de
 `wgpu`: si el dispositivo rechaza algún recurso, la app **no se cae**, lo anota en el Logcat
-y sigue con el shim durante el resto de la sesión:
+y conmuta al renderizado por software en CPU durante el resto de la sesión:
 
 ```text
-PPU nativa: no se pudo construir el pipeline (PPU nativa: Validation Error …); se sigue con el shim
+PPU nativa no disponible: se vuelve al renderizado por software (...)
 ```
 
 En ese caso la telemetría mostrará `nativa=0` aunque la PPU nativa esté activa por defecto: la
@@ -300,17 +315,20 @@ automática (`src/platform.rs`), así que un dispositivo sin Vulkan no debería 
 
 ## Comparar dos versiones sin engañarse
 
-El arnés del motor (`recomp runc`) ejecuta el juego sin pantalla y en segundos, así que sirve para
-descartar una idea antes de empaquetar el APK. La comparación solo vale si es **pareada**:
+El arnés del motor (`recomp runc`) es la herramienta de línea de comandos provista por el repositorio upstream [`JRickey/gba-recomp`](https://github.com/JRickey/gba-recomp). Ejecuta el juego en host sin pantalla y en segundos, por lo que sirve para descartar una idea antes de empaquetar el APK. La comparación solo vale si es **pareada**:
 
-1. **Dos binarios, una sola imagen.** Compilar cada variante
-   (`cargo build --release -p recomp` y `cargo build --release -p recomp --features gba-core/perf-counters`)
-   y copiar cada binario aparte. Las dos variantes deben correr **el mismo `.dll`**; si se regenera la
-   imagen entre una y otra, lo que se mide incluye la imagen.
+1. **Dos binarios, una sola imagen.** El paquete `recomp` pertenece al repositorio del motor upstream, por lo que se compila desde su propio directorio:
+   ```bash
+   cd ../gba-recomp
+   cargo build --release -p recomp
+   cargo build --release -p recomp --features gba-core/perf-counters
+   cd ../blazing-recomp
+   ```
+   Copiar cada binario resultante aparte (por ejemplo, como `recomp-base` y `recomp-perf`, o colocar `recomp` en el `PATH`). Las dos variantes deben correr **el mismo `.dll`**; si se regenera la imagen entre una y otra, lo que se mide incluye la imagen.
 2. **Correr desde la raíz del port**, porque la imagen se busca como `out/<rom>-bios.dll` relativa al
    directorio actual:
    ```bash
-   ../gba-recomp/target/release/recomp.exe runc "roms/1575 - Fire Emblem (E)(Independent).gba" \
+   recomp runc "roms/1575 - Fire Emblem (E)(Independent).gba" \
      --bios roms/gba_bios.bin --frames 7200
    ```
 3. **Intercalar las variantes** (A, B, A, B…) y no correr cada una en bloque: entre corridas idénticas de
@@ -344,26 +362,31 @@ El arnés de fotogramas dorados (`scripts/diagnostico/fotogramas_dorados.py`) de
 ```bash
 # 1. Capturar los dorados de las escenas del manifiesto (se ejecuta una vez por binario de confianza)
 python scripts/diagnostico/fotogramas_dorados.py capturar \
-    --bin ../gba-recomp/target/release/recomp.exe \
+    --bin recomp \
     --rom "roms/1575 - Fire Emblem (E)(Independent).gba" \
     --bios roms/gba_bios.bin
 
-# 2. Hacer el cambio en la PPU, reconstruir, y comparar contra los doradosnpython scripts/diagnostico/fotogramas_dorados.py comparar \
-    --bin ../gba-recomp/target/release/recomp.exe \
+# 2. Hacer el cambio en la PPU, reconstruir, y comparar contra los dorados
+python scripts/diagnostico/fotogramas_dorados.py comparar \
+    --bin recomp \
     --rom "roms/1575 - Fire Emblem (E)(Independent).gba" \
     --bios roms/gba_bios.bin
 
 # 3. Si falla, el informe dice cuántos píxeles, en qué columna/fila, qué caja ocupan,
 #    y escribe un PNG `entrada-avance_<k>.diff.png` con las diferencias en rojo.
 ```
-n### Contrato de códigos de salida (los tres subcomandos)
+
+
+### Contrato de códigos de salida (los tres subcomandos)
 
 | Código | Significado |
 | :--- | :--- |
 | 0 | Sin diferencias (o captura correcta) |
 | 1 | **Diferencias de píxel: es una regresión** |
 | 2 | Entrada inválida o dorados desactualizados (ROM/BIOS/guion cambiaron); **no hay veredicto** |
-n### Qué informa `comparar` cuando falla
+
+
+### Qué informa `comparar` cuando falla
 
 ```text
 escena entrada-avance
@@ -373,8 +396,12 @@ escena entrada-avance
 
 4 ancla(s) difieren, 311 píxeles en total: entrada-avance@1800 (93 px), ...
 ```
-n### Manifiesto de escenas (`scripts/diagnostico/escenas_doradas.toml`)
-nVersionado y editable sin propuesta; solo lista `nombre`, `script` (relativo a la carpeta) y `anclas`:
+
+
+### Manifiesto de escenas (`scripts/diagnostico/escenas_doradas.toml`)
+
+
+Versionado y editable sin propuesta; solo lista `nombre`, `script` (relativo a la carpeta) y `anclas`:
 ```toml
 version = 1
 
@@ -383,13 +410,24 @@ nombre = "entrada-avance"
 script = "entrada_avance.input"
 anclas = [600, 1800, 3600, 5400, 7200]
 ```
-n### Blindaje por mutación (se ejecuta antes de cerrar cualquier propuesta que toque la PPU)
-nM1 — `alpha_blend` (`+8` → `+7`): **detecta 311 píxeles en 4 anclas** (600 OK; 1800/3600/5400/7200 difieren).
+
+
+### Blindaje por mutación (validación analítica previa del arnés)
+
+> [!NOTE]
+> Este bloque documenta los resultados de la auditoría de mutación que valida la sensibilidad del arnés de fotogramas dorados frente a defectos gráficos reales. **No requiere ser ejecutado por el usuario** para el flujo normal de medición.
+
+M1 — `alpha_blend` (`+8` → `+7`): **detecta 311 píxeles en 4 anclas** (600 OK; 1800/3600/5400/7200 difieren).
 M2 — `in_window_range` (rango semiabierto → cerrado): **0 diferencias** (los anclas actuales no ejercitan ventanas).
-nLos archivos del motor se restauran byte a byte en un bloque `finally`, sin comandos destructivos de Git.
-n### Dónde viven los dorados (no versionados)
-n`out/doradas/` (cubierto por `/out/` en `.gitignore`):
+
+Los archivos del motor se restauran byte a byte en un bloque `finally`, sin comandos destructivos de Git.
+
+### Dónde viven los dorados (no versionados)
+
+En `out/doradas/` (cubierto por `/out/` en `.gitignore`):
 - `entrada-avance_<k>.ppm` — fotograma ancla (PPM P6 240×160)
 - `manifesto.json` — hashes de ROM, BIOS, guion, biblioteca `.dll` y anclas
 - `entrada-avance_<k>.diff.png` — mapa de diferencias si `comparar` falla
-nSolo se versionan la herramienta, `escenas_doradas.toml`, `entrada_avance.input` y los tests.
+
+
+Solo se versionan la herramienta, `escenas_doradas.toml`, `entrada_avance.input` y los tests.

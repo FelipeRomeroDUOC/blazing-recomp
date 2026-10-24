@@ -57,7 +57,19 @@ Reglas que este vocabulario sostiene:
 
 Las propuestas deben crearse a partir de la plantilla en [`.agents/skills/propuesta-verificable/assets/plantilla-propuesta.md`](../../.agents/skills/propuesta-verificable/assets/plantilla-propuesta.md) y contener:
 1. **Intención y Contexto:** Problema, restricciones y alternativas descartadas.
-2. **Criterios de Aceptación:** Escenarios Dado / Cuando / Entonces con nombre de test.
-3. **Suposiciones y Prototipos:** Identificación de riesgos antes de tocar código.
-4. **Métodos de Comprobación:** Herramientas y comandos concretos para validar.
-5. **Revisión Humana:** Puntos visibles para inspección y veredicto del usuario.
+2. **Suposiciones y Prototipos:** Identificación de riesgos antes de tocar código.
+3. **Criterios de Aceptación:** Escenarios Dado / Cuando / Entonces con nombre de test.
+4. **Plan de Verificación:** Qué herramientas o comandos concretos validan cada escenario.
+5. **Resultado:** Tabla predicho vs. real, hallazgos fuera de alcance y notas de revisión humana.
+
+---
+
+## Índice maestro e historial de propuestas
+
+El historial completo y clasificado de las propuestas registradas en este directorio se encuentra indexado por estado en:  
+👉 **[`docs/BACKLOG.md` — Índice de Propuestas](../BACKLOG.md#índice-de-propuestas)**
+
+Dicho índice se actualiza automáticamente a partir del metadato `Estado:` de cada ficha invocando:
+```bash
+python scripts/actualizar_indice_propuestas.py
+```

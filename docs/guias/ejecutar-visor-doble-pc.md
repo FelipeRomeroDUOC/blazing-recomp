@@ -7,6 +7,10 @@ verificado: si
 
 Esta guía práctica explica cómo compilar y ejecutar **Fire Emblem: The Blazing Blade** en un entorno de escritorio local (PC con Windows) utilizando la herramienta nativa `ppu_doble`. El visor permite jugar a 60 FPS en una ventana interactiva dividida lado a lado (`Izquierda: PPU por software` | `Derecha: PPU nativa por GPU`), comparar la fidelidad gráfica en vivo y capturar discrepancias visuales al vuelo.
 
+> [!NOTE]
+> **Nota de arquitectura (Intérprete en PC vs. Recompilación en Android):**  
+> En entornos de escritorio (PC con Windows/Linux), el binario `ppu_doble` ejecuta la lógica del juego mediante el intérprete de CPU de `gba-core` (`load_native_blocks()` devuelve `None`). Su propósito fundamental es servir como **arnés interactivo de validación visual y diagnóstico de la PPU**: comprobar que la PPU nativa acelerada por GPU (`wgpu`) dibuje el 100% de los píxeles de forma idéntica al renderizador por software de referencia. La biblioteca de 144.875 bloques C11 recompilados Ahead-Of-Time (`libblazing_recompiled.so`) se enlaza dinámicamente mediante `dlopen` de forma exclusiva en el target nativo de Android.
+
 ---
 
 ## Requisitos
@@ -14,8 +18,9 @@ Esta guía práctica explica cómo compilar y ejecutar **Fire Emblem: The Blazin
 Antes de iniciar la ejecución local, asegúrate de cumplir las siguientes condiciones:
 1. **Sistema Operativo:** Windows 10 u 11 (la ventana interactiva utiliza la API nativa de Win32/GDI para minimizar dependencias).
 2. **Rust Toolchain:** Compilador estable de Rust y Cargo instalados en tu equipo.
-3. **ROM oficial de GBA:** Copia legal de `Fire Emblem (Europe).gba` con hash SHA-256 verificado (`6f2c30823ab0237310b138739ccfad879f1a07c4a782a9cbb92317d60d03cee9`).
+3. **ROM oficial de GBA:** Copia legal de `Fire Emblem (Europe).gba` (o volcado No-Intro `1575 - Fire Emblem (E)(Independent).gba`) con hash SHA-256 verificado (`6f2c30823ab0237310b138739ccfad879f1a07c4a782a9cbb92317d60d03cee9`).
 4. **BIOS oficial de GBA (Opcional pero recomendada):** `gba_bios.bin` con SHA-256 (`fd2547724b505f487e6dcb29ec2ecff3af35a841a77ab2e85fd87350abd36570`). Si se encuentra en `roms/gba_bios.bin` o en la misma carpeta que la ROM, se detectará automáticamente.
+5. **Repositorio hermano `gba-recomp` (Worktree local):** Para compilar el arnés `ppu_doble` con la feature `proto`, el proyecto requiere el repositorio hermano clonado en `../gba-recomp` (enlazado mediante la directiva `[patch]` de `Cargo.toml`). Las extensiones de telemetría de video (`perf-video`) y captura de LUT vertical por scanline residen en dicho árbol local en proceso de integración en el upstream.
 
 ---
 

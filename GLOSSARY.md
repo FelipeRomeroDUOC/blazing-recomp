@@ -35,8 +35,23 @@ Fuente: [`scripts/diagnostico/analizar_telemetria.py`](scripts/diagnostico/anali
 
 ### Mapa de etiquetas (*Labels Map*)
 
-Archivo de configuración estructurado en formato TOML (`blazing.labels.toml`, bajo el estándar `gba-labels v2`) que define las fronteras de las funciones del juego: dirección de memoria (`address`), modo de instrucción (`mode = "thumb"` o `"arm"`) y nombre del símbolo exportado (`name`).  
+Archivo de configuración estructurado en formato TOML (`blazing.labels.toml`, bajo el estándar `gba-labels v2`) que define las fronteras y puntos de entrada de las 18.483 funciones catalogadas del juego: dirección de memoria (`address`), modo de instrucción (`mode = "thumb"` o `"arm"`) y nombre del símbolo exportado (`name`).  
 Fuente: [`blazing.labels.toml`](blazing.labels.toml), [`docs/referencia/FORMATO_LABELS.md`](docs/referencia/FORMATO_LABELS.md).
+
+### Unidad de traducción C11
+
+Cada uno de los 12 archivos fuente físicos (`bios.0.c` a `bios.11.c`) generados por el recompilador Ahead-Of-Time en `src-c/`, con un volumen total de 7.256.939 líneas de código (~215,8 MB). El código emitido se particiona automáticamente en cortes con un umbral de ~16 MB en fronteras de bloque para evitar desbordamientos de tabla de símbolos o tiempos excesivos de análisis semántico en los compiladores nativos de destino (Clang y GCC).  
+Fuente: [`src-c/`](src-c/), [`docs/explicacion/arquitectura-c-recompilado.md`](docs/explicacion/arquitectura-c-recompilado.md).
+
+### Función canónica
+
+Cada una de las 18.483 subrutinas completas identificadas y catalogadas en `blazing.labels.toml`. Representa una función lógica del juego delimitada arquitectónicamente por su punto de entrada y prólogo canónico (`PUSH {..., lr}`, `0xb5xx` en Thumb) y sus instrucciones de retorno (`POP {..., pc}` o `BX LR`). Cada función canónica agrupa internamente uno o múltiples bloques básicos C11 contiguos.  
+Fuente: [`blazing.labels.toml`](blazing.labels.toml), [`docs/referencia/FORMATO_LABELS.md`](docs/referencia/FORMATO_LABELS.md), [`docs/explicacion/arquitectura-c-recompilado.md`](docs/explicacion/arquitectura-c-recompilado.md).
+
+### Bloque básico C11 (`rcg_blocks[]`)
+
+Fragmento elemental de ejecución lineal dentro del arreglo lineal maestro de 144.875 bloques emitidos por el recompilador AOT (`rcg_block_count = 144875` en `src-c/...bios.11.c`). Cada bloque representa una secuencia atómica de instrucciones traducidas a C11 que culmina en una bifurcación, salto condicional, llamada a función o retorno, subordinados jerárquicamente a las funciones canónicas del juego.  
+Fuente: [`src-c/`](src-c/), [`docs/explicacion/arquitectura-c-recompilado.md`](docs/explicacion/arquitectura-c-recompilado.md).
 
 ### ATPCS e Interworking ARM/Thumb
 
@@ -52,10 +67,10 @@ Fuente: [`scripts/diagnostico/desensamblar_rom.py`](scripts/diagnostico/desensam
 
 ## 2. Subsistema Gráfico (PPU) y Hardware Shim
 
-### Hardware Shim
+### Hardware Shim (Histórico)
 
-Capa intermedia de intercepción de bus y memoria implementada en la rama `feature/hardware-shim`. Captura en tiempo real las escrituras que el juego realiza sobre los registros I/O del LCD (`0x04000000`), la memoria de vídeo VRAM (`0x06000000`), la tabla de atributos de objetos OAM (`0x07000000`) y la memoria de paleta (`0x05000000`). Permite sincronizar el estado visual directamente con la GPU nativa sin necesidad de emular los ciclos internos de la PPU de `gba-core`.  
-Fuente: [`docs/explicacion/hardware-shim-y-eliminacion-de-emulacion.md`](docs/explicacion/hardware-shim-y-eliminacion-de-emulacion.md), [`src/ppu_shim.rs`](src/ppu_shim.rs).
+Capa intermedia de intercepción de bus y memoria implementada originalmente en la rama `feature/hardware-shim` y **retirada de producción conforme al ADR 42** en favor de la `NativePpu` en GPU. En su diseño preliminar, interceptaba las escrituras que el juego realizaba sobre los registros I/O del LCD (`0x04000000`), VRAM (`0x06000000`), OAM (`0x07000000`) y paleta (`0x05000000`). Su código y arneses de experimentación se conservan archivados en [`docs/historico/ppu-shim/`](docs/historico/ppu-shim/README.md).  
+Fuente: [`docs/explicacion/DECISIONES.md`](docs/explicacion/DECISIONES.md#42-eliminación-definitiva-de-ppushim-software-en-favor-de-pipeline-gpu-directo-nativeppu), [`docs/historico/ppu-shim/README.md`](docs/historico/ppu-shim/README.md).
 
 ### PPU Nativa (`NativePpu`)
 
@@ -145,7 +160,7 @@ Fuente: [`src/overlay.rs`](src/overlay.rs), [`docs/propuestas/2026-10-09_separac
 
 ### Storage Access Framework (SAF) y Scoped Storage
 
-Modelo de seguridad y almacenamiento impuesto en versiones modernas de Android (API 30+). Prohíbe el acceso mediante rutas absolutas tradicionales del sistema de archivos (`/sdcard/`) y exige el uso del selector del sistema (`ACTION_OPEN_DOCUMENT`) para otorgar permisos persistentes de lectura a URIs seguras (`content://`) al seleccionar la ROM y la BIOS.  
+Modelo de seguridad y almacenamiento impuesto en versiones modernas de Android (API 30+). En la arquitectura objetivo del proyecto (`v0.3.0`), SAF gestiona el acceso mediante el selector del sistema (`ACTION_OPEN_DOCUMENT`) para otorgar permisos persistentes a URIs (`content://`) de la ROM y BIOS. En la versión de desarrollo actual (`v0.0.2`), el runtime accede de forma directa a su almacenamiento privado y a `/sdcard/Download/` apoyándose en los permisos declarados en el manifiesto.  
 Fuente: [`src/storage.rs`](src/storage.rs), [`docs/fuentes/Almacenamiento en Android Moderno y Storage Access Framework.md`](docs/fuentes/Almacenamiento%20en%20Android%20Moderno%20y%20Storage%20Access%20Framework.md).
 
 ### Fat APK
@@ -186,9 +201,9 @@ Fuente: [`scripts/diagnostico/analizar_telemetria.py`](scripts/diagnostico/anali
 
 Métricas desglosadas en la telemetría que cuantifican la duración de cada subfase del ciclo de un frame:
 - `ejec`: Tiempo de ejecución de lógica de CPU y subrutinas del juego.
-- `ppu`: Tiempo de preparación y captura de registros LCD en la PPU.
+- `ppu`: Tiempo de rasterización por software en CPU provisto por `gba-core` (`ppubg + ppuspr + ppucomp`). Permanece en 0 ms cuando la `NativePpu` en GPU está activa.
 - `apu`: Síntesis y mezcla de canales de audio PSG y Direct Sound.
-- `dibujo`: Grabación de búferes de comandos de renderizado en GPU.
+- `dibujo`: Tiempo total de ejecución del compositor (`Compositor::render`, desglosado internamente en `subida + codificacion + present`).
 - `present`: Bloqueo esperando la sincronización con el compositor de pantalla (*swapchain*).  
 Fuente: [`src/perf.rs`](src/perf.rs), [`scripts/diagnostico/analizar_telemetria.py`](scripts/diagnostico/analizar_telemetria.py).
 
@@ -198,7 +213,7 @@ Fuente: [`src/perf.rs`](src/perf.rs), [`scripts/diagnostico/analizar_telemetria.
 
 ### Visor Doble Interactivo (`ppu_doble`)
 
-Herramienta de desarrollo y validación visual ejecutada en PC ([`src/bin/ppu_doble.rs`](src/bin/ppu_doble.rs)). Renderiza dos vistas simultáneas del juego: a la izquierda, la salida generada por la PPU nativa acelerada por GPU; a la derecha, la salida de la PPU de referencia en CPU. Permite congelar fotogramas, pausar, conmutar vistas e inspeccionar diferencias gráficas en tiempo real.  
+Herramienta de desarrollo y validación visual ejecutada en PC ([`src/bin/ppu_doble.rs`](src/bin/ppu_doble.rs)). Renderiza dos vistas simultáneas del juego: a la izquierda, la salida de la PPU de referencia en CPU; a la derecha, la salida generada por la PPU nativa acelerada por GPU (`wgpu`). Permite congelar fotogramas, pausar, conmutar vistas e inspeccionar diferencias gráficas en tiempo real.  
 Fuente: [`src/bin/ppu_doble.rs`](src/bin/ppu_doble.rs), [`docs/guias/ejecutar-visor-doble-pc.md`](docs/guias/ejecutar-visor-doble-pc.md).
 
 ### Arnés de experimentos (`comun`)
@@ -209,7 +224,7 @@ Fuente: [`examples/comun/mod.rs`](examples/comun/mod.rs), [`examples/README.md`]
 ### Replay determinista
 
 Secuencia registrada de entradas de usuario y ticks de reloj capturada de forma idéntica entre sesiones. Permite ejecutar exactamente la misma partida sobre diferentes versiones del motor o ramas de Git para realizar análisis de regresión visual y mediciones de rendimiento reproducibles.  
-Fuente: [`examples/ppu_compare.rs`](examples/ppu_compare.rs).
+Fuente: [`examples/ppu_nativa_compara.rs`](examples/ppu_nativa_compara.rs), [`examples/ppu_barrido_nativa.rs`](examples/ppu_barrido_nativa.rs).
 
 ### Gatekeeper de Pre-Commit
 

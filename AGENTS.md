@@ -20,10 +20,13 @@ Directrices, arquitectura y reglas operativas para agentes de IA que trabajen en
 1. **Arquitectura:**
    - Target principal: `aarch64-linux-android` (ARM64).
    - Secundario / Emuladores: `x86_64-linux-android`.
-2. **Capa Nativa (NDK & Rust):**
-   - El código Rust y C recompilado se empaquetará como biblioteca compartida (`.so`) enlazada vía JNI o `android-activity` / `winit`.
+2. **Capa Nativa y Topología de Bibliotecas (.so en APK):**
+   - El APK distribuye **dos bibliotecas dinámicas contiguas** en `lib/<abi>/`:
+     - `libblazing_recomp.so`: Runtime en Rust generado por `cargo-ndk`. Es el punto de entrada oficial de la `NativeActivity` de Android (`android:hasCode="false"`, `android.app.lib_name="blazing_recomp"`). Controla el ciclo de vida, la GPU, el audio, el bus de memoria, DMA, timers y la capa de entrada.
+     - `libblazing_recompiled.so`: Lógica C11 AOT del juego compilada de forma independiente por Clang del NDK a partir de las 12 unidades de `src-c/`. Contiene los 144.875 bloques C11 del juego y es cargada dinámicamente en tiempo de ejecución en Android por `src/recomp.rs` vía `dlopen("libblazing_recompiled.so")`.
 3. **Renderizado & Pantalla:**
-   - Backend gráfico compatible con Android: **Vulkan** o **OpenGL ES 3.0** a través de `wgpu`.
+   - Pipeline gráfico de producción: **`NativePpu`** en GPU con shaders WGSL (`src/ppu_nativa.rs` y `src/present.rs`), con respaldo automático de Vulkan a OpenGL ES 3.0 a través de `wgpu`.
+   - Conforme al ADR 42, el antiguo `PpuShim` por software y el tipo `Presenter` están completamente extintos. Prohibido sugerir o reintroducir emulación PPU por software como pipeline primario en producción. La rasterización por software en CPU provista por `gba-core` se mantiene exclusivamente como mecanismo de contingencia y diagnóstico (conmutable mediante la bandera `ppu-nativa-off.flag` o ante fallo en la inicialización de GPU), conforme a lo autorizado por el ADR 42.
    - Soporte para diferentes relaciones de aspecto y resoluciones de smartphones modernos (incluyendo escalado de píxeles nítido y posibles mejoras panorámicas).
 4. **Controles & Entrada:**
    - Soporte para mandos físicos (Bluetooth y USB Type-C vía Gamepad API de Android).
@@ -70,16 +73,25 @@ Directrices, arquitectura y reglas operativas para agentes de IA que trabajen en
 6. **Restauración en Memoria en Scripts de Prueba y Auditoría:**
    - Todo script automatizado de mutación o estrés debe respaldar el contenido original de los archivos en memoria RAM y restaurarlo fielmente sobre el disco en un bloque `finally`.
    - **Prohibido:** Invocar comandos destructivos de Git (`git checkout`, `git restore`, `git reset`) dentro de scripts automatizados para evitar la pérdida silenciosa de trabajo en curso no commiteado.
+7. **Higiene en Estructura Documental Diátaxis:**
+   - En las páginas de referencia (`docs/referencia/`), utilizar estrictamente los encabezados estandarizados exigidos por `validar_docs.py` (ej. `## Descripción general`) sin prefijos numéricos que rompan la validación automática.
+8. **Verificación de Línea Base Previa a Propuestas:**
+   - Comprobar siempre que `cargo test` esté al 100% en verde **antes** de redactar cualquier propuesta o cambio de código, garantizando que el criterio de no regresión sea comprobable.
+9. **Empaquetado de Máscaras de Bits sin Solapamiento:**
+   - Al diseñar claves compuestas o tramos de empaquetado de bits (como `clave_de_tramo` o prioridades de capas/sprites), verificar que los campos no compartan bits para evitar colisiones silenciosas (*aliasing*).
+10. **TDD en Contratos y Esquemas:**
+    - Al diseñar formatos de telemetría o contratos de datos entre subsistemas, escribir y validar primero el test de esquema antes de implementar el formateador.
 
-### Topología de Repositorios y Motor Upstream
+### Topología de Repositorios, Motor Upstream y Delimitación de Archivos
 Este proyecto depende de los componentes y crates del motor base del proyecto oficial `gba-recomp` de Jack Rickey:
-- **Port de Fire Emblem (este repositorio):** `blazing-recomp/`
+- **Port de Fire Emblem (este repositorio):** `blazing-recomp/` (el paquete Cargo se denomina `blazing-recomp`).
 - **Motor Upstream Oficial:** [`JRickey/gba-recomp`](https://github.com/JRickey/gba-recomp)
   - Motor de hardware y bus de GBA: `crates/gba-core`
   - Decodificador de instrucciones ARMv4T: `crates/armv4t`
   - Shaders y renderizado GPU: `crates/screen`
-- En `Cargo.toml`, las dependencias se vinculan directamente al repositorio Git oficial fijadas a un commit SHA inmutable (`rev = "de4edf59b872d887046d6a3b005e2df551b6d44c"`), garantizando que el repositorio sea 100% autónomo, portable y reproducible sin depender de carpetas hermanas locales en el sistema de archivos.
-- Para desarrollo y pruebas locales del motor en paralelo, se puede recurrir temporalmente a la directiva `[patch."https://github.com/JRickey/gba-recomp.git"]` apuntando a `../gba-recomp`.
+- **Delimitación de `pack.toml`:** `pack.toml` es un manifiesto consumido exclusivamente por el generador de código estático upstream (`recomp build`). El runtime en Rust y los scripts de empaquetado (`scripts/package_apk.ps1`) **NO leen este archivo en tiempo de ejecución**.
+- **Herramienta `recomp`:** Es el ejecutable CLI provisto por `JRickey/gba-recomp`. Comandos como `cargo build --release -p recomp` solo existen y deben ejecutarse dentro del workspace clonado de `gba-recomp`.
+- **Estado de dependencias y directiva `[patch]`:** Aunque las dependencias base en `Cargo.toml` declaran la URL del repositorio Git oficial fijadas a un commit inmutable (`rev = "de4edf59b872d887046d6a3b005e2df551b6d44c"`), actualmente el archivo `Cargo.toml` mantiene **activa de forma requerida** la directiva `[patch."https://github.com/JRickey/gba-recomp.git"]` apuntando a la carpeta hermana `../gba-recomp/crates/gba-core`. Esto se debe a que extensiones críticas de telemetría de video (`perf-video`), contadores de rendimiento y la omisión de PPU por software residen en dicho árbol local en proceso de integración en el upstream oficial. Por tanto, en el estado actual de desarrollo, el repositorio **requiere la presencia local de `../gba-recomp` para compilar `cargo test`, el visor interactivo y el APK**. La autonomía total sin carpetas hermanas locales representa el objetivo de entrega de la versión de release, no el estado del árbol de trabajo actual.
 
 
 ## 5. Skills del Repositorio (`.agents/skills/`)
@@ -228,7 +240,7 @@ Todo agente que vaya a modificar, crear o refactorizar código en este repositor
 
 - **Checklist Obligatorio de Pre-Commit Gatekeeper:**
   Antes de proponer o ejecutar un `git commit` y `git push`, el agente debe verificar sin excepción los siguientes 5 criterios:
-  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (285 tests actuales: 184 en los módulos de `src/` + 101 de integración en `tests/`).
+  1. **Suite de pruebas al 100% en verde:** `cargo test` ejecutado y aprobado (250 tests actuales: 172 en los módulos de `src/` + 78 de integración en `tests/`).
   2. **Validación Diátaxis sin errores:** `python .agents/skills/diataxis-docs/scripts/validar_docs.py .` devuelve `0 error(es), 0 aviso(s)`.
   3. **Especificaciones de API sincronizadas:** `python scripts/extraer_referencias.py --check` sale con código de éxito 0.
   4. **Auditoría de labels AOT aprobada:** `python scripts/diagnostico/auditar_labels.py` sale con código de éxito 0.

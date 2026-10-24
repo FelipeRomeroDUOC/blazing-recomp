@@ -4,10 +4,9 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 
 > **Este es el tablero vivo del proyecto:** qué falta, qué se sabe y dónde está anotado.
 > No es una página Diátaxis — el validador lo excluye por nombre —, así que no lleva front-matter.
-> Los hallazgos que aún no se han arreglado viven en el [registro de hallazgos](#registro-de-hallazgos),
-> y su coherencia con las propuestas la comprueba `python scripts/auditar_hallazgos.py`.
+> Los hallazgos históricos fuera de alcance viven en el [registro de hallazgos](#registro-de-hallazgos) (y su coherencia con las propuestas la comprueba `python scripts/auditar_hallazgos.py`), mientras que las tareas accionables abiertas se gestionan en [`docs/PENDIENTES.md`](PENDIENTES.md).
 
-**Última actualización:** 2026-10-20
+**Última actualización:** 2026-10-24
 
 ---
 
@@ -18,9 +17,9 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
   `0.1.0` (MVP jugable de principio a fin).
 - **ROM Objetivo:** `Fire Emblem (Europe)` — `6f2c30823ab0237310b138739ccfad879f1a07c4a782a9cbb92317d60d03cee9`
 - **BIOS Objetivo:** `gba_bios.bin` — `fd2547724b505f487e6dcb29ec2ecff3af35a841a77ab2e85fd87350abd36570`
-- **Estado de la suite:** 264 tests en verde (175 en los módulos de `src/`, 89 de integración en
+- **Estado de la suite:** 257 tests en verde (172 en los módulos de `src/`, 85 de integración en
   [`tests/`](../tests/)). El checklist de pre-commit vive en
-  [`AGENTS.md`](../AGENTS.md) §6.
+  [`AGENTS.md`](../AGENTS.md#checklist-obligatorio-de-pre-commit-gatekeeper) §7.
 
 ---
 
@@ -70,9 +69,11 @@ Las áreas son de trabajo, no las fases del roadmap: una misma área puede repar
   38.400 píxeles** frente a la PPU de referencia en los dos cuadros de aceptación. **Es la ruta de
   dibujo por defecto** desde
   [`2026-10-21_ppu-nativa-activa-por-defecto.md`](propuestas/2026-10-21_ppu-nativa-activa-por-defecto.md);
-  se apaga en caliente con el archivo de marca `ppu-nativa-off.flag`, sin recompilar, y si la GPU
-  del dispositivo rechaza un recurso el guardián de `wgpu` devuelve el juego al shim. Queda
-  pendiente ver la imagen en un dispositivo y decidir si el shim sale de la ruta de producción.
+  Conforme al ADR 42, el antiguo `PpuShim` por software fue completamente retirado del árbol activo
+  y archivado en [`docs/historico/ppu-shim/`](historico/ppu-shim/README.md). La PPU nativa en GPU (`NativePpu`)
+  es la única ruta de renderizado de producción. Ante fallo en la inicialización de GPU o activación
+  de la bandera de contingencia `ppu-nativa-off.flag`, el motor conmuta automáticamente al rasterizador
+  por software en CPU provisto por `gba-core` (`render_scanline`).
 - **Fondo afín del modo 1** (el fondo girando de los menús): la PPU nativa lo dibuja con la
   aritmética de la referencia
   ([`2026-10-21_fondo-afin-bg2-modo-1.md`](propuestas/2026-10-21_fondo-afin-bg2-modo-1.md),
@@ -138,14 +139,9 @@ Curado a mano a partir del [registro](#registro-de-hallazgos); el registro es la
    píxeles distintos de los que da el camino general (8 de 240 en la escena sintética medida). Está
    sin arreglar:
    [`2026-10-22_clave-de-tramo-aliase-la-prioridad.md`](propuestas/2026-10-22_clave-de-tramo-aliase-la-prioridad.md).
-6. **El shim de la PPU sigue en el repositorio** aunque la PPU nativa ya coincide con la
-   referencia píxel a píxel: desde
-   [`2026-10-21_ppu-nativa-activa-por-defecto.md`](propuestas/2026-10-21_ppu-nativa-activa-por-defecto.md)
-   la PPU nativa es la ruta de dibujo por defecto y el shim queda como reserva, pero borrar
-   `src/ppu_shim.*` (que además están sin versionar, así que el borrado es irreversible) es la
-   decisión pendiente. Origen:
-   [`2026-10-19_ppu-nativa-fase-1.md`](propuestas/2026-10-19_ppu-nativa-fase-1.md) y
-   [`2026-10-20_ppu-nativa-bandera-en-runtime.md`](propuestas/2026-10-20_ppu-nativa-bandera-en-runtime.md).
+6. **Eliminación del PpuShim completada (ADR 42)** — El shim fue retirado del árbol activo de código
+   y archivado con sus 39 ficheros y arneses en [`docs/historico/ppu-shim/`](historico/ppu-shim/README.md).
+   La contingencia ante fallo de GPU o diagnóstico se apoya en el rasterizador por software en CPU de `gba-core`.
 7. **El cambio del motor sigue sin commitear** — el APK lo lleva por `[patch]`, así que un clon limpio
    no reproduce el APK (registrado en dos propuestas).
 8. **La espera activa del bucle principal** contradice la regla «sin busy-waiting» de
@@ -157,40 +153,23 @@ Curado a mano a partir del [registro](#registro-de-hallazgos); el registro es la
 
 ## Índice de Propuestas
 
-139 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
+158 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
 propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
-**139 = 88 `verificada por agente` + 13 `cerrada` + 15 `aprobada` + 7 `pendiente` + 9 `discrepada` + 4 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
+**158 = 94 `verificada por agente` + 40 `cerrada` + 2 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
 
-### Pendientes (7) — sin ejecutar
+### Pendientes (3) — sin ejecutar
 
 - [`2026-10-10_calibracion-multidispositivo-v2.md`](propuestas/2026-10-10_calibracion-multidispositivo-v2.md)
 - [`2026-10-10_optimizacion-compatibilidad-multidispositivo.md`](propuestas/2026-10-10_optimizacion-compatibilidad-multidispositivo.md)
-- [`2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md`](propuestas/2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md)
 - [`2026-10-14_saneamiento-de-la-documentacion.md`](propuestas/2026-10-14_saneamiento-de-la-documentacion.md)
-- [`2026-10-18_afines-conteo-matriz-7500.md`](propuestas/2026-10-18_afines-conteo-matriz-7500.md)
-- [`2026-10-18_instrumentar-copia-limpia-gba-core.md`](propuestas/2026-10-18_instrumentar-copia-limpia-gba-core.md)
-- [`2026-10-22_clave-de-tramo-aliase-la-prioridad.md`](propuestas/2026-10-22_clave-de-tramo-aliase-la-prioridad.md)
 
-### Aprobadas sin cerrar (15) — alcance pactado, trabajo o medida pendientes
+### Aprobadas sin cerrar (2) — alcance pactado, trabajo o medida pendientes
 
 - [`2026-10-10_optimizacion-rendimiento-gpu-vulkan-y-calibracion-fps.md`](propuestas/2026-10-10_optimizacion-rendimiento-gpu-vulkan-y-calibracion-fps.md)
-- [`2026-10-12_ppu-60fps-estable.md`](propuestas/2026-10-12_ppu-60fps-estable.md)
-- [`2026-10-13_alpha-real-por-tramos.md`](propuestas/2026-10-13_alpha-real-por-tramos.md)
-- [`2026-10-13_contadores-de-camino-de-la-ppu.md`](propuestas/2026-10-13_contadores-de-camino-de-la-ppu.md)
-- [`2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md`](propuestas/2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md)
 - [`2026-10-14_reactivar-la-calibracion-de-presentacion.md`](propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md)
-- [`2026-10-16_arnes-comparacion-shim-vs-software.md`](propuestas/2026-10-16_arnes-comparacion-shim-vs-software.md)
-- [`2026-10-16_contar-escrituras-de-registros-por-cuadro.md`](propuestas/2026-10-16_contar-escrituras-de-registros-por-cuadro.md)
-- [`2026-10-16_contar-lineas-con-cambio-de-registros.md`](propuestas/2026-10-16_contar-lineas-con-cambio-de-registros.md)
-- [`2026-10-17_buscar-estado-faltante-cuadro-1000.md`](propuestas/2026-10-17_buscar-estado-faltante-cuadro-1000.md)
-- [`2026-10-17_capas-por-aportacion-cuadro-1000.md`](propuestas/2026-10-17_capas-por-aportacion-cuadro-1000.md)
-- [`2026-10-17_captura-por-linea-cuadro-1000.md`](propuestas/2026-10-17_captura-por-linea-cuadro-1000.md)
-- [`2026-10-17_comparar-capas-del-cuadro-fijo.md`](propuestas/2026-10-17_comparar-capas-del-cuadro-fijo.md)
-- [`2026-10-17_diagnostico-efectos-y-ventanas-cuadro-1000.md`](propuestas/2026-10-17_diagnostico-efectos-y-ventanas-cuadro-1000.md)
-- [`2026-10-18_instrumentar-render-sprites-afines.md`](propuestas/2026-10-18_instrumentar-render-sprites-afines.md)
 
-### Discrepadas (9) — la medida contradijo la premisa
+### Discrepadas (10) — la medida contradijo la premisa
 
 - [`2026-10-12_acceso-memoria-sin-llamada-indirecta.md`](propuestas/2026-10-12_acceso-memoria-sin-llamada-indirecta.md) — el acceso directo al bus no rinde ≈3 %.
 - [`2026-10-12_telemetria-sin-coste-en-el-apk.md`](propuestas/2026-10-12_telemetria-sin-coste-en-el-apk.md) — la sonda del port mide otro reloj del que se quería medir.
@@ -201,15 +180,18 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-18_decode-oam-otro-cuadro-regresion.md`](propuestas/2026-10-18_decode-oam-otro-cuadro-regresion.md)
 - [`2026-10-18_fondos-tapan-afines-cuadro-7500.md`](propuestas/2026-10-18_fondos-tapan-afines-cuadro-7500.md)
 - [`2026-10-18_sprites-afines-cuadro-7500.md`](propuestas/2026-10-18_sprites-afines-cuadro-7500.md)
+- [`2026-10-23_optimizacion-subida-diferencial-y-encoder-unico-ppu-nativa.md`](propuestas/2026-10-23_optimizacion-subida-diferencial-y-encoder-unico-ppu-nativa.md)
 
-### Revisada por humano (4)
+### Revisada por humano (6)
 
 - [`2026-10-09_compatibilidad-android-tv-y-armeabi-v7a.md`](propuestas/2026-10-09_compatibilidad-android-tv-y-armeabi-v7a.md)
 - [`2026-10-09_optimizacion-latencia-y-fillrate-gpu-modesta.md`](propuestas/2026-10-09_optimizacion-latencia-y-fillrate-gpu-modesta.md)
 - [`2026-10-14_corregir-afirmaciones-que-el-codigo-contradice.md`](propuestas/2026-10-14_corregir-afirmaciones-que-el-codigo-contradice.md)
 - [`2026-10-17_capa-ganadora-por-pixel-obj-cuadro-1000.md`](propuestas/2026-10-17_capa-ganadora-por-pixel-obj-cuadro-1000.md)
+- [`2026-10-23_eliminar-register-spilling-y-bucle-anidado-fs-comp.md`](propuestas/2026-10-23_eliminar-register-spilling-y-bucle-anidado-fs-comp.md)
+- [`2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md`](propuestas/2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md)
 
-### Cerradas (13)
+### Cerradas (40)
 
 - [`2026-10-09_ajustes-fidelidad-ergonomia-overlay.md`](propuestas/2026-10-09_ajustes-fidelidad-ergonomia-overlay.md)
 - [`2026-10-09_auditoria-tests-de-mutacion.md`](propuestas/2026-10-09_auditoria-tests-de-mutacion.md)
@@ -221,11 +203,38 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-10_ingestion-rom-bios-downloads.md`](propuestas/2026-10-10_ingestion-rom-bios-downloads.md)
 - [`2026-10-10_integracion-codigo-c-recompilado-aot.md`](propuestas/2026-10-10_integracion-codigo-c-recompilado-aot.md)
 - [`2026-10-10_pacing-fotogramas-y-pipeline-video-gba.md`](propuestas/2026-10-10_pacing-fotogramas-y-pipeline-video-gba.md)
+- [`2026-10-12_ppu-60fps-estable.md`](propuestas/2026-10-12_ppu-60fps-estable.md)
+- [`2026-10-13_alpha-real-por-tramos.md`](propuestas/2026-10-13_alpha-real-por-tramos.md)
+- [`2026-10-13_contadores-de-camino-de-la-ppu.md`](propuestas/2026-10-13_contadores-de-camino-de-la-ppu.md)
+- [`2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md`](propuestas/2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md)
 - [`2026-10-13_ppu-efectos-inertes-y-camino-especializado.md`](propuestas/2026-10-13_ppu-efectos-inertes-y-camino-especializado.md)
+- [`2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md`](propuestas/2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md)
 - [`2026-10-14_reloj-barato-en-pump-audio.md`](propuestas/2026-10-14_reloj-barato-en-pump-audio.md)
+- [`2026-10-16_arnes-comparacion-shim-vs-software.md`](propuestas/2026-10-16_arnes-comparacion-shim-vs-software.md)
+- [`2026-10-16_contar-escrituras-de-registros-por-cuadro.md`](propuestas/2026-10-16_contar-escrituras-de-registros-por-cuadro.md)
+- [`2026-10-16_contar-lineas-con-cambio-de-registros.md`](propuestas/2026-10-16_contar-lineas-con-cambio-de-registros.md)
+- [`2026-10-17_buscar-estado-faltante-cuadro-1000.md`](propuestas/2026-10-17_buscar-estado-faltante-cuadro-1000.md)
+- [`2026-10-17_capas-por-aportacion-cuadro-1000.md`](propuestas/2026-10-17_capas-por-aportacion-cuadro-1000.md)
+- [`2026-10-17_captura-por-linea-cuadro-1000.md`](propuestas/2026-10-17_captura-por-linea-cuadro-1000.md)
+- [`2026-10-17_comparar-capas-del-cuadro-fijo.md`](propuestas/2026-10-17_comparar-capas-del-cuadro-fijo.md)
+- [`2026-10-17_diagnostico-efectos-y-ventanas-cuadro-1000.md`](propuestas/2026-10-17_diagnostico-efectos-y-ventanas-cuadro-1000.md)
+- [`2026-10-18_afines-conteo-matriz-7500.md`](propuestas/2026-10-18_afines-conteo-matriz-7500.md)
 - [`2026-10-18_buscar-escena-bg0-sprites-decode-oam.md`](propuestas/2026-10-18_buscar-escena-bg0-sprites-decode-oam.md)
+- [`2026-10-18_instrumentar-copia-limpia-gba-core.md`](propuestas/2026-10-18_instrumentar-copia-limpia-gba-core.md)
+- [`2026-10-18_instrumentar-render-sprites-afines.md`](propuestas/2026-10-18_instrumentar-render-sprites-afines.md)
+- [`2026-10-23_eliminacion-del-ppu-shim.md`](propuestas/2026-10-23_eliminacion-del-ppu-shim.md)
+- [`2026-10-23_reorganizar-examples-y-archivar-obsoletos.md`](propuestas/2026-10-23_reorganizar-examples-y-archivar-obsoletos.md)
+- [`2026-10-23_resolucion-auditoria-rant-md.md`](propuestas/2026-10-23_resolucion-auditoria-rant-md.md)
+- [`2026-10-23_resolucion-inconsistencias-rant-md.md`](propuestas/2026-10-23_resolucion-inconsistencias-rant-md.md)
+- [`2026-10-23_resolucion-quejas-comprension-y-legibilidad-rant.md`](propuestas/2026-10-23_resolucion-quejas-comprension-y-legibilidad-rant.md)
+- [`2026-10-24_paquete-1-autonomia-ppu-controles-y-primer-arranque.md`](propuestas/2026-10-24_paquete-1-autonomia-ppu-controles-y-primer-arranque.md)
+- [`2026-10-24_paquete-2-vigencia-y-clasificacion-adrs.md`](propuestas/2026-10-24_paquete-2-vigencia-y-clasificacion-adrs.md)
+- [`2026-10-24_paquete-3-rigor-anatomia-src-c-y-diataxis.md`](propuestas/2026-10-24_paquete-3-rigor-anatomia-src-c-y-diataxis.md)
+- [`2026-10-24_resolucion-cuarta-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-cuarta-auditoria-rant-md.md)
+- [`2026-10-24_resolucion-segunda-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-segunda-auditoria-rant-md.md)
+- [`2026-10-24_resolucion-tercera-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-tercera-auditoria-rant-md.md)
 
-### Verificadas por agente (88) — con lo medido dentro; varias esperan el televisor
+### Verificadas por agente (94) — con lo medido dentro; varias esperan el televisor
 
 - [`2026-10-08_controles-tactiles-haptica.md`](propuestas/2026-10-08_controles-tactiles-haptica.md)
 - [`2026-10-08_crate-nativo-android.md`](propuestas/2026-10-08_crate-nativo-android.md)
@@ -314,7 +323,13 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-21_ventana-obj-camino-rapido.md`](propuestas/2026-10-21_ventana-obj-camino-rapido.md)
 - [`2026-10-22_arnes-comparacion-visual-y-causal.md`](propuestas/2026-10-22_arnes-comparacion-visual-y-causal.md)
 - [`2026-10-22_arnes-de-experimentos-comun.md`](propuestas/2026-10-22_arnes-de-experimentos-comun.md)
+- [`2026-10-22_clave-de-tramo-aliase-la-prioridad.md`](propuestas/2026-10-22_clave-de-tramo-aliase-la-prioridad.md)
 - [`2026-10-22_contrato-de-telemetria.md`](propuestas/2026-10-22_contrato-de-telemetria.md)
+- [`2026-10-22_sincronizar-referencia-visor-y-temblor.md`](propuestas/2026-10-22_sincronizar-referencia-visor-y-temblor.md)
+- [`2026-10-22_visor-doble-interactivo-ppu.md`](propuestas/2026-10-22_visor-doble-interactivo-ppu.md)
+- [`2026-10-23_lut-vertical-en-produccion-y-salto-ppu-cpu.md`](propuestas/2026-10-23_lut-vertical-en-produccion-y-salto-ppu-cpu.md)
+- [`2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md`](propuestas/2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md)
+- [`2026-10-23_ppu-nativa-paleta-lut-vertical.md`](propuestas/2026-10-23_ppu-nativa-paleta-lut-vertical.md)
 
 ### Modificadas (2) — cambiadas sobre la marcha
 
@@ -327,7 +342,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
 ### Esperando el televisor: propuestas con `Revisión humana` pendiente
 
-Son 77 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuello de botella del proyecto ahora mismo.
+Son 85 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuello de botella del proyecto ahora mismo.
 
 - [`2026-10-09_correccion-escala-y-renderizado-overlay.md`](propuestas/2026-10-09_correccion-escala-y-renderizado-overlay.md)
 - [`2026-10-09_fidelidad-visual-overlay-prototipo.md`](propuestas/2026-10-09_fidelidad-visual-overlay-prototipo.md)
@@ -406,10 +421,20 @@ Son 77 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuel
 - [`2026-10-22_arnes-de-experimentos-comun.md`](propuestas/2026-10-22_arnes-de-experimentos-comun.md)
 - [`2026-10-22_clave-de-tramo-aliase-la-prioridad.md`](propuestas/2026-10-22_clave-de-tramo-aliase-la-prioridad.md)
 - [`2026-10-22_contrato-de-telemetria.md`](propuestas/2026-10-22_contrato-de-telemetria.md)
+- [`2026-10-22_sincronizar-referencia-visor-y-temblor.md`](propuestas/2026-10-22_sincronizar-referencia-visor-y-temblor.md)
+- [`2026-10-22_visor-doble-interactivo-ppu.md`](propuestas/2026-10-22_visor-doble-interactivo-ppu.md)
+- [`2026-10-23_eliminacion-del-ppu-shim.md`](propuestas/2026-10-23_eliminacion-del-ppu-shim.md)
+- [`2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md`](propuestas/2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md)
+- [`2026-10-23_ppu-nativa-paleta-lut-vertical.md`](propuestas/2026-10-23_ppu-nativa-paleta-lut-vertical.md)
+- [`2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md`](propuestas/2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md)
+- [`2026-10-24_resolucion-cuarta-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-cuarta-auditoria-rant-md.md)
+- [`2026-10-24_resolucion-tercera-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-tercera-auditoria-rant-md.md)
 
 ---
 
 ## Registro de Hallazgos
+
+> **Naturaleza histórica de este registro:** Este apartado conserva de forma acumulativa e inmutable los hallazgos fuera de alcance documentados en la sección `### Fuera de alcance` al cerrar cada propuesta de cambio (auditados automáticamente por `python scripts/auditar_hallazgos.py`). Muchos de estos hallazgos ya han sido resueltos en propuestas posteriores o corresponden a notas técnicas y limitaciones físicas de hardware. Para consultar la lista viva de **tareas pendientes y accionables de desarrollo**, véase [`docs/PENDIENTES.md`](PENDIENTES.md).
 
 #### [`2026-10-08_controles-tactiles-haptica.md`](propuestas/2026-10-08_controles-tactiles-haptica.md)
 
@@ -699,8 +724,13 @@ Son 77 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuel
 
 - En el motor base `gba-core` (`crates/gba-core/src/ppu.rs`, línea 976), la clave rápida `clave_de_tramo` calcula `mascara | if prioridad != 0xFF { 0x100 | prioridad as u16 } else { 0 }` sin desplazar `prioridad`, por lo que un sprite con `prioridad = 2` activa el bit 1 (`0x0002`), colisionando con el bit de opacidad de `BG1` en `mascara` durante `compose_alpha_tramos` (causa de los 77 píxeles de diferencia en el bocadillo `¡Aquí! ▼` del `cuadro 9254`, donde la PPU nativa dibuja correctamente el borde del globo encima del retrato y la PPU por software de `gba-core` pisa el borde). No se modifica `gba-core` por la restricción de congelación de `tests/datos/ppu-nativa-hashes-base.txt` (`impacto: bajo`). — impacto: bajo
 
+#### [2026-10-24_resolucion-tercera-auditoria-rant-md.md](propuestas/2026-10-24_resolucion-tercera-auditoria-rant-md.md)
+
+- **Captura real del blob binario de IWRAM (32 KB):** La captura del volcado en memoria viva para recompilar las 10 subrutinas de combate (`0x030035C8`, etc.) es un desarrollo técnico sustantivo de instrumentación en el arnés de ejecución determinista registrado en [`docs/PENDIENTES.md`](../PENDIENTES.md). — impacto: medio
+- **Selector SAF interactivo en Android:** El reemplazo del acceso directo a `/sdcard/Download/` por un selector gráfico `ACTION_OPEN_DOCUMENT` es una tarea de UI nativa Android registrada en [`docs/PENDIENTES.md`](../PENDIENTES.md). — impacto: bajo
+
 ## Checklist de Pre-Commit
 
-Los 5 criterios obligatorios antes de un `commit`/`push` están en [`AGENTS.md`](../AGENTS.md) §6. Aquí
+Los 5 criterios obligatorios antes de un `commit`/`push` están en [`AGENTS.md`](../AGENTS.md#checklist-obligatorio-de-pre-commit-gatekeeper) §7. Aquí
 solo el resumen: suite en verde, validación Diátaxis sin errores, referencias de API sincronizadas,
 auditoría de labels Aprobada y auditoría de rutas absolutas limpia.

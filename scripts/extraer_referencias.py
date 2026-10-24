@@ -150,6 +150,19 @@ def parsear_archivo_rust(path_archivo):
     }
 
 
+def resumen_doc_modulo(doc_modulo):
+    """Extrae la primera oración o descripción coherente sin truncar por saltos de línea."""
+    if not doc_modulo:
+        return "Módulo interno del port."
+    primer_parrafo = doc_modulo.strip().split("\n\n")[0]
+    lineas = [l.strip() for l in primer_parrafo.splitlines() if l.strip()]
+    texto = " ".join(lineas)
+    m = re.match(r"^(.*?\.)(?:\s+[A-ZÁÉÍÓÚ]|\s*$)", texto)
+    if m:
+        texto = m.group(1)
+    return texto.replace("|", "\\|").strip()
+
+
 def generar_markdown_referencia(modulos):
     """Genera el contenido Markdown conforme al estándar Diátaxis (tipo: referencia)."""
     md = []
@@ -172,7 +185,7 @@ def generar_markdown_referencia(modulos):
     md.append("| :--- | :--- | :--- |")
     for mod in modulos:
         num_elem = len(mod["elementos"])
-        primera_linea = mod["doc_modulo"].split("\n")[0] if mod["doc_modulo"] else "Módulo interno del port."
+        primera_linea = resumen_doc_modulo(mod["doc_modulo"])
         slug_anchor = f"módulo-{mod['archivo'].replace('.', '').lower()}"
         md.append(f"| [`{mod['archivo']}`](#{slug_anchor}) | {num_elem} | {primera_linea} |")
 
@@ -235,13 +248,18 @@ def main():
         "lib.rs",
         "input.rs",
         "overlay.rs",
+        "overlay_shader.rs",
         "error_screen.rs",
         "platform.rs",
         "storage.rs",
         "runner.rs",
         "recomp.rs",
         "fps.rs",
+        "perf.rs",
         "telemetria.rs",
+        "pipeline.rs",
+        "present.rs",
+        "ppu_nativa.rs",
     ]
 
     modulos = []
