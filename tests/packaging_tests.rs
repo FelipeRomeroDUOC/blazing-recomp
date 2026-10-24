@@ -707,3 +707,40 @@ fn test_guardian_ignora_el_registro_historico() {
         "se esperaba al menos una propuesta que cite una frase caduca dentro de su medicion; si ya no queda ninguna, revisar si la exclusion de docs/propuestas/ sigue teniendo efecto"
     );
 }
+
+#[test]
+fn test_etiquetas_combate_iwram_catalogadas_y_auditadas() {
+    let toml_path = repo_root().join("blazing.labels.toml");
+    let content = fs::read_to_string(&toml_path).expect("blazing.labels.toml debe existir");
+
+    let subrutinas_esperadas = [
+        ("Battle_IWRAM_CombatInterpCalc_03003478", "0x03003478"),
+        ("Battle_IWRAM_CombatDispatchLoop_03003568", "0x03003568"),
+        ("Battle_IWRAM_CombatCase4_Branch_030035C8", "0x030035c8"),
+        ("Battle_IWRAM_CombatCase5_Branch_030035CC", "0x030035cc"),
+        ("Battle_IWRAM_CombatCase3_Branch_030035D0", "0x030035d0"),
+        ("Battle_IWRAM_CombatCase2_Branch_030035D4", "0x030035d4"),
+        ("Battle_IWRAM_CombatCase6_Branch_030035D8", "0x030035d8"),
+        ("Battle_IWRAM_CombatCase1_Body_030035DC", "0x030035dc"),
+        ("Battle_IWRAM_CombatCase2_Body_03003620", "0x03003620"),
+        ("Battle_IWRAM_CombatCase3_Body_03003654", "0x03003654"),
+        ("Battle_IWRAM_CombatCase4_Body_03003688", "0x03003688"),
+        ("Battle_IWRAM_CombatCase5_Body_030036BC", "0x030036bc"),
+        ("Battle_IWRAM_CombatEpilogue_030036EC", "0x030036ec"),
+        ("Battle_IWRAM_CombatCase6_Body_03003708", "0x03003708"),
+    ];
+
+    let content_lower = content.to_lowercase();
+    for (nombre, addr_hex) in subrutinas_esperadas {
+        assert!(
+            content.contains(nombre),
+            "blazing.labels.toml debe contener la subrutina de combate {}",
+            nombre
+        );
+        assert!(
+            content_lower.contains(&addr_hex.to_lowercase()),
+            "blazing.labels.toml debe contener la dirección {}",
+            addr_hex
+        );
+    }
+}

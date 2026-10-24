@@ -92468,3 +92468,78 @@ mode = "thumb"
 name = "FE7_FnPtr_08FFFF98"
 address = 0x08ffff98
 mode = "thumb"
+
+# ==============================================================================
+# SUBRUTINAS DE COMBATE EN IWRAM (0x03003478 - 0x03003708)
+# Reubicadas dinámicamente desde ROM (0x08000760 - 0x080009F8) durante el arranque
+# ==============================================================================
+
+[[functions]]
+name = "Battle_IWRAM_CombatInterpCalc_03003478"
+address = 0x03003478
+mode = "arm"
+
+[[functions]]
+name = "Battle_IWRAM_CombatDispatchLoop_03003568"
+address = 0x03003568
+mode = "arm"
+
+[[functions]]
+name = "Battle_IWRAM_CombatCase4_Branch_030035C8"
+address = 0x030035C8
+mode = "arm"
+
+[[functions]]
+name = "Battle_IWRAM_CombatCase5_Branch_030035CC"
+address = 0x030035CC
+mode = "arm"
+
+[[functions]]
+name = "Battle_IWRAM_CombatCase3_Branch_030035D0"
+address = 0x030035D0
+mode = "arm"
+
+[[functions]]
+name = "Battle_IWRAM_CombatCase2_Branch_030035D4"
+address = 0x030035D4
+mode = "arm"
+
+[[functions]]
+name = "Battle_IWRAM_CombatCase6_Branch_030035D8"
+address = 0x030035D8
+mode = "arm"
+
+[[functions]]
+name = "Battle_IWRAM_CombatCase1_Body_030035DC"
+address = 0x030035DC
+mode = "arm"
+
+[[functions]]
+name = "Battle_IWRAM_CombatCase2_Body_03003620"
+address = 0x03003620
+mode = "arm"
+
+[[functions]]
+name = "Battle_IWRAM_CombatCase3_Body_03003654"
+address = 0x03003654
+mode = "arm"
+
+[[functions]]
+name = "Battle_IWRAM_CombatCase4_Body_03003688"
+address = 0x03003688
+mode = "arm"
+
+[[functions]]
+name = "Battle_IWRAM_CombatCase5_Body_030036BC"
+address = 0x030036BC
+mode = "arm"
+
+[[functions]]
+name = "Battle_IWRAM_CombatEpilogue_030036EC"
+address = 0x030036EC
+mode = "arm"
+
+[[functions]]
+name = "Battle_IWRAM_CombatCase6_Body_03003708"
+address = 0x03003708
+mode = "arm"

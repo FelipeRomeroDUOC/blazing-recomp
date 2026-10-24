@@ -51,6 +51,13 @@ if (-not (Test-Path $biosPath)) {
 Write-Host "==> Iniciando recompilacion AOT C11 (RECOMP_KEEP_C=1)..."
 $env:RECOMP_KEEP_C = "1"
 
+# Configurar TinyCC empaquetado si esta presente en gba-recomp
+$possibleTcc = Join-Path $RepoRoot "..\gba-recomp\gba-recomp-launcher-0.4-x86_64-pc-windows-msvc\tcc"
+if (Test-Path $possibleTcc) {
+    $env:GBA_RECOMP_TCC_LIB = (Resolve-Path $possibleTcc).Path
+    Write-Host "==> TinyCC empaquetado configurado: $env:GBA_RECOMP_TCC_LIB"
+}
+
 Push-Location $RepoRoot
 try {
     & $recompBin build $romPath --bios $biosPath --labels $labelsPath --ram

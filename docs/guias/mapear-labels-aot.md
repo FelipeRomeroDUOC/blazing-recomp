@@ -58,18 +58,9 @@ En la Game Boy Advance, la memoria IWRAM (`0x03000000`–`0x03007FFF`, 32 KB) es
 
 **Particularidad de IWRAM:** Estas funciones **no residen de forma estática en esa dirección en el archivo de la ROM**. Durante el arranque (`crt0.s`) o antes de iniciar las secuencias de combate, el juego copia bloques de código binario desde direcciones maestras en la ROM (`0x08xxxxxx`) hacia la memoria IWRAM mediante transferencias DMA3 o bucles directos `memcpy`.
 
-**Estado actual en el repositorio:** En la versión actual de [`blazing.labels.toml`](../../blazing.labels.toml), la totalidad de las 18.483 funciones catalogadas residen en el espacio de ROM (`0x08000000`–`0x08FFFFFF`); **ninguna subrutina de IWRAM está catalogada todavía**. El generador de código estático upstream (`recomp build`) exige un volcado de memoria viva (*blob* binario de 32 KB capturado con el estado de la RAM inicializada) para generar las funciones de guarda (`guard`) con hash FNV-1a que certifiquen la integridad del código en RAM antes de saltar al bloque C11. 
+**Estado en el repositorio:** Tras la resolución de la propuesta [`2026-10-24_cobertura-aot-combate-iwram.md`](../propuestas/2026-10-24_cobertura-aot-combate-iwram.md), las 14 subrutinas críticas de combate en IWRAM (`0x03003478`, `0x03003568`, `0x030035C8`–`0x030035DC`, `0x03003620`, `0x03003654`, `0x03003688`, `0x030036BC`, `0x030036CC`, `0x030036EC`, `0x03003708`) se encuentran plenamente catalogadas en [`blazing.labels.toml`](../../blazing.labels.toml). El generador de código estático (`recomp build`) utiliza el volcado de memoria viva (*blob* de 32 KB respaldado en la configuración local) para emitir los bloques protegidos por guardas de contenido FNV-1a de 64 bits (`a->guard(m, addr, len, hash)`), garantizando la ejecución AOT nativa al 100 % en las batallas.
 
-**Procedimiento operativo para capturar el blob de IWRAM (`iwram_dump.bin`):**
-1. Ejecutar el arnés determinista de replay hasta la escena de combate:
-   ```bash
-   cargo run --example ppu_barrido_nativa -- --replay secuencias/combate.txt
-   ```
-2. Volcar los 32 KB del bus de memoria (`0x03000000` a `0x03007FFF`) a un archivo `iwram_dump.bin`.
-3. Suministrar el volcado a `recomp build` para que calcule los hashes de integridad FNV-1a de 64 bits y emita los bloques protegidos por `a->guard(m, addr, len, hash)`.
-4. Mapear las subrutinas de combate (`0x030035C8`, `0x030036CC`, etc.) en `blazing.labels.toml`.
-
-Esta tarea técnica se encuentra registrada en [`docs/PENDIENTES.md`](../PENDIENTES.md). Para mapear funciones normales en ROM, continúa directamente con el Paso 5.
+Para mapear funciones normales en ROM, continúa directamente con el Paso 5.
 
 ### 5. Registrar la función en `blazing.labels.toml`
 Abre el archivo de etiquetas [`blazing.labels.toml`](../../blazing.labels.toml) y añade la nueva entrada al final:

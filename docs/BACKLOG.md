@@ -153,10 +153,10 @@ Curado a mano a partir del [registro](#registro-de-hallazgos); el registro es la
 
 ## Índice de Propuestas
 
-158 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
+159 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
 propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
-**158 = 94 `verificada por agente` + 40 `cerrada` + 2 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
+**159 = 95 `verificada por agente` + 40 `cerrada` + 2 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
 
 ### Pendientes (3) — sin ejecutar
 
@@ -234,7 +234,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-24_resolucion-segunda-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-segunda-auditoria-rant-md.md)
 - [`2026-10-24_resolucion-tercera-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-tercera-auditoria-rant-md.md)
 
-### Verificadas por agente (94) — con lo medido dentro; varias esperan el televisor
+### Verificadas por agente (95) — con lo medido dentro; varias esperan el televisor
 
 - [`2026-10-08_controles-tactiles-haptica.md`](propuestas/2026-10-08_controles-tactiles-haptica.md)
 - [`2026-10-08_crate-nativo-android.md`](propuestas/2026-10-08_crate-nativo-android.md)
@@ -330,6 +330,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-23_lut-vertical-en-produccion-y-salto-ppu-cpu.md`](propuestas/2026-10-23_lut-vertical-en-produccion-y-salto-ppu-cpu.md)
 - [`2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md`](propuestas/2026-10-23_ppu-nativa-lut-vertical-y-composicion-directa.md)
 - [`2026-10-23_ppu-nativa-paleta-lut-vertical.md`](propuestas/2026-10-23_ppu-nativa-paleta-lut-vertical.md)
+- [`2026-10-24_cobertura-aot-combate-iwram.md`](propuestas/2026-10-24_cobertura-aot-combate-iwram.md)
 
 ### Modificadas (2) — cambiadas sobre la marcha
 
