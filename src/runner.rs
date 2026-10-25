@@ -74,6 +74,16 @@ impl GameRunner {
         };
         // Medicion del coste de audio: solo si existe perf-audio-timing.flag en Descargas.
         machine.bus.perf_audio_timing = crate::perf::audio_timing_flag_enabled(&[]);
+        // Detección y armado del driver de sonido MP2K HLE (Audio Mejorado)
+        let sigs = gba_core::mp2k::detect(&machine.bus.rom);
+        if !sigs.is_empty() {
+            machine.bus.mp2k = Some(Box::new(gba_core::mp2k::Mp2kHle::new(&sigs)));
+            machine.bus.tap_channels = true;
+            log::info!(
+                "MP2K HLE Shadow Mixer armado exitosamente ({} firmas)",
+                sigs.len()
+            );
+        }
         let block_table = crate::recomp::load_native_blocks();
         let mut settings = ColorSettings::default();
         settings.screen = screen_kind;
@@ -172,6 +182,37 @@ impl GameRunner {
     #[inline]
     pub fn keys(&self) -> u16 {
         self.machine.bus.keys
+    }
+
+    /// Extrae y vacia las muestras de audio acumuladas por el APU durante el fotograma.
+    ///
+    /// Si el Audio Mejorado (MP2K HLE) está activo y probado (`live()`), combina las voces
+    /// en punto flotante (`hle_tap`) con los canales PSG (`psg_tap`). En caso contrario,
+    /// o si existe `audio-enhanced-off.flag`, entrega la mezcla canónica fiel de `audio_buf`.
+    #[inline]
+    pub fn drain_audio_samples(&mut self) -> Vec<i16> {
+        let enhanced_on = crate::audio::audio_mejorado_activado(&[]);
+        let mp2k_live = self.machine.bus.mp2k.as_deref().map_or(false, |h| h.live());
+
+        let result = if enhanced_on && mp2k_live && !self.machine.bus.hle_tap.is_empty() {
+            let mut dest = Vec::with_capacity(self.machine.bus.hle_tap.len());
+            crate::audio::mix_enhanced_samples(
+                &self.machine.bus.hle_tap,
+                &self.machine.bus.psg_tap,
+                &mut dest,
+            );
+            dest
+        } else {
+            std::mem::take(&mut self.machine.bus.audio_buf)
+        };
+
+        self.machine.bus.audio_buf.clear();
+        self.machine.bus.hle_tap.clear();
+        self.machine.bus.psg_tap.clear();
+        self.machine.bus.fifo_tap[0].clear();
+        self.machine.bus.fifo_tap[1].clear();
+
+        result
     }
 
     /// Avanza la simulación hasta completar el siguiente fotograma visible.

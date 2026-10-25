@@ -23,6 +23,7 @@
 // ---------------------------------------------------------------------------
 // Módulos puros, compilables y testeables en host.
 // ---------------------------------------------------------------------------
+pub mod audio;
 pub mod error_screen;
 pub mod fps;
 pub mod input;

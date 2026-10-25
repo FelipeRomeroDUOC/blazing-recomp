@@ -51,3 +51,4 @@ scripts/diagnostico/log_*.txt
 # Estado efímero de la barra de agentes
 .agents/agent_state.json
 .agents/ui/
+.agents/skills/live-dock/

@@ -129,6 +129,7 @@ dependencies = [
  "jni",
  "log",
  "naga",
+ "ndk",
  "pollster",
  "raw-window-handle",
  "screen",
@@ -812,6 +813,7 @@ dependencies = [
  "log",
  "ndk-sys",
  "num_enum",
+ "raw-window-handle",
  "thiserror 1.0.69",
 ]
 

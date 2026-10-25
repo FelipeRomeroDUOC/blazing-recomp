@@ -91,6 +91,8 @@ pub struct EmulationBridge {
     running: AtomicBool,
     paused: AtomicBool,
     gpu_ppu: AtomicBool,
+    audio_enabled: AtomicBool,
+    audio_underruns: AtomicU64,
     pause_sync: (Mutex<bool>, Condvar),
     /// Notificador opcional para interrumpir la espera del hilo principal.
     waker: Mutex<Option<WakeFn>>,
@@ -113,6 +115,8 @@ impl EmulationBridge {
             running: AtomicBool::new(true),
             paused: AtomicBool::new(false),
             gpu_ppu: AtomicBool::new(false),
+            audio_enabled: AtomicBool::new(true),
+            audio_underruns: AtomicU64::new(0),
             pause_sync: (Mutex::new(false), Condvar::new()),
             waker: Mutex::new(waker),
         }
@@ -174,6 +178,30 @@ impl EmulationBridge {
     #[inline]
     pub fn is_gpu_ppu_enabled(&self) -> bool {
         self.gpu_ppu.load(Ordering::Acquire)
+    }
+
+    /// Consulta si el audio nativo está habilitado en el puente.
+    #[inline]
+    pub fn is_audio_enabled(&self) -> bool {
+        self.audio_enabled.load(Ordering::Acquire)
+    }
+
+    /// Activa o desactiva la salida de audio nativo.
+    #[inline]
+    pub fn set_audio_enabled(&self, enabled: bool) {
+        self.audio_enabled.store(enabled, Ordering::Release);
+    }
+
+    /// Contador acumulado de eventos de subdesbordamiento (underruns) en audio.
+    #[inline]
+    pub fn audio_underruns(&self) -> u64 {
+        self.audio_underruns.load(Ordering::Relaxed)
+    }
+
+    /// Actualiza el contador de underruns reportado por el motor de audio.
+    #[inline]
+    pub fn update_audio_underruns(&self, count: u64) {
+        self.audio_underruns.store(count, Ordering::Relaxed);
     }
 
     /// Activa o desactiva el renderizado acelerado en GPU (PPU Nativa).
@@ -326,10 +354,31 @@ impl EmulationWorker {
                     runner.set_block_table(Some(table));
                 }
 
+                let mut audio =
+                    crate::audio::NativeAudioEngine::new(crate::audio::DEFAULT_SAMPLE_RATE);
+                if b_clone.is_audio_enabled() {
+                    let _ = audio.start();
+                }
+
                 let mut frame_count = 0u64;
 
                 while b_clone.is_running() {
-                    b_clone.wait_if_paused();
+                    let audio_target = b_clone.is_audio_enabled();
+                    if audio_target != audio.is_active() {
+                        if audio_target {
+                            let _ = audio.start();
+                        } else {
+                            audio.pause();
+                        }
+                    }
+
+                    if b_clone.is_paused() {
+                        audio.pause();
+                        b_clone.wait_if_paused();
+                        if b_clone.is_running() && b_clone.is_audio_enabled() {
+                            audio.resume();
+                        }
+                    }
                     if !b_clone.is_running() {
                         break;
                     }
@@ -344,6 +393,10 @@ impl EmulationWorker {
                     }
 
                     runner.step_frame();
+
+                    let audio_samples = runner.drain_audio_samples();
+                    audio.push_raw_gba_samples(&audio_samples);
+                    b_clone.update_audio_underruns(audio.ring_buffer().underruns());
 
                     let timing = runner.last_timing();
                     let is_native = runner.is_native();
@@ -387,6 +440,8 @@ impl EmulationWorker {
                         std::thread::sleep(FRAME_DURATION - elapsed);
                     }
                 }
+
+                audio.stop();
             })
             .ok();
 

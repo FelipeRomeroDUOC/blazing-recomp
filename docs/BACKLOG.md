@@ -153,10 +153,10 @@ Curado a mano a partir del [registro](#registro-de-hallazgos); el registro es la
 
 ## Índice de Propuestas
 
-162 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
+164 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
 propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
-**162 = 96 `verificada por agente` + 43 `cerrada` + 1 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
+**164 = 96 `verificada por agente` + 45 `cerrada` + 1 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
 
 ### Pendientes (3) — sin ejecutar
 
@@ -190,7 +190,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-23_eliminar-register-spilling-y-bucle-anidado-fs-comp.md`](propuestas/2026-10-23_eliminar-register-spilling-y-bucle-anidado-fs-comp.md)
 - [`2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md`](propuestas/2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md)
 
-### Cerradas (43)
+### Cerradas (45)
 
 - [`2026-10-09_ajustes-fidelidad-ergonomia-overlay.md`](propuestas/2026-10-09_ajustes-fidelidad-ergonomia-overlay.md)
 - [`2026-10-09_auditoria-tests-de-mutacion.md`](propuestas/2026-10-09_auditoria-tests-de-mutacion.md)
@@ -233,8 +233,10 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-24_resolucion-cuarta-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-cuarta-auditoria-rant-md.md)
 - [`2026-10-24_resolucion-segunda-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-segunda-auditoria-rant-md.md)
 - [`2026-10-24_resolucion-tercera-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-tercera-auditoria-rant-md.md)
+- [`2026-10-25_audio-mejorado-mp2k-hle.md`](propuestas/2026-10-25_audio-mejorado-mp2k-hle.md)
 - [`2026-10-25_automatizacion-versionado-aprobacion.md`](propuestas/2026-10-25_automatizacion-versionado-aprobacion.md)
 - [`2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md`](propuestas/2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md)
+- [`2026-10-25_motor-audio-nativo-aaudio.md`](propuestas/2026-10-25_motor-audio-nativo-aaudio.md)
 
 ### Verificadas por agente (96) — con lo medido dentro; varias esperan el televisor
 

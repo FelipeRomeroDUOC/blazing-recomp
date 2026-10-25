@@ -258,19 +258,19 @@ if (-not $SkipBuild) {
     try {
         if ($Debug) {
             if ($AllAbis) {
-                Write-Host "==> Compilando .so nativo para todos los ABIs (arm64-v8a, armeabi-v7a, x86_64) con cargo ndk en modo debug..."
-                cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 build
+                Write-Host "==> Compilando .so nativo para todos los ABIs (arm64-v8a, armeabi-v7a, x86_64) con cargo ndk (-P 26) en modo debug..."
+                cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -P 26 build
             } else {
-                Write-Host "==> Compilando .so nativo para $TargetAbi ($TargetArch) con cargo ndk en modo debug..."
-                cargo ndk -t $TargetAbi build
+                Write-Host "==> Compilando .so nativo para $TargetAbi ($TargetArch) con cargo ndk (-P 26) en modo debug..."
+                cargo ndk -t $TargetAbi -P 26 build
             }
         } else {
             if ($AllAbis) {
-                Write-Host "==> Compilando .so nativo para todos los ABIs (arm64-v8a, armeabi-v7a, x86_64) con cargo ndk en modo release..."
-                cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 build --release
+                Write-Host "==> Compilando .so nativo para todos los ABIs (arm64-v8a, armeabi-v7a, x86_64) con cargo ndk (-P 26) en modo release..."
+                cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -P 26 build --release
             } else {
-                Write-Host "==> Compilando .so nativo para $TargetAbi ($TargetArch) con cargo ndk en modo release..."
-                cargo ndk -t $TargetAbi build --release
+                Write-Host "==> Compilando .so nativo para $TargetAbi ($TargetArch) con cargo ndk (-P 26) en modo release..."
+                cargo ndk -t $TargetAbi -P 26 build --release
             }
         }
         if ($LASTEXITCODE -ne 0) {

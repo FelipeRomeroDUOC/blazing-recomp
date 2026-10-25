@@ -1614,6 +1614,20 @@ fn init_perf_file(
                     )
                     .as_bytes(),
                 );
+                let _ = f.write_all(
+                    format!(
+                        "# audio_nativo={}\n",
+                        crate::audio::audio_activado(search_dirs)
+                    )
+                    .as_bytes(),
+                );
+                let _ = f.write_all(
+                    format!(
+                        "# audio_mejorado={}\n",
+                        crate::audio::audio_mejorado_activado(search_dirs)
+                    )
+                    .as_bytes(),
+                );
                 log::info!("Telemetría de rendimiento iniciada en {:?}", candidate);
                 return Some(f);
             }
@@ -1666,6 +1680,8 @@ struct AppState {
     /// `ppu-nativa-off.flag`, reevaluado una vez por segundo. Por defecto está
     /// activa.
     ppu_nativa_activa: bool,
+    /// ¿Está activo el motor de audio nativo AAudio? Lo decide `audio-off.flag`.
+    audio_activo: bool,
     /// Calibración de presentación del swapchain mientras está en curso.
     calibracion: Option<crate::present::PresentCalibration>,
 }
@@ -1694,6 +1710,7 @@ impl AppState {
             clock_cost_ns: crate::perf::measure_clock_cost_ns(),
             search_dirs: Vec::new(),
             ppu_nativa_activa: false,
+            audio_activo: true,
             calibracion: None,
         }
     }
@@ -1741,7 +1758,8 @@ impl AppState {
         worker
             .bridge()
             .set_gpu_ppu_enabled(self.ppu_nativa_activa && !FORZAR_PPU_SOFTWARE);
-        log::info!("PPU GPU activada en EmulationWorker");
+        worker.bridge().set_audio_enabled(self.audio_activo);
+        log::info!("PPU GPU y Audio Nativo activados en EmulationWorker");
         self.worker = Some(worker);
     }
 
@@ -1904,6 +1922,25 @@ impl AppState {
             log::info!("PPU nativa: desactivada por marca de apagado");
         }
         let msg = format!("# ppu_nativa={}", if activa { "ON" } else { "OFF" });
+        self.append_perf_line(&msg);
+    }
+
+    /// Reevalúa la bandera de apagado de audio nativo una vez por segundo.
+    fn reevaluar_audio_nativo(&mut self) {
+        let activo = crate::audio::audio_activado(&self.search_dirs);
+        if activo == self.audio_activo {
+            return;
+        }
+        self.audio_activo = activo;
+        if let Some(worker) = &self.worker {
+            worker.bridge().set_audio_enabled(activo);
+        }
+        if activo {
+            log::info!("Audio nativo AAudio: ACTIVADO (marca de apagado retirada)");
+        } else {
+            log::info!("Audio nativo AAudio: desactivado por marca de apagado");
+        }
+        let msg = format!("# audio_nativo={}", if activo { "ON" } else { "OFF" });
         self.append_perf_line(&msg);
     }
 
@@ -2226,6 +2263,13 @@ pub fn android_main(app: android_activity::AndroidApp) {
         if state.ppu_nativa_activa {
             log::info!("PPU nativa: ACTIVADA por defecto al arrancar");
         }
+        state.audio_activo = crate::audio::audio_activado(&search_dirs);
+        if state.audio_activo {
+            log::info!("Audio nativo AAudio: ACTIVADO por defecto al arrancar");
+        }
+        if crate::audio::audio_mejorado_activado(&search_dirs) {
+            log::info!("Audio Mejorado (MP2K HLE): ACTIVADO por defecto al arrancar");
+        }
         log::info!(
             "Iniciando escaneo de ROM oficial en directorios: {:?}",
             search_dirs
@@ -2460,6 +2504,7 @@ pub fn android_main(app: android_activity::AndroidApp) {
                         // segundo, aquí, para que el cambio quede en la
                         // telemetría de la misma ventana que lo describe.
                         state.reevaluar_ppu_nativa();
+                        state.reevaluar_audio_nativo();
                         // La calibración va primero: así sus líneas `#` preceden a
                         // la ventana `t=` a la que describen.
                         state.calibrar_presentacion(&report, (win_w, win_h));

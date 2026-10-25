@@ -22,12 +22,12 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | [`error_screen.rs`](#módulo-error_screenrs) | 4 | Renderizador de pantalla de error por software y blindaje de GPU. |
 | [`platform.rs`](#módulo-platformrs) | 2 | Plataforma Android (solo compila con `cfg(target_os = "android")`): ciclo de vida NativeActivity, presentación GPU, entrada táctil con háptica y logging a Logcat. |
 | [`storage.rs`](#módulo-storagers) | 15 | Módulo interno del port. |
-| [`runner.rs`](#módulo-runnerrs) | 25 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
+| [`runner.rs`](#módulo-runnerrs) | 26 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
 | [`recomp.rs`](#módulo-recomprs) | 30 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
 | [`fps.rs`](#módulo-fpsrs) | 18 | Contador de FPS y generador de HUD visual en pantalla. |
 | [`perf.rs`](#módulo-perfrs) | 17 | Módulo de medición de rendimiento por fase del fotograma. |
 | [`telemetria.rs`](#módulo-telemetriars) | 13 | Contrato de la línea de segundo (`t=`) de la telemetría de rendimiento. |
-| [`pipeline.rs`](#módulo-pipeliners) | 32 | Módulo de pipeline multihilo para desacoplar la emulación del renderizado GPU. |
+| [`pipeline.rs`](#módulo-pipeliners) | 36 | Módulo de pipeline multihilo para desacoplar la emulación del renderizado GPU. |
 | [`present.rs`](#módulo-presentrs) | 27 | Calibración de presentación del swapchain (módulo puro, testeable en host). |
 | [`ppu_nativa.rs`](#módulo-ppu_nativars) | 72 | Módulo PPU nativa: dibuja el cuadro de la GBA con la GPU del dispositivo. |
 
@@ -888,6 +888,19 @@ Obtiene la máscara actual de botones configurada en el bus de hardware.
 **Firma:**
 ```rust
 pub fn keys(&self) -> u16
+```
+
+### `drain_audio_samples` (Función)
+
+Extrae y vacia las muestras de audio acumuladas por el APU durante el fotograma.
+
+Si el Audio Mejorado (MP2K HLE) está activo y probado (`live()`), combina las voces
+en punto flotante (`hle_tap`) con los canales PSG (`psg_tap`). En caso contrario,
+o si existe `audio-enhanced-off.flag`, entrega la mezcla canónica fiel de `audio_buf`.
+
+**Firma:**
+```rust
+pub fn drain_audio_samples(&mut self) -> Vec<i16>
 ```
 
 ### `step_frame` (Función)
@@ -1903,6 +1916,42 @@ Consulta si el modo de renderizado acelerado en GPU (PPU Nativa) está activo.
 **Firma:**
 ```rust
 pub fn is_gpu_ppu_enabled(&self) -> bool
+```
+
+### `is_audio_enabled` (Función)
+
+Consulta si el audio nativo está habilitado en el puente.
+
+**Firma:**
+```rust
+pub fn is_audio_enabled(&self) -> bool
+```
+
+### `set_audio_enabled` (Función)
+
+Activa o desactiva la salida de audio nativo.
+
+**Firma:**
+```rust
+pub fn set_audio_enabled(&self, enabled: bool)
+```
+
+### `audio_underruns` (Función)
+
+Contador acumulado de eventos de subdesbordamiento (underruns) en audio.
+
+**Firma:**
+```rust
+pub fn audio_underruns(&self) -> u64
+```
+
+### `update_audio_underruns` (Función)
+
+Actualiza el contador de underruns reportado por el motor de audio.
+
+**Firma:**
+```rust
+pub fn update_audio_underruns(&self, count: u64)
 ```
 
 ### `set_gpu_ppu_enabled` (Función)
