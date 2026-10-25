@@ -54,7 +54,6 @@ pub const TOPE_SWAPCHAIN_PORTRAIT: u32 = 960;
 /// Alias de compatibilidad hacia atrás para el tope general.
 pub const TOPE_DIMENSION_SWAPCHAIN: u32 = TOPE_SWAPCHAIN_LANDSCAPE;
 
-
 /// Calcula la escala de render del swapchain respetando el tope de dimensión máxima
 /// según la orientación de la pantalla (apaisado vs retrato).
 pub fn calcular_escala_swapchain(w: u32, h: u32) -> f32 {
@@ -209,10 +208,7 @@ impl Tramo {
 /// Los tramos con `Rol::Sonda` nunca se adoptan, por buenos que sean: son
 /// mediciones para decidir, no configuraciones para aplicar.
 pub fn elegir_mejor(tramos: &[Tramo]) -> (Candidato, String) {
-    let referencia = match tramos
-        .iter()
-        .find(|t| t.candidato.rol == Rol::Referencia)
-    {
+    let referencia = match tramos.iter().find(|t| t.candidato.rol == Rol::Referencia) {
         Some(t) => t,
         None => {
             // Sin referencia declarada no hay nada seguro que aplicar.
@@ -255,7 +251,10 @@ pub fn elegir_mejor(tramos: &[Tramo]) -> (Candidato, String) {
 
     (
         referencia.candidato,
-        format!("sin mejora medible sobre la referencia ({:.1} ms)", present_ref),
+        format!(
+            "sin mejora medible sobre la referencia ({:.1} ms)",
+            present_ref
+        ),
     )
 }
 
@@ -285,12 +284,7 @@ impl PresentCalibration {
             Tramo::new(Candidato::new(1, modo_base, 1.0, Rol::Referencia)),
             Tramo::new(Candidato::new(2, modo_base, 1.0, Rol::Adoptable)),
             Tramo::new(Candidato::new(3, modo_base, 1.0, Rol::Adoptable)),
-            Tramo::new(Candidato::new(
-                3,
-                modo_base,
-                ESCALA_REDUCIDA,
-                Rol::Sonda,
-            )),
+            Tramo::new(Candidato::new(3, modo_base, ESCALA_REDUCIDA, Rol::Sonda)),
         ];
         if modos_disponibles.contains(&PresentMode::Immediate) {
             // Sonda: mide el techo sin VSync para distinguir si el bloqueo de

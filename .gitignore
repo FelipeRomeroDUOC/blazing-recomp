@@ -40,3 +40,14 @@ scripts/diagnostico/log_*.txt
 *.out
 
 
+
+# Hooks locales del arnés
+.agents/hooks.json
+.agents/hooks/
+
+# Grafo de conocimiento de la codebase (CodeGraph)
+.codegraph/
+
+# Estado efímero de la barra de agentes
+.agents/agent_state.json
+.agents/ui/

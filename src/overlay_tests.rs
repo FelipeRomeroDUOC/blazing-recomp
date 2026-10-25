@@ -15,11 +15,20 @@ fn test_overlay_geometry_matches_hitboxes() {
     // Cada elemento conserva el botón de su área de origen (zip en
     // el mismo orden: build_elems es map 1:1 sobre areas()).
     for (area, elem) in tc.areas().iter().zip(elems.iter()) {
-        assert_eq!(elem_radius_kind_ok(area, elem), true, "geometría de {:?}", area.button);
+        assert_eq!(
+            elem_radius_kind_ok(area, elem),
+            true,
+            "geometría de {:?}",
+            area.button
+        );
         assert!(
             (area.cx - elem.cx).abs() < 0.01 && (area.cy - elem.cy).abs() < 0.01,
             "centro de {:?} desviado: hitbox ({},{}) vs overlay ({},{})",
-            area.button, area.cx, area.cy, elem.cx, elem.cy
+            area.button,
+            area.cx,
+            area.cy,
+            elem.cx,
+            elem.cy
         );
         assert!(
             (area.radius - elem.radius).abs() < 0.01,
@@ -91,7 +100,9 @@ fn test_overlay_orientation_and_press_state() {
     let elems2 = build_elems(&layout(1080, 2400, Orientation::Portrait), |_| false);
     for elem in &elems2 {
         assert!(
-            (elem.color[0] - 0.56).abs() < 0.01 && (elem.color[1] - 0.58).abs() < 0.01 && (elem.color[2] - 0.70).abs() < 0.01,
+            (elem.color[0] - 0.56).abs() < 0.01
+                && (elem.color[1] - 0.58).abs() < 0.01
+                && (elem.color[2] - 0.70).abs() < 0.01,
             "todos los botones deben ser gris-lavanda uniforme"
         );
     }
@@ -225,7 +236,11 @@ fn test_font_atlas_contains_required_glyphs() {
     assert_eq!(atlas.height, 256);
     assert_eq!(atlas.data.len(), 256 * 256);
     let non_zero = atlas.data.iter().filter(|&&b| b > 0).count();
-    assert!(non_zero > 1000, "el atlas debe contener glifos rasterizados: {}", non_zero);
+    assert!(
+        non_zero > 1000,
+        "el atlas debe contener glifos rasterizados: {}",
+        non_zero
+    );
 
     // Validar que cada una de las 3 filas contiene cobertura de píxeles:
     // Fila 0 (A, B, L, R)
@@ -233,11 +248,17 @@ fn test_font_atlas_contains_required_glyphs() {
     assert!(row0_pixels > 200, "fila 0 (botones A/B/L/R) vacía");
 
     // Fila 1 (flechas cruceta)
-    let row1_pixels = atlas.data[64 * 256..128 * 256].iter().filter(|&&b| b > 0).count();
+    let row1_pixels = atlas.data[64 * 256..128 * 256]
+        .iter()
+        .filter(|&&b| b > 0)
+        .count();
     assert!(row1_pixels > 200, "fila 1 (flechas cruceta) vacía");
 
     // Fila 2 (etiquetas SELECT / START)
-    let row2_pixels = atlas.data[128 * 256..192 * 256].iter().filter(|&&b| b > 0).count();
+    let row2_pixels = atlas.data[128 * 256..192 * 256]
+        .iter()
+        .filter(|&&b| b > 0)
+        .count();
     assert!(row2_pixels > 200, "fila 2 (etiquetas SELECT/START) vacía");
 }
 
@@ -416,17 +437,52 @@ fn test_render_escala_bufer_y_wiring_de_calibracion() {
 fn test_decisiones_de_presentacion_declaradas() {
     let platform_src = include_str!("platform.rs");
     assert!(
-        platform_src.contains("const CALIBRAR_PRESENTACION: bool = true;"),
-        "el barrido está activo por el experimento 2026-10-14_reactivar-la-calibracion-de-presentacion; \
-         al cerrarlo, actualiza esta aserción y su motivo junto con la constante"
+        platform_src.contains("const CALIBRAR_PRESENTACION: bool = false;"),
+        "la calibración está desactivada para evitar reinicios de swapchain y la sonda de media resolución \
+         que generaba doble pantalla en TV con OpenGL ES (ver docs/propuestas/2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md)"
     );
     assert!(
         platform_src.contains("const PREFERIR_OPENGL_ES: bool ="),
         "el backend preferente debe declararse en una constante"
     );
     assert!(
-        platform_src.contains("let candidatos: [(wgpu::Backends, &str); 2] = if PREFERIR_OPENGL_ES"),
+        platform_src
+            .contains("let candidatos: [(wgpu::Backends, &str); 2] = if PREFERIR_OPENGL_ES"),
         "el orden de backends debe depender de la constante"
+    );
+}
+
+/// Criterio de aceptación: En el arranque de `android_main`, el escaneo de la ROM
+/// se ejecuta antes de solicitar permisos de almacenamiento al sistema,
+/// evitando abrir diálogos o perder el foco de SurfaceFlinger cuando la ROM ya es legible.
+#[test]
+fn test_arranque_no_pide_permisos_antes_de_escanear_rom() {
+    let platform_src = include_str!("platform.rs");
+    let pos_scan = platform_src
+        .find("scan_and_load_game(&search_dirs)")
+        .expect("debe buscar la ROM con scan_and_load_game");
+    let pos_perms = platform_src
+        .find("p.request_storage_permissions()")
+        .expect("debe solicitar permisos si la ROM no está");
+
+    assert!(
+        pos_scan < pos_perms,
+        "scan_and_load_game debe ejecutarse antes de solicitar permisos de almacenamiento al sistema"
+    );
+}
+
+/// Criterio de aceptación: En el ciclo de vida Android, `InitWindow` aguarda el primer fotograma real
+/// del worker antes de dibujar y `Resume` junto con `WindowResized` reconfiguran la superficie.
+#[test]
+fn test_init_window_y_resume_sincronizan_swapchain() {
+    let platform_src = include_str!("platform.rs");
+    assert!(
+        platform_src.contains("fn reconfigure_surface("),
+        "Compositor debe implementar reconfigure_surface para refrescar la superficie"
+    );
+    assert!(
+        platform_src.contains("c.reconfigure_surface("),
+        "El ciclo de vida debe sincronizar el swapchain con reconfigure_surface"
     );
 }
 
@@ -547,6 +603,12 @@ fn test_font_atlas_boundary_cells_and_empty_transparency() {
     }
 
     // Los glifos activos de las filas 0..2 deben tener al menos un píxel no nulo
-    let active_pixels = atlas.data[..reserved_start].iter().filter(|&&b| b > 0).count();
-    assert!(active_pixels > 500, "el atlas debe contener glifos rasterizados en filas 0..2");
+    let active_pixels = atlas.data[..reserved_start]
+        .iter()
+        .filter(|&&b| b > 0)
+        .count();
+    assert!(
+        active_pixels > 500,
+        "el atlas debe contener glifos rasterizados en filas 0..2"
+    );
 }

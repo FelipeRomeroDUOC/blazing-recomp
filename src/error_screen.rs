@@ -246,7 +246,9 @@ impl ErrorScreenRenderer {
             let (metrics, bitmap) = self.font.rasterize(ch, font_size);
             if metrics.width > 0 && metrics.height > 0 {
                 let glyph_x = (cur_x as i32 + metrics.xmin).max(0) as usize;
-                let glyph_y = (origin_y as i32 + (font_size as i32 - metrics.height as i32 - metrics.ymin)).max(0) as usize;
+                let glyph_y = (origin_y as i32
+                    + (font_size as i32 - metrics.height as i32 - metrics.ymin))
+                    .max(0) as usize;
 
                 for row in 0..metrics.height {
                     let py = glyph_y + row;
@@ -328,7 +330,8 @@ mod tests {
 
     #[test]
     fn test_error_screen_renders_multiline_text() {
-        let renderer = ErrorScreenRenderer::new().expect("Debe crear el renderer de pantalla de error");
+        let renderer =
+            ErrorScreenRenderer::new().expect("Debe crear el renderer de pantalla de error");
         let width = 400;
         let height = 300;
         let stride = 400;
@@ -370,14 +373,27 @@ mod tests {
         // Mensaje con 80 líneas que sobrepasa con creces la altura de 200 px
         let mut huge_msg = String::new();
         for i in 0..80 {
-            huge_msg.push_str(&format!("Volcado línea {i}: 0xDEADBEEF 0xCAFEBABE registro de depuración\n"));
+            huge_msg.push_str(&format!(
+                "Volcado línea {i}: 0xDEADBEEF 0xCAFEBABE registro de depuración\n"
+            ));
         }
 
         // No debe entrar en pánico ni escribir fuera del slice
-        renderer.render(&mut buffer, width, height, stride, bpp, "PÁNICO CRÍTICO", &huge_msg);
+        renderer.render(
+            &mut buffer,
+            width,
+            height,
+            stride,
+            bpp,
+            "PÁNICO CRÍTICO",
+            &huge_msg,
+        );
 
         let modified_count = buffer.iter().filter(|&&b| b > 0).count();
-        assert!(modified_count > 0, "Debe haber píxeles dibujados a pesar del truncamiento");
+        assert!(
+            modified_count > 0,
+            "Debe haber píxeles dibujados a pesar del truncamiento"
+        );
     }
 
     #[test]
@@ -403,7 +419,15 @@ mod tests {
         let bpp = 4;
         let mut buffer = vec![0u8; stride * height * bpp];
 
-        renderer.render(&mut buffer, width, height, stride, bpp, "STRIDE TEST", "Línea con padding");
+        renderer.render(
+            &mut buffer,
+            width,
+            height,
+            stride,
+            bpp,
+            "STRIDE TEST",
+            "Línea con padding",
+        );
 
         // Comprobar que ninguna columna entre width (200) y stride (260) fue tocada
         for y in 0..height {

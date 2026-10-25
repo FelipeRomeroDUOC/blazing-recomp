@@ -21,7 +21,7 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | [`overlay_shader.rs`](#módulo-overlay_shaderrs) | 3 | Módulo del shader del overlay: incluye el WGSL como constante y lo expone como `&str` para el pipeline y para el test de validación con Naga en host (criterio `test_overlay_shader_validates`). |
 | [`error_screen.rs`](#módulo-error_screenrs) | 4 | Renderizador de pantalla de error por software y blindaje de GPU. |
 | [`platform.rs`](#módulo-platformrs) | 2 | Plataforma Android (solo compila con `cfg(target_os = "android")`): ciclo de vida NativeActivity, presentación GPU, entrada táctil con háptica y logging a Logcat. |
-| [`storage.rs`](#módulo-storagers) | 14 | Módulo interno del port. |
+| [`storage.rs`](#módulo-storagers) | 15 | Módulo interno del port. |
 | [`runner.rs`](#módulo-runnerrs) | 25 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
 | [`recomp.rs`](#módulo-recomprs) | 30 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
 | [`fps.rs`](#módulo-fpsrs) | 18 | Contador de FPS y generador de HUD visual en pantalla. |
@@ -694,6 +694,16 @@ mostrando la guía de instalación en la pantalla virtual, sin recurrir a bloque
 pub fn render_guide_screen(buffer: &mut [[u8; 4]], title: &str, lines: &[&str])
 ```
 
+### `render_splash_screen` (Función)
+
+Renderiza una pantalla de carga (Splash) elegante y tipográfica en el framebuffer (240x160 px).
+Utiliza las fuentes oficiales Outfit-Bold y JetBrainsMono-Bold rasterizadas en el búfer.
+
+**Firma:**
+```rust
+pub fn render_splash_screen(buffer: &mut [[u8; 4]])
+```
+
 ---
 
 ## Módulo `runner.rs`
@@ -1009,7 +1019,7 @@ Retorna la tupla `(bloques_nativos_ejecutados, pasos_interprete_fallback)`.
 
 **Firma:**
 ```rust
-pub fn run_frame_native( m: &mut Machine, table: &BlockTable, max_steps: u64, ) -> (u64, u64)
+pub fn run_frame_native(m: &mut Machine, table: &BlockTable, max_steps: u64) -> (u64, u64)
 ```
 
 ### `ROM_REGION_START` (Constante)
@@ -1208,7 +1218,7 @@ del módulo o ejecutable actual (usado para resolver `libblazing_recompiled.so` 
 
 **Firma:**
 ```rust
-pub(crate) fn resolve_sibling_library_path(self_path: &str, sibling_name: &str) -> Option<std::path::PathBuf>
+pub(crate) fn resolve_sibling_library_path( self_path: &str, sibling_name: &str, ) -> Option<std::path::PathBuf>
 ```
 
 ### `open_library` (Función)
@@ -2998,7 +3008,7 @@ Decodifica una única paleta uniforme replicándola en las 160 líneas.
 
 **Firma:**
 ```rust
-pub fn decodificar_paleta_uniforme( palette: &[u8], destino: &mut [[u32; 512]; 160],
+pub fn decodificar_paleta_uniforme(palette: &[u8], destino: &mut [[u32; 512]; 160])
 ```
 
 ### `rango_filas_modificadas` (Función)
@@ -3022,7 +3032,7 @@ lista difiere del fotograma previo.
 
 **Firma:**
 ```rust
-pub fn sprites_modificados<T: PartialEq>( primera: bool, previos: &[T], actuales: &[T], ) -> bool
+pub fn sprites_modificados<T: PartialEq>(primera: bool, previos: &[T], actuales: &[T]) -> bool
 ```
 
 ### `QuadVertex` (Struct)

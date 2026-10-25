@@ -42,7 +42,7 @@ Catastro exhaustivo de tareas pendientes, refactorizaciones y deuda técnica rea
 
 ## 5. Renderizado GPU y PPU Nativa (Fase 0 / v0.0.2 y Fase 1 / v0.1.0 MVP)
 
-- [ ] **Desactivación de la sonda de calibración de arranque:** Apagar la constante `CALIBRAR_PRESENTACION` tras concluir los experimentos en TV Stick para eliminar los 3 segundos de mediciones y artefactos en el arranque.
+- [x] **Desactivación de la sonda de calibración de arranque:** Resuelto en [`docs/propuestas/2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md`](propuestas/2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md). Apagada la constante `CALIBRAR_PRESENTACION` a `false` tras concluir los experimentos en TV Stick, eliminando la reducción a media resolución (`0.5x`) causante de la segunda pantalla superpuesta en la esquina inferior izquierda con OpenGL ES y los reinicios innecesarios del swapchain.
 - [ ] **Liberación de memoria en cambio en caliente:** Liberar las texturas de la PPU nativa si el usuario activa el archivo de marca `ppu-nativa-off.flag`.
 - [ ] **Poda dinámica de búferes de sprites:** Dimensionar el búfer de instancias de la GPU en función del recuento real de sprites activos en lugar de reservar siempre el tamaño fijo para 128 sprites.
 - [ ] **Soporte de ventana OBJ en caminos optimizados:** Ampliar la evaluación de máscaras complejas si alguna escena secundaria lo requiere.

@@ -25,7 +25,7 @@
 //! Uso:
 //!   cargo run --release --features proto --example ppu_barrido_nativa -- <ruta.gba> <secuencia.txt> <desde> <hasta> [paso]
 
-use blazing_recomp::ppu_nativa::{EstadoPpuNativa};
+use blazing_recomp::ppu_nativa::EstadoPpuNativa;
 
 #[path = "comun/mod.rs"]
 mod comun;
@@ -33,7 +33,7 @@ mod comun;
 use comun::color::{canal_8bit, cerca_pixel, software_a_rgb};
 use comun::diagnostico::{self, EstadoRef, FiltroFirmas, Firma};
 use comun::entrada::leer_secuencia;
-use comun::gpu::{ALTO, ANCHO, Gpu};
+use comun::gpu::{Gpu, ALTO, ANCHO};
 
 /// Tamaños de los sprites: `[forma][tamaño]`.
 const OBJ_TAMANOS: [[(usize, usize); 4]; 3] = [
@@ -277,15 +277,30 @@ fn main() {
                         continue;
                     };
                     alguno = true;
-                    let firma = Firma { caso: caso.to_string(), caja: d.caja, dispcnt, bldcnt };
+                    let firma = Firma {
+                        caso: caso.to_string(),
+                        caja: d.caja,
+                        dispcnt,
+                        bldcnt,
+                    };
                     if !filtro.capturar(firma) {
                         println!("cuadro {cuadro}: {caso} repite la firma del cuadro anterior (sin captura)");
                         continue;
                     }
-                    match diagnostico::guardar_captura_si_difiere(dir_capturas, cuadro, caso, sw, &nativa) {
+                    match diagnostico::guardar_captura_si_difiere(
+                        dir_capturas,
+                        cuadro,
+                        caso,
+                        sw,
+                        &nativa,
+                    ) {
                         Ok(Some(r)) => {
                             capturas_escritas += 1;
-                            println!("cuadro {cuadro}: captura {caso} {} ({} px)", r.ruta.display(), r.distintos);
+                            println!(
+                                "cuadro {cuadro}: captura {caso} {} ({} px)",
+                                r.ruta.display(),
+                                r.distintos
+                            );
                         }
                         Ok(None) => {}
                         Err(e) => {
@@ -295,13 +310,23 @@ fn main() {
                     }
                 }
                 if alguno {
-                    let fin_estado = EstadoRef { io: &io, palette: &pal, vram: &vram, oam: &oam };
+                    let fin_estado = EstadoRef {
+                        io: &io,
+                        palette: &pal,
+                        vram: &vram,
+                        oam: &oam,
+                    };
                     #[cfg(feature = "proto")]
                     let lineas_estado: Vec<EstadoRef> = m
                         .bus
                         .capturas_linea
                         .iter()
-                        .map(|c| EstadoRef { io: &c.io, palette: &c.palette, vram: &c.vram, oam: &c.oam })
+                        .map(|c| EstadoRef {
+                            io: &c.io,
+                            palette: &c.palette,
+                            vram: &c.vram,
+                            oam: &c.oam,
+                        })
                         .collect();
                     #[cfg(not(feature = "proto"))]
                     let lineas_estado: Vec<EstadoRef> = Vec::new();
@@ -313,7 +338,9 @@ fn main() {
                         &lineas_estado,
                         |_, io_v| {
                             let nat_v = gpu.renderiza(&vram, &oam, &pal, io_v);
-                            let sw_v = software_a_rgb(&render_software(&rom, &vram, &oam, &pal, io_v, false));
+                            let sw_v = software_a_rgb(&render_software(
+                                &rom, &vram, &oam, &pal, io_v, false,
+                            ));
                             diagnostico::cuenta_distintos(&nat_v, &sw_v)
                         },
                     );

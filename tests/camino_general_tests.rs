@@ -15,7 +15,9 @@ fn rom_disponible() -> bool {
 }
 
 fn leer_informe() -> String {
-    let ruta = raiz().join("volcados").join("camino-general-cuadro-1000.txt");
+    let ruta = raiz()
+        .join("volcados")
+        .join("camino-general-cuadro-1000.txt");
     fs::read_to_string(&ruta).unwrap_or_else(|_| {
         panic!(
             "debe existir {}: correr antes el ejemplo ppu_camino_general",
@@ -43,8 +45,14 @@ fn test_informe_da_diferencias() {
         return;
     }
     let texto = leer_informe();
-    assert!(valor(&texto, "camino D0").is_some(), "debe dar D0 como entero");
-    assert!(valor(&texto, "camino D1").is_some(), "debe dar D1 como entero");
+    assert!(
+        valor(&texto, "camino D0").is_some(),
+        "debe dar D0 como entero"
+    );
+    assert!(
+        valor(&texto, "camino D1").is_some(),
+        "debe dar D1 como entero"
+    );
 }
 
 #[test]

@@ -30,11 +30,7 @@ fn arnes() -> PathBuf {
 
 /// Directorio temporal propio de cada test, limpio al empezar.
 fn dir_temporal(nombre: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "br-doradas-{}-{}",
-        nombre,
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("br-doradas-{}-{}", nombre, std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("el directorio temporal debe crearse");
     dir
@@ -51,7 +47,11 @@ fn relleno_uniforme(color: [u8; 3]) -> Vec<u8> {
 
 /// Escribe los píxeles como PPM P6, el formato exacto que escribe el motor (`dump_frame`).
 fn escribir_ppm(dir: &Path, nombre: &str, rgb: &[u8]) -> PathBuf {
-    assert_eq!(rgb.len(), 240 * 160 * 3, "el framebuffer de prueba debe tener 38400 pixeles");
+    assert_eq!(
+        rgb.len(),
+        240 * 160 * 3,
+        "el framebuffer de prueba debe tener 38400 pixeles"
+    );
     let mut bytes = b"P6\n240 160\n255\n".to_vec();
     bytes.extend_from_slice(rgb);
     let ruta = dir.join(nombre);
@@ -184,9 +184,18 @@ fn el_diferenciador_indica_el_pixel_que_cambia() {
         1,
         "un pixel cambiado es una regresion (codigo 1), no un error de entrada. Informe:\n{texto}"
     );
-    assert!(texto.contains("DIFIERE 1 px"), "el informe debe contar los pixeles: {texto}");
-    assert!(texto.contains("columna=64"), "el informe debe nombrar la columna: {texto}");
-    assert!(texto.contains("fila=18"), "el informe debe nombrar la fila: {texto}");
+    assert!(
+        texto.contains("DIFIERE 1 px"),
+        "el informe debe contar los pixeles: {texto}"
+    );
+    assert!(
+        texto.contains("columna=64"),
+        "el informe debe nombrar la columna: {texto}"
+    );
+    assert!(
+        texto.contains("fila=18"),
+        "el informe debe nombrar la fila: {texto}"
+    );
     assert!(
         texto.contains("caja x64-64 y18-18"),
         "el informe debe dar la caja envolvente: {texto}"
@@ -219,8 +228,15 @@ fn dos_fotogramas_identicos_no_reportan_diferencias() {
     ]);
     let texto = salida(&out);
 
-    assert_eq!(codigo_de_salida(&out), 0, "dos fotogramas iguales no son una regresion: {texto}");
-    assert!(texto.contains("sin diferencias"), "el informe debe decirlo: {texto}");
+    assert_eq!(
+        codigo_de_salida(&out),
+        0,
+        "dos fotogramas iguales no son una regresion: {texto}"
+    );
+    assert!(
+        texto.contains("sin diferencias"),
+        "el informe debe decirlo: {texto}"
+    );
     assert!(!mapa.exists(), "sin diferencias no debe escribirse mapa");
 }
 
@@ -241,8 +257,15 @@ fn un_ppm_corrupto_no_se_confunde_con_una_regresion() {
 
     let out = correr(&["diferenciar", buena.to_str().unwrap(), p5.to_str().unwrap()]);
     let texto = salida(&out);
-    assert_eq!(codigo_de_salida(&out), 2, "una cabecera distinta de P6 es error de entrada: {texto}");
-    assert!(texto.contains("cabecera"), "el mensaje debe nombrar el problema: {texto}");
+    assert_eq!(
+        codigo_de_salida(&out),
+        2,
+        "una cabecera distinta de P6 es error de entrada: {texto}"
+    );
+    assert!(
+        texto.contains("cabecera"),
+        "el mensaje debe nombrar el problema: {texto}"
+    );
 
     // Payload incompleto: 38399 pixeles en vez de 38400.
     let corto = dir.join("corto.ppm");
@@ -250,10 +273,21 @@ fn un_ppm_corrupto_no_se_confunde_con_una_regresion() {
     bytes_cortos.extend(std::iter::repeat_n(0u8, 38399 * 3));
     fs::write(&corto, bytes_cortos).expect("el PPM corto de prueba debe escribirse");
 
-    let out = correr(&["diferenciar", buena.to_str().unwrap(), corto.to_str().unwrap()]);
+    let out = correr(&[
+        "diferenciar",
+        buena.to_str().unwrap(),
+        corto.to_str().unwrap(),
+    ]);
     let texto = salida(&out);
-    assert_eq!(codigo_de_salida(&out), 2, "un PPM incompleto es error de entrada: {texto}");
-    assert!(texto.contains("38400"), "el mensaje debe nombrar el tamaño esperado: {texto}");
+    assert_eq!(
+        codigo_de_salida(&out),
+        2,
+        "un PPM incompleto es error de entrada: {texto}"
+    );
+    assert!(
+        texto.contains("38400"),
+        "el mensaje debe nombrar el tamaño esperado: {texto}"
+    );
 }
 
 // ---------------------------------------------------------------- escenario de regresion
@@ -269,7 +303,8 @@ fn los_dorados_desactualizados_no_se_comparan_en_vano() {
     // Guion de entrada falso (formato gba-input v1) y ficheros de ROM y BIOS fingidos:
     // para el rechazo solo importan sus hashes.
     let guion = dir.join("escena.input");
-    fs::write(&guion, "gba-input v1\n120 3f7\n128 3ff\n").expect("el guion de prueba debe escribirse");
+    fs::write(&guion, "gba-input v1\n120 3f7\n128 3ff\n")
+        .expect("el guion de prueba debe escribirse");
     let rom = dir.join("rom.gba");
     let bios = dir.join("bios.bin");
     fs::write(&rom, vec![0u8; 64]).expect("la ROM de prueba debe escribirse");

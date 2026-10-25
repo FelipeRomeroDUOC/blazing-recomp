@@ -27,11 +27,7 @@ pub const KNOWN_ROM_FILENAMES: &[&str] = &[
 ];
 
 /// Nombres de archivo comunes para la BIOS oficial de GBA.
-pub const KNOWN_BIOS_FILENAMES: &[&str] = &[
-    "gba_bios.bin",
-    "bios.bin",
-    "gba.bin",
-];
+pub const KNOWN_BIOS_FILENAMES: &[&str] = &["gba_bios.bin", "bios.bin", "gba.bin"];
 
 /// Assets del juego cargados y verificados en memoria listos para la ejecución.
 #[derive(Debug, Clone)]
@@ -332,6 +328,107 @@ pub fn render_guide_screen(buffer: &mut [[u8; 4]], title: &str, lines: &[&str]) 
         if cur_y >= 155 {
             break;
         }
+    }
+}
+
+/// Renderiza una pantalla de carga (Splash) elegante y tipográfica en el framebuffer (240x160 px).
+/// Utiliza las fuentes oficiales Outfit-Bold y JetBrainsMono-Bold rasterizadas en el búfer.
+pub fn render_splash_screen(buffer: &mut [[u8; 4]]) {
+    if buffer.len() != 240 * 160 {
+        return;
+    }
+    let font_outfit = match fontdue::Font::from_bytes(
+        crate::overlay::OUTFIT_FONT_BYTES,
+        fontdue::FontSettings::default(),
+    ) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+    let font_mono = match fontdue::Font::from_bytes(
+        crate::overlay::JETBRAINS_FONT_BYTES,
+        fontdue::FontSettings::default(),
+    ) {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+
+    // Fondo: gradiente sutil oscuro (#0B132B / negro azulado)
+    for y in 0..160 {
+        let factor = y as f32 / 160.0;
+        let r = (11.0 * (1.0 - factor * 0.4)) as u8;
+        let g = (19.0 * (1.0 - factor * 0.3)) as u8;
+        let b = (43.0 * (1.0 - factor * 0.3)) as u8;
+        for x in 0..240 {
+            buffer[y * 240 + x] = [r, g, b, 255];
+        }
+    }
+
+    // 1. Título principal: "BLAZING RECOMP" (Outfit Bold, 16px, centrado)
+    let title = "BLAZING RECOMP";
+    let title_size = 16.0f32;
+    let mut title_total_w = 0.0f32;
+    for ch in title.chars() {
+        let (metrics, _) = font_outfit.rasterize(ch, title_size);
+        title_total_w += metrics.advance_width;
+    }
+    let mut title_pen_x = ((240.0 - title_total_w) * 0.5).max(4.0);
+    let title_y = 52usize;
+
+    for ch in title.chars() {
+        let (metrics, bitmap) = font_outfit.rasterize(ch, title_size);
+        let start_x = (title_pen_x as usize).saturating_add(metrics.xmin.max(0) as usize);
+        let start_y = title_y.saturating_add(16usize.saturating_sub(metrics.height.min(16)));
+        for row in 0..metrics.height {
+            let py = start_y + row;
+            if py >= 160 {
+                continue;
+            }
+            for col in 0..metrics.width {
+                let px = start_x + col;
+                if px >= 240 {
+                    continue;
+                }
+                let alpha = bitmap[row * metrics.width + col];
+                if alpha > 20 {
+                    buffer[py * 240 + px] = [255, 214, 10, 255]; // Dorado GBA (#FFD60A)
+                }
+            }
+        }
+        title_pen_x += metrics.advance_width;
+    }
+
+    // 2. Subtítulo: "CARGANDO MOTOR..." (JetBrains Mono Bold, 9px, centrado)
+    let subtitle = "CARGANDO MOTOR...";
+    let sub_size = 9.0f32;
+    let mut sub_total_w = 0.0f32;
+    for ch in subtitle.chars() {
+        let (metrics, _) = font_mono.rasterize(ch, sub_size);
+        sub_total_w += metrics.advance_width;
+    }
+    let mut sub_pen_x = ((240.0 - sub_total_w) * 0.5).max(4.0);
+    let sub_y = 86usize;
+
+    for ch in subtitle.chars() {
+        let (metrics, bitmap) = font_mono.rasterize(ch, sub_size);
+        let start_x = (sub_pen_x as usize).saturating_add(metrics.xmin.max(0) as usize);
+        let start_y = sub_y;
+        for row in 0..metrics.height {
+            let py = start_y + row;
+            if py >= 160 {
+                continue;
+            }
+            for col in 0..metrics.width {
+                let px = start_x + col;
+                if px >= 240 {
+                    continue;
+                }
+                let alpha = bitmap[row * metrics.width + col];
+                if alpha > 30 {
+                    buffer[py * 240 + px] = [180, 205, 237, 255]; // Celeste suave (#B4CDED)
+                }
+            }
+        }
+        sub_pen_x += metrics.advance_width;
     }
 }
 

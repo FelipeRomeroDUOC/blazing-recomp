@@ -4,15 +4,17 @@
 
 use std::sync::Arc;
 
-use android_activity::input::{InputEvent, MotionEvent, MotionAction, KeyEvent, KeyAction, Keycode};
-use android_activity::{InputStatus, MainEvent, PollEvent};
 use crate::pipeline::{EmulationWorker, FramePacket};
+use android_activity::input::{
+    InputEvent, KeyAction, KeyEvent, Keycode, MotionAction, MotionEvent,
+};
+use android_activity::{InputStatus, MainEvent, PollEvent};
+use jni::{jni_sig, jni_str};
 use raw_window_handle::{
-    AndroidDisplayHandle, DisplayHandle, HandleError, HasDisplayHandle,
-    HasWindowHandle, RawDisplayHandle,
+    AndroidDisplayHandle, DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle,
+    RawDisplayHandle,
 };
 use screen::ScreenKind;
-use jni::{jni_sig, jni_str};
 
 use crate::input::TouchController;
 use crate::overlay::{build_elems_with_orientation, build_globals};
@@ -217,20 +219,14 @@ const PREFERIR_OPENGL_ES: bool = false;
 
 /// Calibración de presentación del arranque.
 ///
-/// **Activa (2026-10-14)** por el experimento
-/// `docs/propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md`: la
-/// decisión que la apagó se midió en una **tablet** (Snapdragon 610,
-/// `blazing-perf-5.txt`) y el objetivo hoy es el **Android TV**, otro SoC y otro
-/// compositor, así que el barrido vuelve a medir y a decidir allí. Al cerrar el
-/// experimento esto vuelve a `false` si no aparece mejora medible.
-///
-/// La decisión de 2026-10-10 sigue vigente en lo suyo: en la tablet solo la
-/// reducción de resolución bajaba el coste de `present` (51,4 ms → 2,9 ms; 18 →
-/// 53-60 FPS en retrato) y se decidió preservar la nitidez nativa, así que el
-/// tramo a media resolución es **sonda** y nunca se adopta. Con el barrido activo
-/// cada arranque gasta 12-15 s de mediciones y artefactos (3 s a media
-/// resolución). El mecanismo (`src/present.rs`) está implementado y probado.
-const CALIBRAR_PRESENTACION: bool = true;
+/// **Desactivada (2026-10-25)** conforme a la propuesta
+/// `docs/propuestas/2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md`:
+/// El experimento concluyó que el barrido en caliente (y en especial la sonda `0.5x` a media resolución)
+/// generaba artefactos graves en televisores con OpenGL ES (como la aparición de una segunda pantalla
+/// superpuesta en la esquina inferior izquierda al reducirse el viewport de la superficie EGL).
+/// Para preservar la nitidez nativa y garantizar arranque inmediato a 60 FPS sin tirones,
+/// la calibración permanece en `false`.
+const CALIBRAR_PRESENTACION: bool = false;
 
 pub use crate::present::calcular_escala_swapchain;
 
@@ -309,7 +305,11 @@ fn create_gpu_context(
                     "Adaptador GPU inicializado con {nombre} (intento {} de {}, {})",
                     intento + 1,
                     candidatos.len(),
-                    if intento == 0 { "preferente" } else { "fallback" }
+                    if intento == 0 {
+                        "preferente"
+                    } else {
+                        "fallback"
+                    }
                 );
                 return Ok((surface, adapter));
             }
@@ -337,10 +337,8 @@ impl Compositor {
         .map_err(|e| format!("graphics device: {e}"))?;
 
         let caps = surface.get_capabilities(&adapter);
-        let (format, mut alpha_mode) = crate::error_screen::select_surface_format_and_alpha(
-            &caps.formats,
-            &caps.alpha_modes,
-        );
+        let (format, mut alpha_mode) =
+            crate::error_screen::select_surface_format_and_alpha(&caps.formats, &caps.alpha_modes);
         // El compositor cubre SIEMPRE toda la superficie (clear negro + juego +
         // overlay + HUD), por lo que no hay transparencia hacia lo que hay detrás.
         // Forzar una superficie opaca evita que SurfaceFlinger componga la salida
@@ -357,7 +355,9 @@ impl Compositor {
         let rh = ((h as f32 * scale).round() as u32).max(1);
         let present_mode = if vsync {
             if caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
-                log::info!("PresentMode seleccionado: Mailbox (triple buffering libre de bloqueos)");
+                log::info!(
+                    "PresentMode seleccionado: Mailbox (triple buffering libre de bloqueos)"
+                );
                 wgpu::PresentMode::Mailbox
             } else if caps.present_modes.contains(&wgpu::PresentMode::FifoRelaxed) {
                 log::info!("PresentMode seleccionado: FifoRelaxed (VSync adaptable sin caídas)");
@@ -625,7 +625,8 @@ impl Compositor {
                 depth_or_array_layers: 1,
             },
         );
-        let overlay_font_view = overlay_font_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let overlay_font_view =
+            overlay_font_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let overlay_font_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("overlay-font-sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -727,8 +728,8 @@ impl Compositor {
             cache: None,
         });
 
-        let mut fps_counter = crate::fps::FpsCounter::new()
-            .map_err(|e| format!("fps counter init: {e}"))?;
+        let mut fps_counter =
+            crate::fps::FpsCounter::new().map_err(|e| format!("fps counter init: {e}"))?;
         let backend_name = match adapter.get_info().backend {
             wgpu::Backend::Vulkan => "Vulkan",
             _ => "OpenGL",
@@ -877,6 +878,30 @@ impl Compositor {
         &self.present_modes
     }
 
+    /// Reconfigura explícitamente el swapchain según las dimensiones físicas de la ventana.
+    /// Invalida las memorias caché de uniformes para forzar su reescritura en GPU.
+    fn reconfigure_surface(&mut self, window_physical: (u32, u32)) {
+        let (w, h) = (window_physical.0.max(1), window_physical.1.max(1));
+        self.physical = (w, h);
+        self.scale = calcular_escala_swapchain(w, h);
+        let (rw, rh) = self.render_target();
+        self.config.width = rw;
+        self.config.height = rh;
+        log::info!(
+            "compositor: reconfigurando superficie a {}x{} (física: {}x{}, escala: {:.2})",
+            rw,
+            rh,
+            w,
+            h,
+            self.scale
+        );
+        self.surface.configure(&self.device, &self.config);
+        self.ultimo_game_params = None;
+        self.ultimo_hud_params = None;
+        self.ultimo_overlay_globals = None;
+        self.ultimo_overlay_elems = None;
+    }
+
     /// Tamaño del búfer del swapchain: la ventana física escalada. Pedir un
     /// búfer menor que la ventana es legítimo (el compositor lo reescala a
     /// pantalla completa vía `ANativeWindow_setBuffersGeometry`) y reduce tanto
@@ -988,7 +1013,8 @@ impl Compositor {
             true
         } else {
             debug_assert_eq!(rgba.len(), GBA_PIXELS);
-            let rgba_bytes = unsafe { std::slice::from_raw_parts(rgba.as_ptr().cast(), rgba.len() * 4) };
+            let rgba_bytes =
+                unsafe { std::slice::from_raw_parts(rgba.as_ptr().cast(), rgba.len() * 4) };
             self.queue.write_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &self.game_texture,
@@ -1032,14 +1058,7 @@ impl Compositor {
         };
 
         let game_params: [f32; 8] = [
-            origin_x,
-            origin_y,
-            dst_w,
-            dst_h,
-            rw as f32,
-            rh as f32,
-            0.0,
-            0.0,
+            origin_x, origin_y, dst_w, dst_h, rw as f32, rh as f32, 0.0, 0.0,
         ];
         if self.ultimo_game_params != Some(game_params) {
             self.queue.write_buffer(
@@ -1065,14 +1084,13 @@ impl Compositor {
             }
 
             let escala_render = self.scale;
-            let elems: Vec<crate::overlay::ElemParams> = build_elems_with_orientation(
-                touch.areas(),
-                touch.orientation(),
-                |b| touch.is_pressed(b),
-            )
-            .into_iter()
-            .map(|e| e.scaled(escala_render))
-            .collect();
+            let elems: Vec<crate::overlay::ElemParams> =
+                build_elems_with_orientation(touch.areas(), touch.orientation(), |b| {
+                    touch.is_pressed(b)
+                })
+                .into_iter()
+                .map(|e| e.scaled(escala_render))
+                .collect();
             let mut elems_packed = [0.0f32; 12 * 16];
             for (i, elem) in elems.iter().take(12).enumerate() {
                 let p = elem.pack();
@@ -1155,7 +1173,11 @@ impl Compositor {
         let t_wait_start = std::time::Instant::now();
         let frame = match self.surface.get_current_texture() {
             Ok(f) => f,
-            Err(wgpu::SurfaceError::Outdated | wgpu::SurfaceError::Lost | wgpu::SurfaceError::OutOfMemory) => {
+            Err(
+                wgpu::SurfaceError::Outdated
+                | wgpu::SurfaceError::Lost
+                | wgpu::SurfaceError::OutOfMemory,
+            ) => {
                 self.surface.configure(&self.device, &self.config);
                 self.surface
                     .get_current_texture()
@@ -1264,8 +1286,7 @@ impl Haptics {
         let activity = vm
             .attach_current_thread(|env| -> Result<_, jni::errors::Error> {
                 // SAFETY: puntero de Activity válido entregado arriba.
-                let obj =
-                    unsafe { jni::objects::JObject::from_raw(env, activity_ptr.cast()) };
+                let obj = unsafe { jni::objects::JObject::from_raw(env, activity_ptr.cast()) };
                 let global = env.new_global_ref(&obj)?;
                 // El handle original es una referencia global mantenida
                 // por android-activity, no un local: no se borra como
@@ -1313,7 +1334,10 @@ impl Haptics {
                         &effect_class,
                         jni_str!("createOneShot"),
                         jni_sig!("(JI)Landroid/os/VibrationEffect;"),
-                        &[jni::objects::JValue::Long(ms), jni::objects::JValue::Int(-1)],
+                        &[
+                            jni::objects::JValue::Long(ms),
+                            jni::objects::JValue::Int(-1),
+                        ],
                     )?
                     .l()?;
                 env.call_method(
@@ -1365,8 +1389,7 @@ impl PermissionsManager {
         let vm = unsafe { jni::JavaVM::from_raw(vm_ptr.cast()) };
         let activity = vm
             .attach_current_thread(|env| -> Result<_, jni::errors::Error> {
-                let obj =
-                    unsafe { jni::objects::JObject::from_raw(env, activity_ptr.cast()) };
+                let obj = unsafe { jni::objects::JObject::from_raw(env, activity_ptr.cast()) };
                 let global = env.new_global_ref(&obj)?;
                 std::mem::forget(obj);
                 Ok(global)
@@ -1381,11 +1404,7 @@ impl PermissionsManager {
         let run = |env: &mut jni::Env| -> Result<(), jni::errors::Error> {
             let build_version_class = env.find_class(jni_str!("android/os/Build$VERSION"))?;
             let sdk_int = env
-                .get_static_field(
-                    &build_version_class,
-                    jni_str!("SDK_INT"),
-                    jni_sig!("I"),
-                )?
+                .get_static_field(&build_version_class, jni_str!("SDK_INT"), jni_sig!("I"))?
                 .i()?;
 
             log::info!("permisos: Android SDK_INT = {sdk_int}");
@@ -1402,7 +1421,10 @@ impl PermissionsManager {
                 self.activity.as_obj(),
                 jni_str!("requestPermissions"),
                 jni_sig!("([Ljava/lang/String;I)V"),
-                &[jni::objects::JValue::Object(&perms), jni::objects::JValue::Int(1001)],
+                &[
+                    jni::objects::JValue::Object(&perms),
+                    jni::objects::JValue::Int(1001),
+                ],
             );
             if env.exception_check() {
                 env.exception_clear();
@@ -1423,7 +1445,8 @@ impl PermissionsManager {
                 if !is_manager {
                     log::info!("permisos: MANAGE_EXTERNAL_STORAGE pendiente; abriendo pantalla del sistema");
                     let intent_class = env.find_class(jni_str!("android/content/Intent"))?;
-                    let action = env.new_string("android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION")?;
+                    let action =
+                        env.new_string("android.settings.MANAGE_APP_ALL_FILES_ACCESS_PERMISSION")?;
                     let intent = env.new_object(
                         &intent_class,
                         jni_sig!("(Ljava/lang/String;)V"),
@@ -1432,12 +1455,14 @@ impl PermissionsManager {
 
                     let uri_str = env.new_string("package:com.blazingrecomp.game")?;
                     let uri_class = env.find_class(jni_str!("android/net/Uri"))?;
-                    let uri = env.call_static_method(
-                        &uri_class,
-                        jni_str!("parse"),
-                        jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
-                        &[jni::objects::JValue::Object(&uri_str)],
-                    )?.l()?;
+                    let uri = env
+                        .call_static_method(
+                            &uri_class,
+                            jni_str!("parse"),
+                            jni_sig!("(Ljava/lang/String;)Landroid/net/Uri;"),
+                            &[jni::objects::JValue::Object(&uri_str)],
+                        )?
+                        .l()?;
 
                     let _ = env.call_method(
                         &intent,
@@ -1455,7 +1480,8 @@ impl PermissionsManager {
 
                     if start_res.is_err() {
                         env.exception_clear();
-                        let action_generic = env.new_string("android.settings.MANAGE_ALL_FILES_ACCESS_PERMISSION")?;
+                        let action_generic =
+                            env.new_string("android.settings.MANAGE_ALL_FILES_ACCESS_PERMISSION")?;
                         let generic_intent = env.new_object(
                             &intent_class,
                             jni_sig!("(Ljava/lang/String;)V"),
@@ -1488,40 +1514,56 @@ impl PermissionsManager {
     /// o carece de pantalla táctil física (como TV Boxes con firmware AOSP).
     fn is_television(&self) -> bool {
         let run = |env: &mut jni::Env| -> Result<bool, jni::errors::Error> {
-            let res_obj = env.call_method(
-                self.activity.as_obj(),
-                jni_str!("getResources"),
-                jni_sig!("()Landroid/content/res/Resources;"),
-                &[],
-            )?.l()?;
-            let conf_obj = env.call_method(
-                &res_obj,
-                jni_str!("getConfiguration"),
-                jni_sig!("()Landroid/content/res/Configuration;"),
-                &[],
-            )?.l()?;
-            let ui_mode = env.get_field(&conf_obj, jni_str!("uiMode"), jni_sig!("I"))?.i()?;
+            let res_obj = env
+                .call_method(
+                    self.activity.as_obj(),
+                    jni_str!("getResources"),
+                    jni_sig!("()Landroid/content/res/Resources;"),
+                    &[],
+                )?
+                .l()?;
+            let conf_obj = env
+                .call_method(
+                    &res_obj,
+                    jni_str!("getConfiguration"),
+                    jni_sig!("()Landroid/content/res/Configuration;"),
+                    &[],
+                )?
+                .l()?;
+            let ui_mode = env
+                .get_field(&conf_obj, jni_str!("uiMode"), jni_sig!("I"))?
+                .i()?;
             let conf_class = env.find_class(jni_str!("android/content/res/Configuration"))?;
-            let tv_mode = env.get_static_field(&conf_class, jni_str!("UI_MODE_TYPE_TELEVISION"), jni_sig!("I"))?.i()?;
+            let tv_mode = env
+                .get_static_field(
+                    &conf_class,
+                    jni_str!("UI_MODE_TYPE_TELEVISION"),
+                    jni_sig!("I"),
+                )?
+                .i()?;
             if (ui_mode & 0x0F) == tv_mode {
                 return Ok(true);
             }
 
             // Detección complementaria para TV Boxes genéricos (firmwares AOSP sin flag de TV):
             // verificar si el hardware carece de pantalla táctil ("android.hardware.touchscreen").
-            let pm = env.call_method(
-                self.activity.as_obj(),
-                jni_str!("getPackageManager"),
-                jni_sig!("()Landroid/content/pm/PackageManager;"),
-                &[],
-            )?.l()?;
+            let pm = env
+                .call_method(
+                    self.activity.as_obj(),
+                    jni_str!("getPackageManager"),
+                    jni_sig!("()Landroid/content/pm/PackageManager;"),
+                    &[],
+                )?
+                .l()?;
             let feature_touch = env.new_string("android.hardware.touchscreen")?;
-            let has_touch = env.call_method(
-                &pm,
-                jni_str!("hasSystemFeature"),
-                jni_sig!("(Ljava/lang/String;)Z"),
-                &[jni::objects::JValue::Object(&feature_touch)],
-            )?.z()?;
+            let has_touch = env
+                .call_method(
+                    &pm,
+                    jni_str!("hasSystemFeature"),
+                    jni_sig!("(Ljava/lang/String;)Z"),
+                    &[jni::objects::JValue::Object(&feature_touch)],
+                )?
+                .z()?;
             Ok(!has_touch)
         };
         match self.vm.attach_current_thread(run) {
@@ -1558,8 +1600,20 @@ fn init_perf_file(
                 }
             );
             if f.write_all(header.as_bytes()).is_ok() && f.flush().is_ok() {
-                let _ = f.write_all(format!("# audio_timing={}\n", crate::perf::audio_timing_flag_enabled(search_dirs)).as_bytes());
-                let _ = f.write_all(format!("# ppu_nativa={}\n", crate::ppu_nativa::ppu_nativa_activada(search_dirs)).as_bytes());
+                let _ = f.write_all(
+                    format!(
+                        "# audio_timing={}\n",
+                        crate::perf::audio_timing_flag_enabled(search_dirs)
+                    )
+                    .as_bytes(),
+                );
+                let _ = f.write_all(
+                    format!(
+                        "# ppu_nativa={}\n",
+                        crate::ppu_nativa::ppu_nativa_activada(search_dirs)
+                    )
+                    .as_bytes(),
+                );
                 log::info!("Telemetría de rendimiento iniciada en {:?}", candidate);
                 return Some(f);
             }
@@ -1619,6 +1673,8 @@ struct AppState {
 impl AppState {
     fn new() -> AppState {
         let screen_kind = ScreenKind::Frontlit;
+        let mut placeholder_rgba = vec![[0, 0, 0, 255]; GBA_PIXELS];
+        crate::storage::render_splash_screen(&mut placeholder_rgba);
         AppState {
             worker: None,
             waker: None,
@@ -1626,7 +1682,7 @@ impl AppState {
             compositor: None,
             window: None,
             screen_kind,
-            placeholder_rgba: vec![[0, 0, 0, 255]; GBA_PIXELS],
+            placeholder_rgba,
             touch: TouchController::new(),
             physical_key_mask: 0x03FF,
             haptics: None,
@@ -1652,7 +1708,9 @@ impl AppState {
         if self.error_renderer.is_none() {
             self.error_renderer = crate::error_screen::ErrorScreenRenderer::new().ok();
         }
-        let Some(renderer) = &self.error_renderer else { return };
+        let Some(renderer) = &self.error_renderer else {
+            return;
+        };
 
         let native_win = window.native_window();
         if let Ok(mut guard) = native_win.lock(None) {
@@ -1680,7 +1738,9 @@ impl AppState {
             None,
             self.waker.clone(),
         );
-        worker.bridge().set_gpu_ppu_enabled(self.ppu_nativa_activa && !FORZAR_PPU_SOFTWARE);
+        worker
+            .bridge()
+            .set_gpu_ppu_enabled(self.ppu_nativa_activa && !FORZAR_PPU_SOFTWARE);
         log::info!("PPU GPU activada en EmulationWorker");
         self.worker = Some(worker);
     }
@@ -1771,14 +1831,22 @@ impl AppState {
             return None;
         }
 
-        let Some(window) = &self.window else { return None; };
+        let Some(window) = &self.window else {
+            return None;
+        };
         let (w, h) = window.size();
         if w > 0 && h > 0 && self.touch.size() != (w, h) {
             self.touch.resize(w, h);
         }
-        let Some(compositor) = self.compositor.as_mut() else { return None; };
+        let Some(compositor) = self.compositor.as_mut() else {
+            return None;
+        };
         let (frame, ppu_state, is_native) = if let Some(packet) = &self.latest_frame {
-            (packet.rgba.as_slice(), packet.ppu_state.as_ref(), packet.is_native)
+            (
+                packet.rgba.as_slice(),
+                packet.ppu_state.as_ref(),
+                packet.is_native,
+            )
         } else {
             (self.placeholder_rgba.as_slice(), None, false)
         };
@@ -1813,7 +1881,11 @@ impl AppState {
     /// cierra la ventana de rendimiento, para que el cambio quede registrado
     /// en el Logcat y en `blazing-perf.txt`.
     fn reevaluar_ppu_nativa(&mut self) {
-        if self.compositor.as_ref().map_or(false, |c| c.ppu_nativa_fallida) {
+        if self
+            .compositor
+            .as_ref()
+            .map_or(false, |c| c.ppu_nativa_fallida)
+        {
             return;
         }
         let activa = crate::ppu_nativa::ppu_nativa_activada(&self.search_dirs);
@@ -1822,7 +1894,9 @@ impl AppState {
         }
         self.ppu_nativa_activa = activa;
         if let Some(worker) = &self.worker {
-            worker.bridge().set_gpu_ppu_enabled(activa && !FORZAR_PPU_SOFTWARE);
+            worker
+                .bridge()
+                .set_gpu_ppu_enabled(activa && !FORZAR_PPU_SOFTWARE);
         }
         if activa {
             log::info!("PPU nativa: ACTIVADA (marca de apagado retirada)");
@@ -1884,11 +1958,7 @@ impl AppState {
     /// escala), para poder correlacionarlo con la telemetría.
     fn aplicar_candidato(&mut self, candidato: crate::present::Candidato) {
         if let Some(comp) = self.compositor.as_mut() {
-            comp.aplicar_present_config(
-                candidato.latency,
-                candidato.present_mode,
-                candidato.scale,
-            );
+            comp.aplicar_present_config(candidato.latency, candidato.present_mode, candidato.scale);
         }
         if let Some(comp) = self.compositor.as_ref() {
             log::info!(
@@ -2017,7 +2087,10 @@ impl AppState {
                 let prev = self.physical_key_mask;
                 self.physical_key_mask &= !bit; // activo en bajo (0 = presionado)
                 if prev != self.physical_key_mask {
-                    log::debug!("key down: {button:?} (mask: {:#06x})", self.physical_key_mask);
+                    log::debug!(
+                        "key down: {button:?} (mask: {:#06x})",
+                        self.physical_key_mask
+                    );
                     self.publish_keys();
                     true
                 } else {
@@ -2123,14 +2196,14 @@ pub fn android_main(app: android_activity::AndroidApp) {
         state.waker = Some(Arc::new(move || {
             app_waker.wake();
         }));
+        // Conexión con servicios JNI del sistema
         state.haptics = Haptics::connect(app.vm_as_ptr(), app.activity_as_ptr());
-
-        // Comprobación y solicitud proactiva de permisos de almacenamiento en el arranque
         let permissions = PermissionsManager::connect(app.vm_as_ptr(), app.activity_as_ptr());
         if let Some(ref p) = permissions {
-            p.request_storage_permissions();
             if p.is_television() {
-                log::info!("Dispositivo Android TV detectado: desactivando overlay táctil en pantalla");
+                log::info!(
+                    "Dispositivo Android TV detectado: desactivando overlay táctil en pantalla"
+                );
                 state.touch.touch_enabled = false;
             }
         }
@@ -2153,7 +2226,10 @@ pub fn android_main(app: android_activity::AndroidApp) {
         if state.ppu_nativa_activa {
             log::info!("PPU nativa: ACTIVADA por defecto al arrancar");
         }
-        log::info!("Iniciando escaneo de ROM oficial en directorios: {:?}", search_dirs);
+        log::info!(
+            "Iniciando escaneo de ROM oficial en directorios: {:?}",
+            search_dirs
+        );
         match crate::storage::scan_and_load_game(&search_dirs) {
             Ok(assets) => {
                 log::info!(
@@ -2164,7 +2240,12 @@ pub fn android_main(app: android_activity::AndroidApp) {
                 state.load(assets.rom, assets.bios.as_deref());
             }
             Err(e) => {
-                log::warn!("ROM oficial no encontrada ({e}). Generando pantalla instructiva en GPU.");
+                log::warn!(
+                    "ROM oficial no encontrada ({e}). Solicitando permisos de almacenamiento si no están concedidos."
+                );
+                if let Some(ref p) = permissions {
+                    p.request_storage_permissions();
+                }
                 let ext_path_display = external_dir
                     .as_ref()
                     .map(|p| p.display().to_string())
@@ -2218,10 +2299,28 @@ pub fn android_main(app: android_activity::AndroidApp) {
                             state.create_compositor(
                                 app.native_window().map(AndroidWindow::new).map(Arc::new),
                             );
+                            // Si el worker de emulación está activo pero aún no entregó el primer fotograma,
+                            // esperar brevemente (máx 100 ms) para dibujar directo el frame del juego
+                            // y evitar congelar SurfaceFlinger con un cuadro negro preliminar.
+                            if let Some(worker) = &state.worker {
+                                let t_wait_frame = std::time::Instant::now();
+                                while state.latest_frame.is_none()
+                                    && t_wait_frame.elapsed() < std::time::Duration::from_millis(100)
+                                {
+                                    if let Some(packet) = worker.bridge().try_recv_frame() {
+                                        state.latest_frame = Some(packet);
+                                        break;
+                                    }
+                                    std::thread::sleep(std::time::Duration::from_millis(2));
+                                }
+                            }
                             state.redraw();
                         }
                         MainEvent::WindowResized { .. } | MainEvent::RedrawNeeded { .. } => {
-                            log::info!("ciclo de vida: redibujar ventana");
+                            log::info!("ciclo de vida: redibujar/redimensionar ventana");
+                            if let (Some(c), Some(w)) = (state.compositor.as_mut(), state.window.as_ref()) {
+                                c.reconfigure_surface(w.size());
+                            }
                             state.redraw();
                         }
                         MainEvent::TerminateWindow { .. } => {
@@ -2231,6 +2330,14 @@ pub fn android_main(app: android_activity::AndroidApp) {
                         MainEvent::Resume { .. } => {
                             log::info!("ciclo de vida: Resume");
                             resumed = true;
+                            // Si la ventana nativa ya existe pero el compositor no se había creado
+                            // (ej. tras cerrar el diálogo flotante de permisos), crearlo de inmediato.
+                            if state.compositor.is_none() && state.window.is_some() {
+                                log::info!("ciclo de vida: creando compositor en Resume tras interacción del sistema");
+                                state.create_compositor(state.window.clone());
+                            } else if let (Some(c), Some(w)) = (state.compositor.as_mut(), state.window.as_ref()) {
+                                c.reconfigure_surface(w.size());
+                            }
                             if let Some(worker) = &state.worker {
                                 worker.bridge().set_paused(false);
                             }
@@ -2244,6 +2351,7 @@ pub fn android_main(app: android_activity::AndroidApp) {
                                     state.load(assets.rom, assets.bios.as_deref());
                                 }
                             }
+                            state.redraw();
                         }
                         MainEvent::Pause => {
                             log::info!("ciclo de vida: Pause");
@@ -2284,7 +2392,9 @@ pub fn android_main(app: android_activity::AndroidApp) {
             // Si aún no se ha cargado el juego (ej. usuario concedió permisos en Android 9 emulado sin onResume),
             // reintentar escaneo al tocar la pantalla o cada 1 segundo automáticamente.
             if resumed && state.worker.is_none() {
-                if needs_redraw || last_scan_attempt.elapsed() >= std::time::Duration::from_millis(1000) {
+                if needs_redraw
+                    || last_scan_attempt.elapsed() >= std::time::Duration::from_millis(1000)
+                {
                     last_scan_attempt = std::time::Instant::now();
                     if let Ok(assets) = crate::storage::scan_and_load_game(&search_dirs) {
                         log::info!(
@@ -2310,7 +2420,10 @@ pub fn android_main(app: android_activity::AndroidApp) {
 
                         let phases = gpu_timing.unwrap_or_default();
                         let hw_sample = muestrear_ppu_hw(
-                            state.latest_frame.as_ref().and_then(|p| p.ppu_state.as_ref()),
+                            state
+                                .latest_frame
+                                .as_ref()
+                                .and_then(|p| p.ppu_state.as_ref()),
                             phases.is_gpu,
                             phases.es_nativa,
                         );
@@ -2438,4 +2551,3 @@ pub fn android_main(app: android_activity::AndroidApp) {
 
     log::info!("Blazing Recomp: android_main finalizado");
 }
-

@@ -55,7 +55,14 @@ pub fn build_font_atlas() -> FontAtlas {
     let height = 256usize;
     let mut data = vec![0u8; width * height];
 
-    let blit = |data: &mut [u8], bitmap: &[u8], bw: usize, bh: usize, rx: usize, ry: usize, rw: usize, rh: usize| {
+    let blit = |data: &mut [u8],
+                bitmap: &[u8],
+                bw: usize,
+                bh: usize,
+                rx: usize,
+                ry: usize,
+                rw: usize,
+                rh: usize| {
         if bw == 0 || bh == 0 {
             return;
         }
@@ -81,7 +88,16 @@ pub fn build_font_atlas() -> FontAtlas {
     ];
     for (ch, col, row) in letters {
         let (metrics, bitmap) = outfit.rasterize(ch, 44.0);
-        blit(&mut data, &bitmap, metrics.width, metrics.height, col * 64, row * 64, 64, 64);
+        blit(
+            &mut data,
+            &bitmap,
+            metrics.width,
+            metrics.height,
+            col * 64,
+            row * 64,
+            64,
+            64,
+        );
     }
 
     // Fila 1 (y: 64..128): Flechas direccionales de la cruceta (▲, ▼, ◀, ▶)
@@ -121,10 +137,7 @@ pub fn build_font_atlas() -> FontAtlas {
     }
 
     // Fila 2 (y: 128..192): Etiquetas de sistema (SELECT, START) en JetBrains Mono Bold
-    let labels = [
-        ("SELECT", 0usize, 2usize),
-        ("START", 1usize, 2usize),
-    ];
+    let labels = [("SELECT", 0usize, 2usize), ("START", 1usize, 2usize)];
     for (text, col, row) in labels {
         let rx = col * 128;
         let ry = row * 64;
@@ -239,7 +252,7 @@ impl ElemParams {
 fn button_color(_button: crate::input::Button, orientation: crate::input::Orientation) -> [f32; 3] {
     use crate::input::Orientation::*;
     match orientation {
-        Portrait => [0.56, 0.58, 0.70],  // gris-lavanda uniforme (#a4a9c5 / #7b819f)
+        Portrait => [0.56, 0.58, 0.70], // gris-lavanda uniforme (#a4a9c5 / #7b819f)
         Landscape => [0.72, 0.75, 0.82], // gris claro translúcido escarchado
     }
 }

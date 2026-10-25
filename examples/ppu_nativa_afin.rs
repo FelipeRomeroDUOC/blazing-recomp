@@ -31,7 +31,7 @@
 mod comun;
 
 use comun::color::{canal_8bit, cerca_pixel};
-use comun::gpu::{ALTO, ANCHO, Gpu};
+use comun::gpu::{Gpu, ALTO, ANCHO};
 
 const BASE_CHAR: usize = 0x0000;
 /// Base del mapa de pantalla: hasta 128×128 entradas de 1 byte (16 KB).
@@ -229,11 +229,7 @@ fn referencia(io: &[u8], vram: &[u8], pal: &[u8]) -> Vec<u16> {
 }
 
 fn rgb8(c: u16) -> [u8; 3] {
-    [
-        canal_8bit(c),
-        canal_8bit(c >> 5),
-        canal_8bit(c >> 10),
-    ]
+    [canal_8bit(c), canal_8bit(c >> 5), canal_8bit(c >> 10)]
 }
 
 fn main() {

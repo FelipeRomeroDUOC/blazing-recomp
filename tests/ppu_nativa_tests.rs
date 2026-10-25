@@ -16,8 +16,8 @@
 
 use blazing_recomp::ppu_nativa::{
     alpha_blend, brighten, darken, CapaFondoGpu, ConfigCapaGpu, ConfigCompGpu, SpriteNativa,
-    BINDING_FILAS_CAPA, BINDING_FILAS_COMP, BINDING_PALETA, BINDING_SPRITES,
-    BINDING_TEX_OBJ, BINDING_TEX_OBJ_VENTANA, BINDING_VRAM, PPU_NATIVA_WGSL,
+    BINDING_FILAS_CAPA, BINDING_FILAS_COMP, BINDING_PALETA, BINDING_SPRITES, BINDING_TEX_OBJ,
+    BINDING_TEX_OBJ_VENTANA, BINDING_VRAM, PPU_NATIVA_WGSL,
 };
 
 /// Miembros de una estructura del shader, con su desplazamiento en bytes.
@@ -61,9 +61,18 @@ fn los_desplazamientos_de_las_estructuras_coinciden() {
     let m = modulo();
 
     let rust_capafondo: Vec<(&str, u32)> = vec![
-        ("enabled", std::mem::offset_of!(CapaFondoGpu, enabled) as u32),
-        ("priority", std::mem::offset_of!(CapaFondoGpu, priority) as u32),
-        ("char_base", std::mem::offset_of!(CapaFondoGpu, char_base) as u32),
+        (
+            "enabled",
+            std::mem::offset_of!(CapaFondoGpu, enabled) as u32,
+        ),
+        (
+            "priority",
+            std::mem::offset_of!(CapaFondoGpu, priority) as u32,
+        ),
+        (
+            "char_base",
+            std::mem::offset_of!(CapaFondoGpu, char_base) as u32,
+        ),
         (
             "screen_base",
             std::mem::offset_of!(CapaFondoGpu, screen_base) as u32,
@@ -72,18 +81,42 @@ fn los_desplazamientos_de_las_estructuras_coinciden() {
             "screen_size",
             std::mem::offset_of!(CapaFondoGpu, screen_size) as u32,
         ),
-        ("is_8bpp", std::mem::offset_of!(CapaFondoGpu, is_8bpp) as u32),
-        ("scroll_x", std::mem::offset_of!(CapaFondoGpu, scroll_x) as u32),
-        ("scroll_y", std::mem::offset_of!(CapaFondoGpu, scroll_y) as u32),
-        ("es_afin", std::mem::offset_of!(CapaFondoGpu, es_afin) as u32),
+        (
+            "is_8bpp",
+            std::mem::offset_of!(CapaFondoGpu, is_8bpp) as u32,
+        ),
+        (
+            "scroll_x",
+            std::mem::offset_of!(CapaFondoGpu, scroll_x) as u32,
+        ),
+        (
+            "scroll_y",
+            std::mem::offset_of!(CapaFondoGpu, scroll_y) as u32,
+        ),
+        (
+            "es_afin",
+            std::mem::offset_of!(CapaFondoGpu, es_afin) as u32,
+        ),
         (
             "afin_wrap",
             std::mem::offset_of!(CapaFondoGpu, afin_wrap) as u32,
         ),
-        ("afin_pa", std::mem::offset_of!(CapaFondoGpu, afin_pa) as u32),
-        ("afin_pb", std::mem::offset_of!(CapaFondoGpu, afin_pb) as u32),
-        ("afin_pc", std::mem::offset_of!(CapaFondoGpu, afin_pc) as u32),
-        ("afin_pd", std::mem::offset_of!(CapaFondoGpu, afin_pd) as u32),
+        (
+            "afin_pa",
+            std::mem::offset_of!(CapaFondoGpu, afin_pa) as u32,
+        ),
+        (
+            "afin_pb",
+            std::mem::offset_of!(CapaFondoGpu, afin_pb) as u32,
+        ),
+        (
+            "afin_pc",
+            std::mem::offset_of!(CapaFondoGpu, afin_pc) as u32,
+        ),
+        (
+            "afin_pd",
+            std::mem::offset_of!(CapaFondoGpu, afin_pd) as u32,
+        ),
         (
             "afin_ref_x",
             std::mem::offset_of!(CapaFondoGpu, afin_ref_x) as u32,
@@ -122,7 +155,10 @@ fn los_desplazamientos_de_las_estructuras_coinciden() {
     }
 
     let rust_configcomp: Vec<(&str, u32)> = vec![
-        ("dispcnt", std::mem::offset_of!(ConfigCompGpu, dispcnt) as u32),
+        (
+            "dispcnt",
+            std::mem::offset_of!(ConfigCompGpu, dispcnt) as u32,
+        ),
         (
             "bg_prio0",
             std::mem::offset_of!(ConfigCompGpu, bg_prio0) as u32,
@@ -197,8 +233,7 @@ fn los_desplazamientos_de_las_estructuras_coinciden() {
     ];
     let shader_sprite = miembros_wgsl(&m, "SpriteNativa");
     assert_eq!(shader_sprite.len(), rust_sprite.len());
-    for ((nombre, off), (shader_nombre, shader_off)) in
-        rust_sprite.iter().zip(shader_sprite.iter())
+    for ((nombre, off), (shader_nombre, shader_off)) in rust_sprite.iter().zip(shader_sprite.iter())
     {
         assert_eq!(
             *shader_off, *off,
@@ -270,13 +305,7 @@ fn los_bindings_del_shader_coinciden_con_las_constantes_de_rust() {
 #[test]
 fn el_shader_expone_los_puntos_de_entrada_del_pipeline() {
     let m = modulo();
-    for punto in [
-        "vs_quad",
-        "vs_obj",
-        "fs_obj",
-        "fs_obj_ventana",
-        "fs_comp",
-    ] {
+    for punto in ["vs_quad", "vs_obj", "fs_obj", "fs_obj_ventana", "fs_comp"] {
         assert!(
             m.entry_points.iter().any(|e| e.name == punto),
             "falta el punto de entrada {punto}"
@@ -385,9 +414,7 @@ fn ningun_punto_de_entrada_de_vertices_lee_la_lista_de_sprites() {
     let (handle, global) = module
         .global_variables
         .iter()
-        .find(|(_, g)| {
-            matches!(g.binding, Some(b) if b.group == 0 && b.binding == BINDING_SPRITES)
-        })
+        .find(|(_, g)| matches!(g.binding, Some(b) if b.group == 0 && b.binding == BINDING_SPRITES))
         .expect("el shader debe declarar la lista de sprites");
     assert_eq!(global.name.as_deref(), Some("sprites"));
 
@@ -527,9 +554,7 @@ fn leer_informe(cuadro: u32) -> Option<String> {
 
 /// Extrae un número de una línea del informe que lo contiene.
 fn numero_de(texto: &str, etiqueta: &str) -> Option<u64> {
-    let linea = texto
-        .lines()
-        .find(|l| l.contains(etiqueta))?;
+    let linea = texto.lines().find(|l| l.contains(etiqueta))?;
     let resto = linea.split(etiqueta).nth(1)?;
     let digitos: String = resto
         .chars()
@@ -560,13 +585,19 @@ fn test_lineas_sin_afines_5300_coinciden() {
     };
     // El control del arnés: si falla, el informe no vale.
     assert_eq!(
-        numero_de(&texto, "control reconstruccion frente a framebuffer del emulador:"),
+        numero_de(
+            &texto,
+            "control reconstruccion frente a framebuffer del emulador:"
+        ),
         Some(0),
         "el control del arnés debe dar 0 diferencias"
     );
     // La PPU nativa tiene que coincidir con la referencia de fin de cuadro.
     assert_eq!(
-        numero_de(&texto, "diferencias frente a la referencia de estado de fin de cuadro:"),
+        numero_de(
+            &texto,
+            "diferencias frente a la referencia de estado de fin de cuadro:"
+        ),
         Some(0),
         "la PPU nativa debe coincidir con la referencia de fin de cuadro"
     );
@@ -615,13 +646,19 @@ fn test_cuadro_7500_sin_efectos_coincide() {
         return;
     };
     assert_eq!(
-        numero_de(&texto, "control reconstruccion frente a framebuffer del emulador:"),
+        numero_de(
+            &texto,
+            "control reconstruccion frente a framebuffer del emulador:"
+        ),
         Some(0),
         "el control del arnés debe dar 0 diferencias"
     );
     // 0 diferencias de 38400 contra la referencia de fin de cuadro...
     assert_eq!(
-        numero_de(&texto, "diferencias frente a la referencia de estado de fin de cuadro:"),
+        numero_de(
+            &texto,
+            "diferencias frente a la referencia de estado de fin de cuadro:"
+        ),
         Some(0),
         "la PPU nativa debe coincidir con la referencia de fin de cuadro"
     );
@@ -660,14 +697,20 @@ fn test_cuadro_900_escena3_fondo_afin_coincide() {
     };
     // El control del arnés: si falla, el informe no vale.
     assert_eq!(
-        numero_de(&texto, "control reconstruccion frente a framebuffer del emulador:"),
+        numero_de(
+            &texto,
+            "control reconstruccion frente a framebuffer del emulador:"
+        ),
         Some(0),
         "el control del arnés debe dar 0 diferencias"
     );
     // La PPU nativa tiene que coincidir con la referencia de fin de cuadro: el
     // fondo afín se dibuja.
     assert_eq!(
-        numero_de(&texto, "diferencias frente a la referencia de estado de fin de cuadro:"),
+        numero_de(
+            &texto,
+            "diferencias frente a la referencia de estado de fin de cuadro:"
+        ),
         Some(0),
         "la PPU nativa debe coincidir con la referencia de fin de cuadro"
     );
@@ -744,9 +787,8 @@ fn diferencias_de(linea: &str) -> Option<u64> {
 fn test_el_motor_base_y_el_shim_no_cambian() {
     let raiz = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let linea_base = raiz.join("tests/datos/ppu-nativa-hashes-base.txt");
-    let texto = std::fs::read_to_string(&linea_base).unwrap_or_else(|e| {
-        panic!("no se pudo leer {}: {e}", linea_base.display())
-    });
+    let texto = std::fs::read_to_string(&linea_base)
+        .unwrap_or_else(|e| panic!("no se pudo leer {}: {e}", linea_base.display()));
 
     // Localiza el checkout del rev fijado dentro del registro de Cargo.
     let cargo_home = std::env::var("CARGO_HOME").unwrap_or_else(|_| {

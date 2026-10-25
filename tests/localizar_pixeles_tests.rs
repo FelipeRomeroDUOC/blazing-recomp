@@ -64,7 +64,10 @@ fn test_control_coincide_con_juego() {
     let texto = leer("pixeles-obj-cuadro-1000.txt");
     let control = valor(&texto, "obj control completa vs juego")
         .expect("debe dar la diferencia de control con el juego");
-    assert_eq!(control, 0, "la variante completa debe coincidir con el juego");
+    assert_eq!(
+        control, 0,
+        "la variante completa debe coincidir con el juego"
+    );
 }
 
 #[test]
@@ -94,7 +97,9 @@ fn bg2_rom_disponible() -> bool {
 }
 
 fn bg2_leer_informe() -> String {
-    let ruta = bg2_raiz().join("volcados").join("contenido-bg2-cuadro-1000.txt");
+    let ruta = bg2_raiz()
+        .join("volcados")
+        .join("contenido-bg2-cuadro-1000.txt");
     std::fs::read_to_string(&ruta).unwrap_or_else(|_| {
         panic!(
             "debe existir {}: correr antes el ejemplo ppu_contenido_bg",

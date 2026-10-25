@@ -692,12 +692,7 @@ impl SpriteInstanciaGpu {
     /// Construye la instancia de un sprite ya decodificado.
     pub fn de_sprite(sprite: &SpriteNativa) -> Self {
         Self {
-            geometria: [
-                sprite.pos_x,
-                sprite.pos_y,
-                sprite.caja_x,
-                sprite.caja_y,
-            ],
+            geometria: [sprite.pos_x, sprite.pos_y, sprite.caja_x, sprite.caja_y],
             clave: [sprite.prioridad, sprite.oam_index],
         }
     }
@@ -1027,10 +1022,7 @@ impl EstadoPpuNativa {
     }
 
     /// Decodifica una única paleta uniforme replicándola en las 160 líneas.
-    pub fn decodificar_paleta_uniforme(
-        palette: &[u8],
-        destino: &mut [[u32; 512]; 160],
-    ) {
+    pub fn decodificar_paleta_uniforme(palette: &[u8], destino: &mut [[u32; 512]; 160]) {
         let mut fila = [0u32; 512];
         for (idx, slot) in fila.iter_mut().enumerate() {
             let off = idx * 2;
@@ -1079,11 +1071,7 @@ fn rango_bytes_modificados(previo: &[u8], actual: &[u8]) -> Option<(usize, usize
 /// si es el primer fotograma (`primera`) o si el contenido/longitud de la
 /// lista difiere del fotograma previo.
 #[inline]
-pub fn sprites_modificados<T: PartialEq>(
-    primera: bool,
-    previos: &[T],
-    actuales: &[T],
-) -> bool {
+pub fn sprites_modificados<T: PartialEq>(primera: bool, previos: &[T], actuales: &[T]) -> bool {
     if actuales.is_empty() {
         return false;
     }
@@ -1624,7 +1612,9 @@ impl PpuNativaPipeline {
             staging_sprites: Box::new([SpriteNativa::default(); MAX_SPRITES]),
             staging_sprites_ventana: Box::new([SpriteNativa::default(); MAX_SPRITES]),
             staging_sprites_instancia: Box::new([SpriteInstanciaGpu::default(); MAX_SPRITES]),
-            staging_sprites_instancia_ventana: Box::new([SpriteInstanciaGpu::default(); MAX_SPRITES]),
+            staging_sprites_instancia_ventana: Box::new(
+                [SpriteInstanciaGpu::default(); MAX_SPRITES],
+            ),
         }
     }
 
@@ -1639,7 +1629,17 @@ impl PpuNativaPipeline {
         palette: &[u8],
         io: &[u8],
     ) {
-        self.render_frame_lineas(device, queue, target_view, vram, oam, palette, io, None, None);
+        self.render_frame_lineas(
+            device,
+            queue,
+            target_view,
+            vram,
+            oam,
+            palette,
+            io,
+            None,
+            None,
+        );
     }
 
     /// Dibuja un cuadro completo en la vista de textura destino, recibiendo opcionalmente

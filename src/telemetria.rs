@@ -202,7 +202,9 @@ fn analizar(texto: &'static str) -> Result<Esquema, String> {
                     .filter(|nombre| !nombre.is_empty())
                     .collect();
                 if bloques.iter().any(|bloque| bloque.version == version) {
-                    return Err(format!("línea {numero}: la versión {version} está repetida"));
+                    return Err(format!(
+                        "línea {numero}: la versión {version} está repetida"
+                    ));
                 }
                 bloques.push(Bloque {
                     version,
@@ -248,9 +250,9 @@ fn analizar(texto: &'static str) -> Result<Esquema, String> {
                         "línea {numero}: una fila 'sello' necesita 3 celdas"
                     ));
                 }
-                let version: u32 = celdas[2]
-                    .parse()
-                    .map_err(|_| format!("línea {numero}: el sello apunta a una versión que no es un entero"))?;
+                let version: u32 = celdas[2].parse().map_err(|_| {
+                    format!("línea {numero}: el sello apunta a una versión que no es un entero")
+                })?;
                 sello = Some((celdas[1], version));
             }
             Some(otra) => {

@@ -39,7 +39,7 @@ mod comun;
 use comun::color::{canal_8bit, cerca_pixel, software_a_rgb};
 use comun::diagnostico::{self, EstadoRef};
 use comun::entrada::leer_secuencia;
-use comun::gpu::{ALTO, ANCHO, Gpu};
+use comun::gpu::{Gpu, ALTO, ANCHO};
 
 /// Dibuja las 160 líneas con la PPU por software y un mismo estado en todas.
 fn render_estado(rom: &[u8], vram: &[u8], oam: &[u8], pal: &[u8], io: &[u8]) -> Vec<u16> {
@@ -58,11 +58,7 @@ fn render_estado(rom: &[u8], vram: &[u8], oam: &[u8], pal: &[u8], io: &[u8]) -> 
 }
 
 fn rgb8(c: u16) -> [u8; 3] {
-    [
-        canal_8bit(c),
-        canal_8bit(c >> 5),
-        canal_8bit(c >> 10),
-    ]
+    [canal_8bit(c), canal_8bit(c >> 5), canal_8bit(c >> 10)]
 }
 
 const OBJ_TAMANOS: [[(usize, usize); 4]; 3] = [
@@ -327,10 +323,20 @@ fn main() {
     }
 
     // Diagnóstico causal: estado a mitad de cuadro o fallo de dibujo (con ablación).
-    let fin_estado = EstadoRef { io: &io_fin, palette: &pal_fin, vram: &vram_fin, oam: &oam_fin };
+    let fin_estado = EstadoRef {
+        io: &io_fin,
+        palette: &pal_fin,
+        vram: &vram_fin,
+        oam: &oam_fin,
+    };
     let lineas_estado: Vec<EstadoRef> = capturas
         .iter()
-        .map(|c| EstadoRef { io: &c.io, palette: &c.palette, vram: &c.vram, oam: &c.oam })
+        .map(|c| EstadoRef {
+            io: &c.io,
+            palette: &c.palette,
+            vram: &c.vram,
+            oam: &c.oam,
+        })
         .collect();
     let diag = diagnostico::diagnosticar(
         &nativa,

@@ -70,9 +70,7 @@ fn medir(
             }
         }
     }
-    let reloj = reloj.ok_or_else(|| {
-        format!("la secuencia no llega al cuadro {calentamiento}")
-    })?;
+    let reloj = reloj.ok_or_else(|| format!("la secuencia no llega al cuadro {calentamiento}"))?;
     let c = m.take_perf_counters();
     gba_core::ppu::forzar_camino_general(false);
     if !en_medida {
@@ -98,7 +96,9 @@ fn ms(ns: u64) -> f64 {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 5 {
-        eprintln!("uso: ppu_tiempos <ruta.gba> <secuencia.txt> <cuadros_calentamiento> <cuadros_medidos>");
+        eprintln!(
+            "uso: ppu_tiempos <ruta.gba> <secuencia.txt> <cuadros_calentamiento> <cuadros_medidos>"
+        );
         std::process::exit(2);
     }
     let rom = match std::fs::read(&args[1]) {
@@ -152,7 +152,10 @@ fn main() {
         }
     };
 
-    println!("ventana medida: cuadros {calentamiento}..{}", calentamiento + medidos);
+    println!(
+        "ventana medida: cuadros {calentamiento}..{}",
+        calentamiento + medidos
+    );
     println!(
         "  camino rápido:  PPU {:.2} ms, composición {:.2} ms, reloj {:.2} ms",
         ms(rapida.ppu_ns),

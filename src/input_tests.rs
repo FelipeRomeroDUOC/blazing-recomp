@@ -172,10 +172,24 @@ fn test_layout_deterministic() {
 #[test]
 fn test_touch_layout_physical_proportions() {
     let areas = layout(1080, 2400, Orientation::Portrait);
-    let a = areas.iter().find(|x| x.button == Button::A).expect("A existe");
-    let b = areas.iter().find(|x| x.button == Button::B).expect("B existe");
-    assert!(a.radius > 60.0, "radio de A ({}) debe ser > 60 px", a.radius);
-    assert!(b.radius > 60.0, "radio de B ({}) debe ser > 60 px", b.radius);
+    let a = areas
+        .iter()
+        .find(|x| x.button == Button::A)
+        .expect("A existe");
+    let b = areas
+        .iter()
+        .find(|x| x.button == Button::B)
+        .expect("B existe");
+    assert!(
+        a.radius > 60.0,
+        "radio de A ({}) debe ser > 60 px",
+        a.radius
+    );
+    assert!(
+        b.radius > 60.0,
+        "radio de B ({}) debe ser > 60 px",
+        b.radius
+    );
 
     let cy = (a.cy + b.cy) * 0.5;
     let frac = cy / 2400.0;
@@ -202,12 +216,16 @@ fn test_touch_controller_resizes_dynamically() {
         assert!(
             area.cy - area.radius >= 0.0 && area.cy + area.radius <= 1080.0,
             "botón {:?} en y={} r={} fuera de límites verticales 0..1080",
-            area.button, area.cy, area.radius
+            area.button,
+            area.cy,
+            area.radius
         );
         assert!(
             area.cx - area.radius >= 0.0 && area.cx + area.radius <= 2400.0,
             "botón {:?} en x={} r={} fuera de límites horizontales 0..2400",
-            area.button, area.cx, area.radius
+            area.button,
+            area.cx,
+            area.radius
         );
     }
 }
@@ -235,12 +253,20 @@ fn test_touch_controller_various_resolutions() {
             assert!(
                 area.cx - area.radius >= 0.0 && area.cx + area.radius <= wf,
                 "botón {:?} en ({}, {}) r={} fuera de límites horizontales 0..{}",
-                area.button, area.cx, area.cy, area.radius, w
+                area.button,
+                area.cx,
+                area.cy,
+                area.radius,
+                w
             );
             assert!(
                 area.cy - area.radius >= 0.0 && area.cy + area.radius <= hf,
                 "botón {:?} en ({}, {}) r={} fuera de límites verticales 0..{}",
-                area.button, area.cx, area.cy, area.radius, h
+                area.button,
+                area.cx,
+                area.cy,
+                area.radius,
+                h
             );
         }
     }
@@ -390,7 +416,10 @@ fn test_touch_controller_is_pressed_and_pressed_mask() {
     assert!(!tc.is_pressed(Button::B));
     assert!(tc.is_pressed(Button::A));
     assert!(tc.is_pressed(Button::Up));
-    assert_eq!(tc.pressed_mask(), Button::A.key_bit() | Button::Up.key_bit());
+    assert_eq!(
+        tc.pressed_mask(),
+        Button::A.key_bit() | Button::Up.key_bit()
+    );
 
     // Cancelar todo
     tc.cancel_all();
@@ -424,7 +453,10 @@ fn test_touch_controller_unknown_pointer_release() {
 
     // Liberar puntero inexistente (ID 999)
     let released = tc.touch_up(999);
-    assert_eq!(released, None, "un puntero no registrado debe retornar None");
+    assert_eq!(
+        released, None,
+        "un puntero no registrado debe retornar None"
+    );
     assert!(
         tc.is_pressed(Button::A),
         "el botón A debe seguir pulsado tras soltar un puntero desconocido"
@@ -445,13 +477,28 @@ fn test_touch_area_exact_boundary_epsilon() {
     };
 
     // 1. Centro exacto (d = 0)
-    assert!(area.contains(200.0, 300.0), "el centro debe estar contenido");
+    assert!(
+        area.contains(200.0, 300.0),
+        "el centro debe estar contenido"
+    );
 
     // 2. Fronteras cardinales exactas (d = r = 50.0) -> d^2 <= r^2 debe ser true
-    assert!(area.contains(250.0, 300.0), "borde derecho exacto debe estar contenido");
-    assert!(area.contains(150.0, 300.0), "borde izquierdo exacto debe estar contenido");
-    assert!(area.contains(200.0, 350.0), "borde inferior exacto debe estar contenido");
-    assert!(area.contains(200.0, 250.0), "borde superior exacto debe estar contenido");
+    assert!(
+        area.contains(250.0, 300.0),
+        "borde derecho exacto debe estar contenido"
+    );
+    assert!(
+        area.contains(150.0, 300.0),
+        "borde izquierdo exacto debe estar contenido"
+    );
+    assert!(
+        area.contains(200.0, 350.0),
+        "borde inferior exacto debe estar contenido"
+    );
+    assert!(
+        area.contains(200.0, 250.0),
+        "borde superior exacto debe estar contenido"
+    );
 
     // 3. Frontera no cardinal exacta mediante terna pitagórica (30^2 + 40^2 = 50^2 = 2500, cero error f32)
     assert!(
@@ -518,11 +565,17 @@ fn test_dpad_neutral_deadzone_and_cardinal_isolation() {
     assert!(up.contains(up.cx, up.cy));
     assert!(!down.contains(up.cx, up.cy), "Up no debe solapar con Down");
     assert!(!left.contains(up.cx, up.cy), "Up no debe solapar con Left");
-    assert!(!right.contains(up.cx, up.cy), "Up no debe solapar con Right");
+    assert!(
+        !right.contains(up.cx, up.cy),
+        "Up no debe solapar con Right"
+    );
 
     // 3. Aislamiento cardinal: en el centro de Left solo debe estar activo Left
     assert!(left.contains(left.cx, left.cy));
-    assert!(!right.contains(left.cx, left.cy), "Left no debe solapar con Right");
+    assert!(
+        !right.contains(left.cx, left.cy),
+        "Left no debe solapar con Right"
+    );
 }
 
 /// Estrés de layout: evalúa resoluciones exóticas (cuadrada 1:1, ultrapanorámica 32:9 y QVGA retro).
@@ -533,7 +586,10 @@ fn test_touch_layout_square_and_ultrawide_aspect_ratios() {
     let square_areas = layout(1080, 1080, Orientation::Landscape);
     assert_eq!(square_areas.len(), 10);
     for a in &square_areas {
-        assert!(!a.cx.is_nan() && !a.cy.is_nan(), "coords no deben ser NaN en 1:1");
+        assert!(
+            !a.cx.is_nan() && !a.cy.is_nan(),
+            "coords no deben ser NaN en 1:1"
+        );
         assert!(a.radius > 0.0, "radio debe ser positivo en 1:1");
         assert!(
             a.cx >= 0.0 && a.cx <= 1080.0,
@@ -566,7 +622,10 @@ fn test_touch_layout_square_and_ultrawide_aspect_ratios() {
     let retro_areas = layout(320, 240, Orientation::Landscape);
     for a in &retro_areas {
         assert!(!a.cx.is_nan() && !a.cy.is_nan() && !a.radius.is_nan());
-        assert!(a.radius > 5.0, "botones deben mantener tamaño mínimo interactuable");
+        assert!(
+            a.radius > 5.0,
+            "botones deben mantener tamaño mínimo interactuable"
+        );
     }
 }
 
@@ -588,7 +647,10 @@ fn test_touch_controller_multitouch_churn_and_saturation() {
     assert_eq!(tc.touch_down(102, btn_b.cx, btn_b.cy), Some(Button::B));
     assert_eq!(tc.touch_down(103, btn_up.cx, btn_up.cy), Some(Button::Up));
     assert_eq!(tc.touch_down(104, btn_l.cx, btn_l.cy), Some(Button::L));
-    assert_eq!(tc.touch_down(105, btn_start.cx, btn_start.cy), Some(Button::Start));
+    assert_eq!(
+        tc.touch_down(105, btn_start.cx, btn_start.cy),
+        Some(Button::Start)
+    );
 
     // 2. Tocar 3 zonas vacías (arriba a la izquierda, fuera de hitboxes)
     assert_eq!(tc.touch_down(106, 50.0, 50.0), None);
@@ -630,7 +692,7 @@ fn test_button_from_android_keycode_mapping() {
     assert_eq!(button_from_android_keycode(66), Some(Button::A)); // ENTER
     assert_eq!(button_from_android_keycode(96), Some(Button::A)); // BUTTON_A
     assert_eq!(button_from_android_keycode(97), Some(Button::B)); // BUTTON_B
-    assert_eq!(button_from_android_keycode(4), Some(Button::B));  // BACK
+    assert_eq!(button_from_android_keycode(4), Some(Button::B)); // BACK
     assert_eq!(button_from_android_keycode(102), Some(Button::L));
     assert_eq!(button_from_android_keycode(103), Some(Button::R));
     assert_eq!(button_from_android_keycode(108), Some(Button::Start));

@@ -84,7 +84,14 @@ fn test_una_fila_por_cuadro() {
             Some(esperado),
             "las filas deben ir en orden y sin huecos: {fila}"
         );
-        for clave in ["modo", "afines", "cambios", "lineas_paleta", "lineas_vram", "lineas_oam"] {
+        for clave in [
+            "modo",
+            "afines",
+            "cambios",
+            "lineas_paleta",
+            "lineas_vram",
+            "lineas_oam",
+        ] {
             assert!(
                 campo(fila, clave).is_some(),
                 "la fila debe traer `{clave}`: {fila}"
@@ -106,7 +113,9 @@ fn test_resumen_coincide_con_filas() {
     let mut afines_filas = HashSet::new();
     let mut cambios_filas = HashSet::new();
     for fila in texto.lines().filter(|l| l.starts_with("cuadro ")) {
-        let n: u32 = campo(fila, "cuadro").and_then(|v| v.parse().ok()).expect("cuadro");
+        let n: u32 = campo(fila, "cuadro")
+            .and_then(|v| v.parse().ok())
+            .expect("cuadro");
         if campo(fila, "afines") != Some("-") {
             afines_filas.insert(n);
         }
@@ -171,7 +180,10 @@ fn test_cuadro_sin_senales() {
         "el criterio necesita al menos un cuadro sin señales en el rango"
     );
     for n in sin_senales {
-        assert!(!afines.contains(&n), "el cuadro {n} no debe estar en `afines`");
+        assert!(
+            !afines.contains(&n),
+            "el cuadro {n} no debe estar en `afines`"
+        );
         assert!(
             !cambios.contains(&n),
             "el cuadro {n} no debe estar en `con cambios por linea`"
@@ -188,7 +200,9 @@ fn test_recuentos_en_rango() {
     }
     let texto = leer_informe();
     for fila in texto.lines().filter(|l| l.starts_with("cuadro ")) {
-        let modo: u32 = campo(fila, "modo").and_then(|v| v.parse().ok()).expect("modo");
+        let modo: u32 = campo(fila, "modo")
+            .and_then(|v| v.parse().ok())
+            .expect("modo");
         assert!(modo <= 5, "modo de vídeo fuera de rango: {fila}");
         for clave in ["lineas_paleta", "lineas_vram", "lineas_oam"] {
             let n: u32 = campo(fila, clave)
@@ -202,7 +216,11 @@ fn test_recuentos_en_rango() {
         if let Some(cambios) = campo(fila, "cambios") {
             if cambios != "-" {
                 for par in cambios.split(',') {
-                    let n: usize = par.split(':').nth(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+                    let n: usize = par
+                        .split(':')
+                        .nth(1)
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(0);
                     assert!(n <= 160, "recuento de cambios fuera de rango: {fila}");
                 }
             }

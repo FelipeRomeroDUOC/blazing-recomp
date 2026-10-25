@@ -350,7 +350,10 @@ fn main() {
         format!("bg2 tiles referenciados con datos: {}", tiles_ref_bg2.len()),
         format!("bg2 opacos total: {opacos_bg2}"),
         format!("bg2 opacos dentro aportacion: {opacos_bg2_dentro}"),
-        format!("bg2 opacos fuera aportacion: {}", opacos_bg2 - opacos_bg2_dentro),
+        format!(
+            "bg2 opacos fuera aportacion: {}",
+            opacos_bg2 - opacos_bg2_dentro
+        ),
         format!("bg2 aportacion total: {aportacion_total}"),
     ];
     for l in &bg2_lineas {

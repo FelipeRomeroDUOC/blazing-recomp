@@ -96,8 +96,8 @@ fn test_manifest_declares_native_activity() {
         "El archivo android/AndroidManifest.xml debe existir"
     );
 
-    let content = fs::read_to_string(&manifest_path)
-        .expect("Debe poder leerse android/AndroidManifest.xml");
+    let content =
+        fs::read_to_string(&manifest_path).expect("Debe poder leerse android/AndroidManifest.xml");
 
     // Validar declaracion de NativeActivity
     assert!(
@@ -137,8 +137,8 @@ fn test_manifest_declares_native_activity() {
 #[test]
 fn test_manifest_extract_native_libs_enabled() {
     let manifest_path = repo_root().join("android").join("AndroidManifest.xml");
-    let content = fs::read_to_string(&manifest_path)
-        .expect("Debe poder leerse android/AndroidManifest.xml");
+    let content =
+        fs::read_to_string(&manifest_path).expect("Debe poder leerse android/AndroidManifest.xml");
     assert!(
         content.contains("android:extractNativeLibs=\"true\""),
         "El manifiesto debe tener android:extractNativeLibs=\"true\" configurado para compatibilidad con emuladores"
@@ -147,14 +147,9 @@ fn test_manifest_extract_native_libs_enabled() {
 
 #[test]
 fn test_no_local_paths_in_packaging() {
-    let check_dirs = [
-        repo_root().join("android"),
-        repo_root().join("scripts"),
-    ];
+    let check_dirs = [repo_root().join("android"), repo_root().join("scripts")];
 
-    let forbidden_patterns = [
-        "c:/", "c:\\", "d:/", "d:\\", "/users/", "\\users\\",
-    ];
+    let forbidden_patterns = ["c:/", "c:\\", "d:/", "d:\\", "/users/", "\\users\\"];
 
     for dir in &check_dirs {
         if !dir.exists() {
@@ -198,8 +193,8 @@ fn test_apk_generation_and_signature() {
         "El script scripts/package_apk.ps1 debe existir"
     );
 
-    let script_content = fs::read_to_string(&script_path)
-        .expect("Debe poder leerse scripts/package_apk.ps1");
+    let script_content =
+        fs::read_to_string(&script_path).expect("Debe poder leerse scripts/package_apk.ps1");
 
     // Verificar que el script cubre el pipeline completo
     assert!(
@@ -290,8 +285,7 @@ fn zip_read_check(mut file: &fs::File) -> Vec<ZipEntryInfo> {
     while cursor + 30 <= buffer.len() {
         // Local file header signature: 0x04034b50
         if buffer[cursor..cursor + 4] == [0x50, 0x4b, 0x03, 0x04] {
-            let compression_method =
-                u16::from_le_bytes([buffer[cursor + 8], buffer[cursor + 9]]);
+            let compression_method = u16::from_le_bytes([buffer[cursor + 8], buffer[cursor + 9]]);
             let comp_size = u32::from_le_bytes([
                 buffer[cursor + 18],
                 buffer[cursor + 19],
@@ -332,8 +326,8 @@ fn zip_read_check(mut file: &fs::File) -> Vec<ZipEntryInfo> {
 #[test]
 fn test_manifest_declares_android_tv_compatibility() {
     let manifest_path = repo_root().join("android").join("AndroidManifest.xml");
-    let content = fs::read_to_string(&manifest_path)
-        .expect("Debe poder leerse android/AndroidManifest.xml");
+    let content =
+        fs::read_to_string(&manifest_path).expect("Debe poder leerse android/AndroidManifest.xml");
 
     // Validar que la pantalla tactil NO es obligatoria para permitir instalacion en Android TV
     assert!(
@@ -363,8 +357,8 @@ fn test_manifest_declares_android_tv_compatibility() {
 #[test]
 fn test_packaging_script_enables_v1_v2_v3_signatures() {
     let script_path = repo_root().join("scripts").join("package_apk.ps1");
-    let content = fs::read_to_string(&script_path)
-        .expect("Debe poder leerse scripts/package_apk.ps1");
+    let content =
+        fs::read_to_string(&script_path).expect("Debe poder leerse scripts/package_apk.ps1");
 
     assert!(
         content.contains("--v1-signing-enabled true"),
@@ -383,8 +377,8 @@ fn test_packaging_script_enables_v1_v2_v3_signatures() {
 #[test]
 fn test_packaging_script_supports_armeabi_v7a() {
     let script_path = repo_root().join("scripts").join("package_apk.ps1");
-    let content = fs::read_to_string(&script_path)
-        .expect("Debe poder leerse scripts/package_apk.ps1");
+    let content =
+        fs::read_to_string(&script_path).expect("Debe poder leerse scripts/package_apk.ps1");
 
     assert!(
         content.contains("\"armv7-linux-androideabi\"  = \"armeabi-v7a\"")
@@ -495,8 +489,8 @@ fn test_manifest_declares_storage_permissions() {
         "El archivo android/AndroidManifest.xml debe existir"
     );
 
-    let content = fs::read_to_string(&manifest_path)
-        .expect("Debe poder leerse android/AndroidManifest.xml");
+    let content =
+        fs::read_to_string(&manifest_path).expect("Debe poder leerse android/AndroidManifest.xml");
 
     assert!(
         content.contains("android.permission.READ_EXTERNAL_STORAGE"),
@@ -521,8 +515,8 @@ fn test_packaging_script_embeds_recompiled_library() {
         "El script scripts/package_apk.ps1 debe existir"
     );
 
-    let script_content = fs::read_to_string(&script_path)
-        .expect("Debe poder leerse scripts/package_apk.ps1");
+    let script_content =
+        fs::read_to_string(&script_path).expect("Debe poder leerse scripts/package_apk.ps1");
 
     assert!(
         script_content.contains("libblazing_recompiled.so"),
@@ -546,8 +540,8 @@ fn test_packaging_script_soname_flag() {
         "El script scripts/package_apk.ps1 debe existir"
     );
 
-    let script_content = fs::read_to_string(&script_path)
-        .expect("Debe poder leerse scripts/package_apk.ps1");
+    let script_content =
+        fs::read_to_string(&script_path).expect("Debe poder leerse scripts/package_apk.ps1");
 
     assert!(
         script_content.contains("-Wl,-soname,libblazing_recompiled.so"),

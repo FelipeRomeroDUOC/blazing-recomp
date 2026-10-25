@@ -36,11 +36,7 @@ use comun::entrada::leer_secuencia;
 use comun::gpu::{ALTO, ANCHO};
 
 fn rgb8(c: u16) -> [u8; 3] {
-    [
-        canal_8bit(c),
-        canal_8bit(c >> 5),
-        canal_8bit(c >> 10),
-    ]
+    [canal_8bit(c), canal_8bit(c >> 5), canal_8bit(c >> 10)]
 }
 
 /// El estado completo de la PPU en un momento dado.
@@ -139,7 +135,9 @@ fn render(rom: &[u8], fin: &Estado, caps: &[CapturaLinea], parte: Parte) -> Vec<
 /// Píxeles que difieren entre dos imágenes, con la tolerancia de color del
 /// arnés de comparación.
 fn diferencias(a: &[u16], b: &[u16]) -> usize {
-    (0..a.len()).filter(|&p| !cerca_pixel(rgb8(a[p]), rgb8(b[p]))).count()
+    (0..a.len())
+        .filter(|&p| !cerca_pixel(rgb8(a[p]), rgb8(b[p])))
+        .count()
 }
 
 /// Componentes cuyo valor de la línea difiere del de fin de cuadro.
@@ -267,12 +265,7 @@ fn main() {
     ];
 
     let mut hibridos = Vec::new();
-    for parte in [
-        Parte::Registros,
-        Parte::Paleta,
-        Parte::Vram,
-        Parte::Oam,
-    ] {
+    for parte in [Parte::Registros, Parte::Paleta, Parte::Vram, Parte::Oam] {
         let img = render(&rom, &fin, capturas, parte);
         let residuo = diferencias(&img, &ref_linea);
         let recupera = total.saturating_sub(residuo);
@@ -354,7 +347,10 @@ fn main() {
             anterior = Some(l);
         }
         informe.push(String::new());
-        informe.push("registros que difieren de fin de cuadro (dirección: líneas / cambios entre líneas):".to_string());
+        informe.push(
+            "registros que difieren de fin de cuadro (dirección: líneas / cambios entre líneas):"
+                .to_string(),
+        );
         for a in 0..256usize {
             if difieren[a] == 0 && cambian_entre_lineas[a] == 0 {
                 continue;

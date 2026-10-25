@@ -15,7 +15,9 @@ fn rom_disponible() -> bool {
 }
 
 fn leer_informe() -> String {
-    let ruta = raiz().join("volcados").join("capa-ganadora-cuadro-1000.txt");
+    let ruta = raiz()
+        .join("volcados")
+        .join("capa-ganadora-cuadro-1000.txt");
     fs::read_to_string(&ruta).unwrap_or_else(|_| {
         panic!(
             "debe existir {}: correr antes el ejemplo ppu_capa_ganadora",
@@ -64,7 +66,10 @@ fn test_categorias_suman_total() {
     let texto = leer_informe();
     let total = valor(&texto, "capa aportacion fuera total").expect("debe existir el total");
     let suma = valor(&texto, "capa categoria suma").expect("debe existir la suma");
-    assert_eq!(suma, total, "las categorías deben sumar el total fuera de cobertura");
+    assert_eq!(
+        suma, total,
+        "las categorías deben sumar el total fuera de cobertura"
+    );
 }
 
 #[test]

@@ -178,8 +178,12 @@ fn main() {
             d(solo, 12)
         ));
     }
-    lineas.push(format!("ventanas lineas con ventanas activas: {lineas_ventanas}"));
-    lineas.push(format!("ventanas diferencia completa vs sin ventanas: {ventanas_total}"));
+    lineas.push(format!(
+        "ventanas lineas con ventanas activas: {lineas_ventanas}"
+    ));
+    lineas.push(format!(
+        "ventanas diferencia completa vs sin ventanas: {ventanas_total}"
+    ));
 
     for l in &lineas {
         println!("{l}");

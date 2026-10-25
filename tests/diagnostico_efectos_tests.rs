@@ -15,7 +15,9 @@ fn rom_disponible() -> bool {
 }
 
 fn leer_informe() -> String {
-    let ruta = raiz().join("volcados").join("efectos-ventanas-cuadro-1000.txt");
+    let ruta = raiz()
+        .join("volcados")
+        .join("efectos-ventanas-cuadro-1000.txt");
     fs::read_to_string(&ruta).unwrap_or_else(|_| {
         panic!(
             "debe existir {}: correr antes el ejemplo ppu_efectos_ventanas",
@@ -37,11 +39,15 @@ fn test_informe_separa_efectos() {
     }
     let texto = leer_informe();
     assert!(
-        texto.lines().any(|l| l.starts_with("efectos OBJ con efectos")),
+        texto
+            .lines()
+            .any(|l| l.starts_with("efectos OBJ con efectos")),
         "el informe debe dar la aportación de OBJ con efectos"
     );
     assert!(
-        texto.lines().any(|l| l.starts_with("efectos OBJ sin efectos")),
+        texto
+            .lines()
+            .any(|l| l.starts_with("efectos OBJ sin efectos")),
         "el informe debe dar la aportación de OBJ sin efectos (BLDCNT = 0)"
     );
 }

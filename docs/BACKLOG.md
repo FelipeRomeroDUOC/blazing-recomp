@@ -153,10 +153,10 @@ Curado a mano a partir del [registro](#registro-de-hallazgos); el registro es la
 
 ## Índice de Propuestas
 
-160 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
+162 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
 propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
-**160 = 96 `verificada por agente` + 40 `cerrada` + 2 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
+**162 = 96 `verificada por agente` + 43 `cerrada` + 1 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
 
 ### Pendientes (3) — sin ejecutar
 
@@ -164,10 +164,9 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-10_optimizacion-compatibilidad-multidispositivo.md`](propuestas/2026-10-10_optimizacion-compatibilidad-multidispositivo.md)
 - [`2026-10-14_saneamiento-de-la-documentacion.md`](propuestas/2026-10-14_saneamiento-de-la-documentacion.md)
 
-### Aprobadas sin cerrar (2) — alcance pactado, trabajo o medida pendientes
+### Aprobadas sin cerrar (1) — alcance pactado, trabajo o medida pendientes
 
 - [`2026-10-10_optimizacion-rendimiento-gpu-vulkan-y-calibracion-fps.md`](propuestas/2026-10-10_optimizacion-rendimiento-gpu-vulkan-y-calibracion-fps.md)
-- [`2026-10-14_reactivar-la-calibracion-de-presentacion.md`](propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md)
 
 ### Discrepadas (10) — la medida contradijo la premisa
 
@@ -191,7 +190,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-23_eliminar-register-spilling-y-bucle-anidado-fs-comp.md`](propuestas/2026-10-23_eliminar-register-spilling-y-bucle-anidado-fs-comp.md)
 - [`2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md`](propuestas/2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md)
 
-### Cerradas (40)
+### Cerradas (43)
 
 - [`2026-10-09_ajustes-fidelidad-ergonomia-overlay.md`](propuestas/2026-10-09_ajustes-fidelidad-ergonomia-overlay.md)
 - [`2026-10-09_auditoria-tests-de-mutacion.md`](propuestas/2026-10-09_auditoria-tests-de-mutacion.md)
@@ -209,6 +208,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md`](propuestas/2026-10-13_el-reloj-de-la-ppu-en-el-dispositivo.md)
 - [`2026-10-13_ppu-efectos-inertes-y-camino-especializado.md`](propuestas/2026-10-13_ppu-efectos-inertes-y-camino-especializado.md)
 - [`2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md`](propuestas/2026-10-13_ppu-software-rapida-sin-cambiar-pixeles.md)
+- [`2026-10-14_reactivar-la-calibracion-de-presentacion.md`](propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md)
 - [`2026-10-14_reloj-barato-en-pump-audio.md`](propuestas/2026-10-14_reloj-barato-en-pump-audio.md)
 - [`2026-10-16_arnes-comparacion-shim-vs-software.md`](propuestas/2026-10-16_arnes-comparacion-shim-vs-software.md)
 - [`2026-10-16_contar-escrituras-de-registros-por-cuadro.md`](propuestas/2026-10-16_contar-escrituras-de-registros-por-cuadro.md)
@@ -233,6 +233,8 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-24_resolucion-cuarta-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-cuarta-auditoria-rant-md.md)
 - [`2026-10-24_resolucion-segunda-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-segunda-auditoria-rant-md.md)
 - [`2026-10-24_resolucion-tercera-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-tercera-auditoria-rant-md.md)
+- [`2026-10-25_automatizacion-versionado-aprobacion.md`](propuestas/2026-10-25_automatizacion-versionado-aprobacion.md)
+- [`2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md`](propuestas/2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md)
 
 ### Verificadas por agente (96) — con lo medido dentro; varias esperan el televisor
 

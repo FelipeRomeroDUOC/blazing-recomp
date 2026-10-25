@@ -282,11 +282,7 @@ fn main() {
         .map(|f| f.linea)
         .collect();
     let suma = |clave: fn(&Fila) -> usize| -> usize {
-        filas
-            .iter()
-            .filter(|f| f.semi_con_obj)
-            .map(clave)
-            .sum()
+        filas.iter().filter(|f| f.semi_con_obj).map(clave).sum()
     };
     let banda_natural = suma(|f| f.diff_ab);
     let banda_mismo_camino = suma(|f| f.diff_ad);

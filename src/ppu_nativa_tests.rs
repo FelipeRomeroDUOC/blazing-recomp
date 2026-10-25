@@ -118,7 +118,14 @@ fn los_coeficientes_se_saturan_a_16() {
 #[test]
 fn el_modo_de_mezcla_sale_de_los_bits_6_y_7() {
     for (bldcnt, modo) in [(0x0000u16, 0u32), (0x0040, 1), (0x0080, 2), (0x00C0, 3)] {
-        assert_eq!(RegistrosColor { bldcnt, ..Default::default() }.modo(), modo);
+        assert_eq!(
+            RegistrosColor {
+                bldcnt,
+                ..Default::default()
+            }
+            .modo(),
+            modo
+        );
     }
 }
 
@@ -206,14 +213,7 @@ fn registro_modo1() -> RegistrosColor {
 fn sin_capas_visibles_sale_el_fondo_de_pantalla() {
     let bg = [TRANSPARENTE; 4];
     let prio = [0xFF; 4];
-    let out = compone_pixel(
-        &bg,
-        &prio,
-        PixelObj::VACIO,
-        0x3F,
-        &registro_modo1(),
-        0x1234,
-    );
+    let out = compone_pixel(&bg, &prio, PixelObj::VACIO, 0x3F, &registro_modo1(), 0x1234);
     assert_eq!(out, 0x1234);
 }
 
@@ -264,14 +264,7 @@ fn a_igual_prioridad_gana_el_fondo_de_indice_menor() {
     // Los dos fondos tienen prioridad 0: gana el de índice menor.
     let bg = [0x0100, 0x0200, TRANSPARENTE, TRANSPARENTE];
     let prio = [0, 0, 0xFF, 0xFF];
-    let out = compone_pixel(
-        &bg,
-        &prio,
-        PixelObj::VACIO,
-        0x3F,
-        &registro_modo1(),
-        0,
-    );
+    let out = compone_pixel(&bg, &prio, PixelObj::VACIO, 0x3F, &registro_modo1(), 0);
     assert_eq!(out, 0x0100);
 }
 
@@ -454,10 +447,7 @@ fn el_modo_obj_separa_sprites_de_color_y_de_ventana() {
     estado.dispcnt = 0x1000;
 
     // Sprite 0 en modo ventana (attr0 bits 10-11 = 2) y sprite 1 en modo normal.
-    let oam = oam_con(&[
-        (0, (2 << 10) | 10, 20, 0),
-        (1, (1 << 10) | 30, 40, 0),
-    ]);
+    let oam = oam_con(&[(0, (2 << 10) | 10, 20, 0), (1, (1 << 10) | 30, 40, 0)]);
 
     assert_eq!(estado.decode_oam(&oam), 1);
     assert_eq!(estado.num_sprites, 1);
@@ -560,7 +550,10 @@ fn los_registros_del_fondo_afin_llevan_el_signo() {
     assert_eq!(capa.afin_ref_x, -1, "BG2X con 28 bits con signo");
     assert_eq!(capa.afin_ref_y, 0, "BG2Y descarta el bit 28");
     assert_eq!(capa.afin_wrap, 1, "el wrap es el bit 13 de BGxCNT");
-    assert_eq!(capa.screen_size, 3, "el tamaño del mapa afín son 16 << 3 tiles");
+    assert_eq!(
+        capa.screen_size, 3,
+        "el tamaño del mapa afín son 16 << 3 tiles"
+    );
     // Y el fondo afín está activo, con su prioridad.
     assert_eq!(capa.enabled, 1, "BG2 se dibuja en el modo 1 con el bit 10");
     assert_eq!(estado.bg_prio[2], 0, "la prioridad de BG2 sale de BG2CNT");
@@ -595,8 +588,7 @@ fn sin_marca_la_ppu_nativa_esta_activa() {
 #[test]
 fn la_marca_de_apagado_apaga_la_ppu_nativa() {
     let dir = dir_temporal("con-marca-apagado");
-    std::fs::write(dir.join(NOMBRE_BANDERA_APAGADO), b"")
-        .expect("se debe poder escribir la marca");
+    std::fs::write(dir.join(NOMBRE_BANDERA_APAGADO), b"").expect("se debe poder escribir la marca");
     assert!(!ppu_nativa_activada(std::slice::from_ref(&dir)));
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -867,7 +859,13 @@ fn deduplicacion_por_linea_conserva_resultado_exacto() {
     let mut io_lineas = [[0u8; 0x60]; 160];
     let mut paleta_lineas = [[0u8; 1024]; 160];
     for py in 0..160 {
-        let tramo = if py < 50 { 0u8 } else if py < 120 { py as u8 } else { 200u8 };
+        let tramo = if py < 50 {
+            0u8
+        } else if py < 120 {
+            py as u8
+        } else {
+            200u8
+        };
         io_lineas[py][0] = tramo; // DISPCNT bajo
         io_lineas[py][0x50] = tramo; // BLDCNT bajo
         io_lineas[py][0x54] = tramo & 0x1F; // BLDY
@@ -888,7 +886,8 @@ fn deduplicacion_por_linea_conserva_resultado_exacto() {
         for idx in 0..512 {
             let off = idx * 2;
             esperado_pal[py][idx] =
-                (u16::from_le_bytes([paleta_lineas[py][off], paleta_lineas[py][off + 1]]) & 0x7FFF) as u32;
+                (u16::from_le_bytes([paleta_lineas[py][off], paleta_lineas[py][off + 1]]) & 0x7FFF)
+                    as u32;
         }
     }
 
@@ -925,6 +924,14 @@ fn test_sprites_modificados_detecta_cambios_y_omite_vacios() {
     assert!(sprites_modificados(false, &[sprite_a], &[sprite_b]));
 
     // Caso 5: cambio en la cantidad de sprites -> SÍ sube
-    assert!(sprites_modificados(false, &[sprite_a], &[sprite_a, sprite_b]));
-    assert!(sprites_modificados(false, &[sprite_a, sprite_b], &[sprite_a]));
+    assert!(sprites_modificados(
+        false,
+        &[sprite_a],
+        &[sprite_a, sprite_b]
+    ));
+    assert!(sprites_modificados(
+        false,
+        &[sprite_a, sprite_b],
+        &[sprite_a]
+    ));
 }

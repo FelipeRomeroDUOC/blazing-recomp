@@ -4,7 +4,7 @@ use super::*;
 /// para inicializar la memoria de `gba-core` de forma segura.
 fn create_dummy_rom() -> Vec<u8> {
     let mut rom = vec![0u8; 1024 * 1024]; // 1 MB
-    // Encabezado básico de GBA: vector de salto en 0x00 y firma Nintendo dummy
+                                          // Encabezado básico de GBA: vector de salto en 0x00 y firma Nintendo dummy
     rom[0] = 0x2E; // B 0x080000C0
     rom[1] = 0x00;
     rom[2] = 0x00;
@@ -20,7 +20,11 @@ fn test_runner_buffer_geometry_and_default_state() {
     assert_eq!(runner.frame_rgba().len(), GBA_PIXELS);
     assert_eq!(runner.frame_rgba().len(), 240 * 160);
     assert_eq!(runner.frames_elapsed(), 0);
-    assert_eq!(runner.keys(), 0x03FF, "por defecto ningún botón está pulsado (0x03FF)");
+    assert_eq!(
+        runner.keys(),
+        0x03FF,
+        "por defecto ningún botón está pulsado (0x03FF)"
+    );
     assert_eq!(runner.clock(), 0);
 }
 
@@ -158,11 +162,31 @@ fn test_runner_timing_includes_hardware_counters() {
     runner.step_frame();
 
     let timing = runner.last_timing();
-    assert!(timing.ppu_ms > 0.0, "debe registrar tiempo de PPU (obtenido: {} ms)", timing.ppu_ms);
-    assert!(timing.apu_ms > 0.0, "debe registrar tiempo de APU (obtenido: {} ms)", timing.apu_ms);
-    assert!(timing.pump_llamadas > 0, "debe registrar llamadas de pump_audio (obtenido: {})", timing.pump_llamadas);
-    assert!(timing.pump_muestras > 0, "debe registrar muestras de audio (obtenido: {})", timing.pump_muestras);
-    assert!(timing.reads > 0, "debe registrar lecturas de memoria (obtenido: {})", timing.reads);
+    assert!(
+        timing.ppu_ms > 0.0,
+        "debe registrar tiempo de PPU (obtenido: {} ms)",
+        timing.ppu_ms
+    );
+    assert!(
+        timing.apu_ms > 0.0,
+        "debe registrar tiempo de APU (obtenido: {} ms)",
+        timing.apu_ms
+    );
+    assert!(
+        timing.pump_llamadas > 0,
+        "debe registrar llamadas de pump_audio (obtenido: {})",
+        timing.pump_llamadas
+    );
+    assert!(
+        timing.pump_muestras > 0,
+        "debe registrar muestras de audio (obtenido: {})",
+        timing.pump_muestras
+    );
+    assert!(
+        timing.reads > 0,
+        "debe registrar lecturas de memoria (obtenido: {})",
+        timing.reads
+    );
 }
 
 #[test]
@@ -187,8 +211,14 @@ fn test_runner_timing_default_audio_timing_disabled() {
         timing.pump_muestras > 0,
         "debe seguir contando muestras generadas de audio"
     );
-    assert!(timing.ppu_ms > 0.0, "debe seguir registrando tiempo de PPU normalmente");
-    assert!(timing.reads > 0, "debe seguir registrando lecturas de memoria");
+    assert!(
+        timing.ppu_ms > 0.0,
+        "debe seguir registrando tiempo de PPU normalmente"
+    );
+    assert!(
+        timing.reads > 0,
+        "debe seguir registrando lecturas de memoria"
+    );
 }
 
 #[test]
@@ -238,9 +268,18 @@ fn test_runner_gpu_ppu_captura_lut_por_linea_y_omite_ppu_software() {
 
     // PPU por software debe omitirse
     let timing = runner.last_timing();
-    assert_eq!(timing.ppu_ms, 0.0, "con gpu_ppu_enabled la PPU CPU debe dar 0.0 ms");
-    assert_eq!(timing.color_ms, 0.0, "con gpu_ppu_enabled temporal/lut debe dar 0.0 ms");
-    assert!(timing.pump_muestras > 0, "audio debe seguir avanzando normalmente");
+    assert_eq!(
+        timing.ppu_ms, 0.0,
+        "con gpu_ppu_enabled la PPU CPU debe dar 0.0 ms"
+    );
+    assert_eq!(
+        timing.color_ms, 0.0,
+        "con gpu_ppu_enabled temporal/lut debe dar 0.0 ms"
+    );
+    assert!(
+        timing.pump_muestras > 0,
+        "audio debe seguir avanzando normalmente"
+    );
 }
 
 #[test]
@@ -259,7 +298,12 @@ fn test_runner_conmutacion_en_caliente_entre_gpu_ppu_y_software() {
     // 2. Conmutar a Software PPU
     runner.set_gpu_ppu_enabled(false);
     runner.step_frame();
-    assert!(runner.last_timing().ppu_ms > 0.0, "PPU por software debe reactivarse");
-    assert!(runner.last_timing().color_ms > 0.0, "Temporal/ColorLut debe reactivarse");
+    assert!(
+        runner.last_timing().ppu_ms > 0.0,
+        "PPU por software debe reactivarse"
+    );
+    assert!(
+        runner.last_timing().color_ms > 0.0,
+        "Temporal/ColorLut debe reactivarse"
+    );
 }
-

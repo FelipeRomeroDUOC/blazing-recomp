@@ -496,15 +496,20 @@ fn main() {
             gba_core::ppu::render_scanline(&mut replay.bus, cap.linea);
             ppu[v][ini..ini + ANCHO].copy_from_slice(&replay.bus.framebuffer[ini..ini + ANCHO]);
 
-            let (colores, capas, objs) =
-                match linea_reconstruida(&cap.io, &cap.vram, &cap.palette, &cap.oam, cap.linea, d)
-                {
-                    Ok(t) => t,
-                    Err(e) => {
-                        eprintln!("línea {}, variante {v}: {e}", cap.linea);
-                        std::process::exit(1);
-                    }
-                };
+            let (colores, capas, objs) = match linea_reconstruida(
+                &cap.io,
+                &cap.vram,
+                &cap.palette,
+                &cap.oam,
+                cap.linea,
+                d,
+            ) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("línea {}, variante {v}: {e}", cap.linea);
+                    std::process::exit(1);
+                }
+            };
             rec[v][ini..ini + ANCHO].copy_from_slice(&colores);
             for x in 0..ANCHO {
                 match v {
@@ -604,7 +609,9 @@ fn main() {
                 igual_sprite += 1;
             }
         }
-        debajo_lineas.push(format!("resumen cuadro {objetivo}: capa debajo del sprite en V1"));
+        debajo_lineas.push(format!(
+            "resumen cuadro {objetivo}: capa debajo del sprite en V1"
+        ));
         debajo_lineas.push(format!("capa debajo total: {total_d}"));
         debajo_lineas.push(format!("capa debajo fondo 0: {}", debajo[0]));
         debajo_lineas.push(format!("capa debajo fondo 1: {}", debajo[1]));
@@ -619,7 +626,10 @@ fn main() {
             println!("{l}");
         }
         let _ = std::fs::create_dir_all("volcados");
-        if let Err(e) = std::fs::write(format!("volcados/capa-debajo-cuadro-{objetivo}.txt"), debajo_lineas.join("\n") + "\n") {
+        if let Err(e) = std::fs::write(
+            format!("volcados/capa-debajo-cuadro-{objetivo}.txt"),
+            debajo_lineas.join("\n") + "\n",
+        ) {
             eprintln!("no se pudo escribir capa-debajo-cuadro-{objetivo}.txt: {e}");
         }
     }

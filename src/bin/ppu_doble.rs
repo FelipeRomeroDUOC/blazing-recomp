@@ -146,7 +146,13 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
             );
 
             if tarea.motivo == "manual" {
-                match guardar_captura_forzada(&dir_diferencias, tarea.cuadro, "manual", &sw_fin_rgb, &tarea.nat_rgb) {
+                match guardar_captura_forzada(
+                    &dir_diferencias,
+                    tarea.cuadro,
+                    "manual",
+                    &sw_fin_rgb,
+                    &tarea.nat_rgb,
+                ) {
                     Ok(ruta) => println!("[F5] Captura manual guardada: {}", ruta.display()),
                     Err(e) => eprintln!("[F5] Error al guardar captura: {e}"),
                 }
@@ -186,7 +192,13 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
                 |_, io_v| {
                     if let Some(ref mut gpu) = gpu_ref {
                         let nat_v = gpu.renderiza(&vram_clone, &oam_clone, &pal_clone, io_v);
-                        let sw_v = render_software_fin(&rom_ablacion, &vram_clone, &oam_clone, &pal_clone, io_v);
+                        let sw_v = render_software_fin(
+                            &rom_ablacion,
+                            &vram_clone,
+                            &oam_clone,
+                            &pal_clone,
+                            io_v,
+                        );
                         diagnostico::diferencias(&sw_v, &nat_v).map_or(0, |d| d.distintos)
                     } else {
                         0
@@ -196,16 +208,31 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
 
             // Guardar capturas de los casos que difieren
             if diag.dif_fin > 0 && tarea.motivo == "fin" {
-                let _ = guardar_captura_si_difiere(&dir_diferencias, tarea.cuadro, "fin", &sw_fin_rgb, &tarea.nat_rgb);
+                let _ = guardar_captura_si_difiere(
+                    &dir_diferencias,
+                    tarea.cuadro,
+                    "fin",
+                    &sw_fin_rgb,
+                    &tarea.nat_rgb,
+                );
             }
             if diag.dif_linea > 0 {
-                let _ = guardar_captura_si_difiere(&dir_diferencias, tarea.cuadro, "linea", &tarea.sw_linea_rgb, &tarea.nat_rgb);
+                let _ = guardar_captura_si_difiere(
+                    &dir_diferencias,
+                    tarea.cuadro,
+                    "linea",
+                    &tarea.sw_linea_rgb,
+                    &tarea.nat_rgb,
+                );
             }
 
             // Escribir informe diagnóstico completo
             let informe_lineas = diag.informe();
             let txt_ruta = dir_diferencias.join(format!("cuadro-{}.txt", tarea.cuadro));
-            let mut txt_contenido = format!("cuadro: {}\nmotivo_disparo: {}\n", tarea.cuadro, tarea.motivo);
+            let mut txt_contenido = format!(
+                "cuadro: {}\nmotivo_disparo: {}\n",
+                tarea.cuadro, tarea.motivo
+            );
             txt_contenido.push_str(&informe_lineas.join("\n"));
             txt_contenido.push('\n');
             let _ = fs::write(&txt_ruta, txt_contenido);
@@ -215,13 +242,19 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
                 tarea.cuadro, diag.dif_fin, diag.dif_linea, diag.causa
             );
             if !diag.registros.is_empty() {
-                println!("  -> Registros que cambiaron entre líneas: {:?}", diag.registros);
+                println!(
+                    "  -> Registros que cambiaron entre líneas: {:?}",
+                    diag.registros
+                );
             }
             if !diag.resuelve.is_empty() {
                 println!("  -> Variantes que resuelven: {:?}", diag.resuelve);
             }
             if let Some(t) = &diag.testigo {
-                println!("  -> Píxel testigo en ({}, {}): ventana={}, sprites={:?}", t.x, t.y, t.ventana, t.sprites);
+                println!(
+                    "  -> Píxel testigo en ({}, {}): ventana={}, sprites={:?}",
+                    t.x, t.y, t.ventana, t.sprites
+                );
             }
         }
     });
@@ -264,7 +297,7 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
         RegisterClassW(&wc);
 
         let ancho_inicial = (ANCHO_DOBLE * 3) as i32; // 1440
-        let alto_inicial = (ALTO * 3) as i32;        // 480
+        let alto_inicial = (ALTO * 3) as i32; // 480
 
         let mut rect = RECT {
             left: 0,
@@ -360,7 +393,11 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
                 ver_ref_fin = !ver_ref_fin;
                 println!(
                     "[Visor] Referencia izquierda cambiada a: {}",
-                    if ver_ref_fin { "ESTADO FIN DE CUADRO" } else { "ESTADO POR LÍNEA (emulador)" }
+                    if ver_ref_fin {
+                        "ESTADO FIN DE CUADRO"
+                    } else {
+                        "ESTADO POR LÍNEA (emulador)"
+                    }
                 );
             }
             prev_l = l_down;
@@ -368,7 +405,14 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
             let space_down = (GetAsyncKeyState(VK_SPACE as i32) as u16 & 0x8000) != 0;
             if space_down && !prev_space {
                 pausado = !pausado;
-                println!("[Visor] Emulación {}", if pausado { "PAUSADA (usa N para avanzar)" } else { "REANUDADA" });
+                println!(
+                    "[Visor] Emulación {}",
+                    if pausado {
+                        "PAUSADA (usa N para avanzar)"
+                    } else {
+                        "REANUDADA"
+                    }
+                );
             }
             prev_space = space_down;
 
@@ -384,16 +428,36 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
 
             // Actualizar entrada de controles GBA (bits en 0 = presionado)
             let mut keys: u16 = 0x03FF;
-            if (GetAsyncKeyState(VK_UP as i32) as u16 & 0x8000) != 0 { keys &= !(1 << 6); }
-            if (GetAsyncKeyState(VK_DOWN as i32) as u16 & 0x8000) != 0 { keys &= !(1 << 7); }
-            if (GetAsyncKeyState(VK_LEFT as i32) as u16 & 0x8000) != 0 { keys &= !(1 << 5); }
-            if (GetAsyncKeyState(VK_RIGHT as i32) as u16 & 0x8000) != 0 { keys &= !(1 << 4); }
-            if (GetAsyncKeyState(b'Z' as i32) as u16 & 0x8000) != 0 { keys &= !(1 << 0); }      // A
-            if (GetAsyncKeyState(b'X' as i32) as u16 & 0x8000) != 0 { keys &= !(1 << 1); }      // B
-            if (GetAsyncKeyState(VK_RETURN as i32) as u16 & 0x8000) != 0 { keys &= !(1 << 3); } // Start
-            if (GetAsyncKeyState(VK_BACK as i32) as u16 & 0x8000) != 0 { keys &= !(1 << 2); }   // Select
-            if (GetAsyncKeyState(b'A' as i32) as u16 & 0x8000) != 0 { keys &= !(1 << 9); }      // L
-            if (GetAsyncKeyState(b'S' as i32) as u16 & 0x8000) != 0 { keys &= !(1 << 8); }      // R
+            if (GetAsyncKeyState(VK_UP as i32) as u16 & 0x8000) != 0 {
+                keys &= !(1 << 6);
+            }
+            if (GetAsyncKeyState(VK_DOWN as i32) as u16 & 0x8000) != 0 {
+                keys &= !(1 << 7);
+            }
+            if (GetAsyncKeyState(VK_LEFT as i32) as u16 & 0x8000) != 0 {
+                keys &= !(1 << 5);
+            }
+            if (GetAsyncKeyState(VK_RIGHT as i32) as u16 & 0x8000) != 0 {
+                keys &= !(1 << 4);
+            }
+            if (GetAsyncKeyState(b'Z' as i32) as u16 & 0x8000) != 0 {
+                keys &= !(1 << 0);
+            } // A
+            if (GetAsyncKeyState(b'X' as i32) as u16 & 0x8000) != 0 {
+                keys &= !(1 << 1);
+            } // B
+            if (GetAsyncKeyState(VK_RETURN as i32) as u16 & 0x8000) != 0 {
+                keys &= !(1 << 3);
+            } // Start
+            if (GetAsyncKeyState(VK_BACK as i32) as u16 & 0x8000) != 0 {
+                keys &= !(1 << 2);
+            } // Select
+            if (GetAsyncKeyState(b'A' as i32) as u16 & 0x8000) != 0 {
+                keys &= !(1 << 9);
+            } // L
+            if (GetAsyncKeyState(b'S' as i32) as u16 & 0x8000) != 0 {
+                keys &= !(1 << 8);
+            } // R
 
             maquina.bus.keys = keys;
 
@@ -430,7 +494,11 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
                     &maquina.bus.palette,
                     &maquina.bus.io,
                     if hay_lineas { Some(&*io_lineas) } else { None },
-                    if hay_lineas { Some(&*paleta_lineas) } else { None },
+                    if hay_lineas {
+                        Some(&*paleta_lineas)
+                    } else {
+                        None
+                    },
                 );
                 let sw_linea_rgb = software_a_rgb(&maquina.bus.framebuffer);
 
@@ -443,7 +511,13 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
 
                 // Calcular sw_fin solo si se necesita mostrar en pantalla o si hay sospecha de diferencia
                 let sw_present_rgb = if ver_ref_fin {
-                    render_software_fin(&maquina.bus.rom, &maquina.bus.vram, &maquina.bus.oam, &maquina.bus.palette, &maquina.bus.io)
+                    render_software_fin(
+                        &maquina.bus.rom,
+                        &maquina.bus.vram,
+                        &maquina.bus.oam,
+                        &maquina.bus.palette,
+                        &maquina.bus.io,
+                    )
                 } else {
                     sw_linea_rgb.clone()
                 };
@@ -521,7 +595,11 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
                     cuadros_en_segundo = 0;
                     ultimo_fps = Instant::now();
 
-                    let modo_ref = if ver_ref_fin { "FIN CUADRO" } else { "LINEA (EMU)" };
+                    let modo_ref = if ver_ref_fin {
+                        "FIN CUADRO"
+                    } else {
+                        "LINEA (EMU)"
+                    };
                     let texto_titulo = format!(
                         "PPU Doble | Cuadro {} | {:.1} FPS | [L] Ref: {} | dif_linea: {} px | capturas: {} | [Tab] resaltado: {}\0",
                         cuadro,

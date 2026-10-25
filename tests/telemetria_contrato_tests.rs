@@ -34,11 +34,7 @@ fn analizador() -> PathBuf {
 
 /// Directorio temporal propio de cada test, limpio al empezar.
 fn dir_temporal(nombre: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "br-telemetria-{}-{}",
-        nombre,
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("br-telemetria-{}-{}", nombre, std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("el directorio temporal debe crearse");
     dir
@@ -118,13 +114,19 @@ fn leer_volcado(texto: &str) -> Volcado {
         let celdas: Vec<&str> = fila.split('\t').collect();
         match celdas.first().copied() {
             Some("resumen") => {
-                let clave = celdas.get(1).expect("una fila resumen trae clave").to_string();
+                let clave = celdas
+                    .get(1)
+                    .expect("una fila resumen trae clave")
+                    .to_string();
                 let valor = celdas.get(2).unwrap_or(&"").to_string();
                 volcado.resumen.insert(clave, valor);
             }
             Some("linea") => volcado.lineas.push(LineaVolcada::default()),
             Some("campo") => {
-                let nombre = celdas.get(1).expect("una fila campo trae nombre").to_string();
+                let nombre = celdas
+                    .get(1)
+                    .expect("una fila campo trae nombre")
+                    .to_string();
                 let valor = celdas.get(2).unwrap_or(&"").to_string();
                 volcado
                     .lineas
@@ -134,7 +136,10 @@ fn leer_volcado(texto: &str) -> Volcado {
                     .push((nombre, valor));
             }
             Some("sello") => {
-                let version = celdas.get(1).expect("una fila sello trae versión").to_string();
+                let version = celdas
+                    .get(1)
+                    .expect("una fila sello trae versión")
+                    .to_string();
                 volcado
                     .lineas
                     .last_mut()
@@ -142,7 +147,10 @@ fn leer_volcado(texto: &str) -> Volcado {
                     .sello = Some(version);
             }
             Some("anomalia") => {
-                let mensaje = celdas.get(1).expect("una fila anomalia trae mensaje").to_string();
+                let mensaje = celdas
+                    .get(1)
+                    .expect("una fila anomalia trae mensaje")
+                    .to_string();
                 volcado
                     .lineas
                     .last_mut()
@@ -242,7 +250,11 @@ fn test_la_linea_de_segundo_no_pierde_campos() {
     assert_eq!(volcado.lineas.len(), 1, "una línea de segundo, una entrada");
     let leida = &volcado.lineas[0];
 
-    assert_eq!(leida.sello.as_deref(), Some("2"), "la línea declara su versión");
+    assert_eq!(
+        leida.sello.as_deref(),
+        Some("2"),
+        "la línea declara su versión"
+    );
     assert!(
         leida.anomalias.is_empty(),
         "una línea bien formada no debe tener anomalías: {:?}",
@@ -250,13 +262,37 @@ fn test_la_linea_de_segundo_no_pierde_campos() {
     );
 
     // Las 23 filas `campo`, en el orden canónico, recomponen la línea entera sin el sello.
-    let nombres: Vec<&str> = leida.campos.iter().map(|(nombre, _)| nombre.as_str()).collect();
+    let nombres: Vec<&str> = leida
+        .campos
+        .iter()
+        .map(|(nombre, _)| nombre.as_str())
+        .collect();
     assert_eq!(
         nombres,
         vec![
-            "t", "fps", "ejec", "ppu", "ppubg", "ppuspr", "ppucomp", "apu", "lecturas",
-            "escrituras", "color", "dibujo", "espera", "subida", "codificacion", "present",
-            "presentmax", "nativos", "interprete", "vacias", "ventana", "pump", "pumpm",
+            "t",
+            "fps",
+            "ejec",
+            "ppu",
+            "ppubg",
+            "ppuspr",
+            "ppucomp",
+            "apu",
+            "lecturas",
+            "escrituras",
+            "color",
+            "dibujo",
+            "espera",
+            "subida",
+            "codificacion",
+            "present",
+            "presentmax",
+            "nativos",
+            "interprete",
+            "vacias",
+            "ventana",
+            "pump",
+            "pumpm",
         ],
         "los 23 campos del esquema vuelven en su orden canónico"
     );
@@ -404,7 +440,10 @@ fn test_el_esquema_no_necesita_dependencias_nuevas() {
     // el esquema dejaría de ser un artefacto legible sin compilar.
     let texto = fs::read_to_string(repo_root().join("telemetria").join("esquema.txt"))
         .expect("el esquema tiene que existir");
-    assert!(texto.contains("sello | formato | 2"), "el sello declara la versión 2");
+    assert!(
+        texto.contains("sello | formato | 2"),
+        "el sello declara la versión 2"
+    );
     assert!(
         texto.contains("version | 2 | hereda: 1 | anade: pump, pumpm"),
         "la versión 2 añade pump y pumpm"
@@ -422,6 +461,12 @@ fn test_el_acumulador_escribe_la_linea_del_contrato() {
     let informe = acumulador.close_window((1200, 1920));
 
     let linea = informe.to_line();
-    assert!(linea.ends_with(" formato=2"), "la línea cierra con el sello: {linea}");
-    assert!(!linea.starts_with('#'), "una línea de segundo no es una anotación: {linea}");
+    assert!(
+        linea.ends_with(" formato=2"),
+        "la línea cierra con el sello: {linea}"
+    );
+    assert!(
+        !linea.starts_with('#'),
+        "una línea de segundo no es una anotación: {linea}"
+    );
 }

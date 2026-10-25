@@ -111,7 +111,10 @@ fn main() {
     let aviso = if capturas.len() == 160 {
         String::new()
     } else {
-        format!(" (AVISO: se esperaban 160 capturas y hay {})", capturas.len())
+        format!(
+            " (AVISO: se esperaban 160 capturas y hay {})",
+            capturas.len()
+        )
     };
     let resumen = format!(
         "resumen cuadro {objetivo}: capturas {}, píxeles distintos {total} de {} en {lineas_con_diferencias} líneas (esperado 0){aviso}",

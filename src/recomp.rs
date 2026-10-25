@@ -125,11 +125,7 @@ impl BlockTable {
 /// Ejecuta un fotograma de la consola utilizando bloques C11 nativos con fallback al intérprete.
 ///
 /// Retorna la tupla `(bloques_nativos_ejecutados, pasos_interprete_fallback)`.
-pub fn run_frame_native(
-    m: &mut Machine,
-    table: &BlockTable,
-    max_steps: u64,
-) -> (u64, u64) {
+pub fn run_frame_native(m: &mut Machine, table: &BlockTable, max_steps: u64) -> (u64, u64) {
     m.bus.frame_ready = false;
     let mut native = 0u64;
     let mut fallback = 0u64;
@@ -141,9 +137,7 @@ pub fn run_frame_native(
         steps += 1;
         // 1. Estados de reposo (Halt) y entrega de interrupciones (IRQ)
         if m.bus.halted
-            || (!m.bus.real_bios
-                && m.cpu.regs[15] == IRQ_RETURN_ADDR
-                && m.cpu.mode() == Mode::Irq)
+            || (!m.bus.real_bios && m.cpu.regs[15] == IRQ_RETURN_ADDR && m.cpu.mode() == Mode::Irq)
             || (m.bus.irq_pending() && !m.cpu.flag(FLAG_I))
         {
             m.step();
@@ -387,7 +381,11 @@ pub fn drain_top_hotspots(limit: usize) -> Vec<(u32, u64)> {
     let Some(estado) = guard.as_mut() else {
         return Vec::new();
     };
-    let mut entries: Vec<(u32, u64)> = estado.map.iter().map(|(addr, hits)| (*addr, *hits)).collect();
+    let mut entries: Vec<(u32, u64)> = estado
+        .map
+        .iter()
+        .map(|(addr, hits)| (*addr, *hits))
+        .collect();
     entries.sort_unstable_by(|a, b| b.1.cmp(&a.1));
     entries.truncate(limit);
     for (addr, _) in &entries {
@@ -468,7 +466,10 @@ pub fn region_counters() -> RegionCounters {
 /// Resuelve la ruta a una biblioteca hermana contigua a partir de la ruta absoluta
 /// del módulo o ejecutable actual (usado para resolver `libblazing_recompiled.so` junto a `libblazing_recomp.so`).
 #[allow(dead_code)]
-pub(crate) fn resolve_sibling_library_path(self_path: &str, sibling_name: &str) -> Option<std::path::PathBuf> {
+pub(crate) fn resolve_sibling_library_path(
+    self_path: &str,
+    sibling_name: &str,
+) -> Option<std::path::PathBuf> {
     let p = std::path::Path::new(self_path);
     let parent = p.parent()?;
     Some(parent.join(sibling_name))
@@ -498,7 +499,10 @@ mod dl {
     pub unsafe fn open_library(name: &str) -> Option<*mut c_void> {
         // 1. Intentar resolver la ruta canónica absoluta contigua a libblazing_recomp.so vía dladdr
         let mut info = std::mem::MaybeUninit::<DlInfo>::zeroed();
-        let res = dladdr(open_library as *const () as *const c_void, info.as_mut_ptr());
+        let res = dladdr(
+            open_library as *const () as *const c_void,
+            info.as_mut_ptr(),
+        );
         if res != 0 {
             let info = info.assume_init();
             if !info.dli_fname.is_null() {
@@ -572,7 +576,9 @@ pub fn load_native_blocks() -> Option<BlockTable> {
             let blocks_ptr: *const RcgBlock = dl::get_symbol(handle, "rcg_blocks")?;
             let count_ptr: *const u64 = dl::get_symbol(handle, "rcg_block_count")?;
             if blocks_ptr.is_null() || count_ptr.is_null() {
-                log::warn!("Símbolos rcg_blocks o rcg_block_count nulos en libblazing_recompiled.so");
+                log::warn!(
+                    "Símbolos rcg_blocks o rcg_block_count nulos en libblazing_recompiled.so"
+                );
                 return None;
             }
             let count = std::ptr::read_unaligned(count_ptr) as usize;
@@ -581,7 +587,10 @@ pub fn load_native_blocks() -> Option<BlockTable> {
                 return None;
             }
             let slice = std::slice::from_raw_parts(blocks_ptr, count);
-            log::info!("Recompilación nativa AOT cargada exitosamente: {} bloques C11 activos", count);
+            log::info!(
+                "Recompilación nativa AOT cargada exitosamente: {} bloques C11 activos",
+                count
+            );
             Some(BlockTable::from_blocks(slice))
         }
     }

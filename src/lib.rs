@@ -23,21 +23,20 @@
 // ---------------------------------------------------------------------------
 // Módulos puros, compilables y testeables en host.
 // ---------------------------------------------------------------------------
+pub mod error_screen;
+pub mod fps;
 pub mod input;
 pub mod overlay;
 pub mod overlay_shader;
-pub mod error_screen;
-pub mod runner;
-pub mod storage;
-pub mod recomp;
-pub mod fps;
 pub mod perf;
-pub mod telemetria;
 pub mod pipeline;
 pub mod present;
+pub mod recomp;
+pub mod runner;
+pub mod storage;
+pub mod telemetria;
 
 pub mod ppu_nativa;
-
 
 // ---------------------------------------------------------------------------
 // Plataforma Android: ciclo de vida, GPU, entrada y háptica.

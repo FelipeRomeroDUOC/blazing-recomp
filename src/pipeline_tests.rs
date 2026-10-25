@@ -5,7 +5,7 @@ use std::time::Duration;
 #[test]
 fn test_emulation_bridge_single_slot_transfer() {
     let bridge = Arc::new(EmulationBridge::new());
-    
+
     // Crear un paquete de prueba
     let mut rgba1 = Box::new([[0u8; 4]; GBA_PIXELS]);
     rgba1[0] = [255, 0, 0, 255];
@@ -76,7 +76,10 @@ fn test_emulation_bridge_pause_and_resume_sleep() {
 
     // Dar tiempo para que el hilo entre en espera
     std::thread::sleep(Duration::from_millis(30));
-    assert!(!handle.is_finished(), "el hilo debe estar dormido en la pausa");
+    assert!(
+        !handle.is_finished(),
+        "el hilo debe estar dormido en la pausa"
+    );
 
     bridge.set_paused(false);
     let res = handle.join().expect("hilo debe finalizar tras despertar");
@@ -137,7 +140,11 @@ fn test_mailbox_keeps_latest_frame() {
         .expect("debe recibir el fotograma más reciente");
     assert_eq!(p.frame_number, 5, "el consumidor recibe el más reciente");
     assert_eq!(p.rgba.len(), GBA_PIXELS);
-    assert_eq!(p.rgba[0], [10, 20, 30, 255], "sin pérdida de píxeles ni alfa");
+    assert_eq!(
+        p.rgba[0],
+        [10, 20, 30, 255],
+        "sin pérdida de píxeles ni alfa"
+    );
     assert!(
         bridge.allocations() <= 2,
         "el pool reutiliza búferes (asignaciones={})",
@@ -157,7 +164,7 @@ fn create_dummy_rom() -> Vec<u8> {
 #[test]
 fn test_emulation_worker_lifecycle_and_frame_generation() {
     let mut worker = EmulationWorker::start(create_dummy_rom(), None, ScreenKind::Frontlit, None);
-    
+
     // Esperar a que el worker produzca al menos 1 fotograma
     let start = std::time::Instant::now();
     let mut received_frame = None;
@@ -169,7 +176,10 @@ fn test_emulation_worker_lifecycle_and_frame_generation() {
         std::thread::sleep(Duration::from_millis(10));
     }
 
-    assert!(received_frame.is_some(), "worker debe generar al menos 1 fotograma");
+    assert!(
+        received_frame.is_some(),
+        "worker debe generar al menos 1 fotograma"
+    );
     let packet = received_frame.unwrap();
     assert!(packet.frame_number >= 1);
     assert_eq!(packet.rgba.len(), GBA_PIXELS);
@@ -245,7 +255,9 @@ fn test_ppu_frame_state_pool_recycling() {
         ppu_state: Some(state2),
     });
 
-    let received = bridge.try_recv_frame().expect("debe recibir el más reciente");
+    let received = bridge
+        .try_recv_frame()
+        .expect("debe recibir el más reciente");
     assert_eq!(received.frame_number, 2);
     let ppu = received.ppu_state.expect("debe tener ppu_state");
     assert_eq!(ppu.vram[0], 0x11);
@@ -255,4 +267,3 @@ fn test_ppu_frame_state_pool_recycling() {
     let reused = bridge.acquire_ppu_state();
     assert_eq!(reused.vram[0], 0x11, "debe ser el búfer reciclado del pool");
 }
-

@@ -53,7 +53,10 @@ pub struct ResumenVisual {
 
 /// Mayor diferencia por canal del píxel `p`.
 fn delta(a: &[u8], b: &[u8], p: usize) -> u8 {
-    (0..3).map(|k| a[p * 3 + k].abs_diff(b[p * 3 + k])).max().unwrap_or(0)
+    (0..3)
+        .map(|k| a[p * 3 + k].abs_diff(b[p * 3 + k]))
+        .max()
+        .unwrap_or(0)
 }
 
 /// Compara dos imágenes con la tolerancia del arnés; `None` si no hay diferencias.
@@ -69,7 +72,12 @@ pub fn diferencias(a: &[u8], b: &[u8]) -> Option<Diferencias> {
         match r.as_mut() {
             None => {
                 peor = d;
-                r = Some(Diferencias { distintos: 1, caja: (x, y, x, y), primero: (x, y), max_error: (x, y) });
+                r = Some(Diferencias {
+                    distintos: 1,
+                    caja: (x, y, x, y),
+                    primero: (x, y),
+                    max_error: (x, y),
+                });
             }
             Some(dif) => {
                 dif.distintos += 1;
@@ -89,7 +97,9 @@ pub fn diferencias(a: &[u8], b: &[u8]) -> Option<Diferencias> {
 
 /// Número de píxeles distintos, con la tolerancia del arnés.
 pub fn cuenta_distintos(a: &[u8], b: &[u8]) -> usize {
-    (0..PIXELES).filter(|&p| delta(a, b, p) > TOLERANCIA).count()
+    (0..PIXELES)
+        .filter(|&p| delta(a, b, p) > TOLERANCIA)
+        .count()
 }
 
 // ---------------------------------------------------------------------- lienzo
@@ -125,7 +135,8 @@ pub fn lienzo_compuesto(sw: &[u8], nat: &[u8]) -> Vec<u8> {
                 if borde {
                     [0x00, 0xFF, 0xFF]
                 } else {
-                    let g = ((sw[p * 3] as u16 + sw[p * 3 + 1] as u16 + sw[p * 3 + 2] as u16) / 6) as u8;
+                    let g = ((sw[p * 3] as u16 + sw[p * 3 + 1] as u16 + sw[p * 3 + 2] as u16) / 6)
+                        as u8;
                     [g, g, g]
                 }
             };
@@ -144,7 +155,11 @@ fn crc32(datos: &[u8]) -> u32 {
     for &b in datos {
         crc ^= b as u32;
         for _ in 0..8 {
-            crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+            crc = if crc & 1 != 0 {
+                (crc >> 1) ^ 0xEDB8_8320
+            } else {
+                crc >> 1
+            };
         }
     }
     !crc
@@ -163,7 +178,11 @@ fn adler32(datos: &[u8]) -> u32 {
 /// visor y sin dependencias. El lienzo de 960x160 ocupa ~450 KiB.
 fn zlib_stored(datos: &[u8]) -> Vec<u8> {
     let mut out = vec![0x78, 0x01];
-    let trozos: Vec<&[u8]> = if datos.is_empty() { vec![&[][..]] } else { datos.chunks(65535).collect() };
+    let trozos: Vec<&[u8]> = if datos.is_empty() {
+        vec![&[][..]]
+    } else {
+        datos.chunks(65535).collect()
+    };
     let n = trozos.len();
     for (i, t) in trozos.into_iter().enumerate() {
         out.push(if i + 1 == n { 1 } else { 0 });
@@ -215,7 +234,10 @@ pub fn guardar_captura_si_difiere(
     };
     std::fs::create_dir_all(dir)?;
     let ruta = dir.join(format!("cuadro-{cuadro}-{caso}.png"));
-    std::fs::write(&ruta, png_rgb(&lienzo_compuesto(sw, nat), ANCHO_COMPUESTO, ALTO))?;
+    std::fs::write(
+        &ruta,
+        png_rgb(&lienzo_compuesto(sw, nat), ANCHO_COMPUESTO, ALTO),
+    )?;
     Ok(Some(ResumenVisual {
         distintos: d.distintos,
         caja: d.caja,
@@ -235,7 +257,10 @@ pub fn guardar_captura_forzada(
 ) -> io::Result<PathBuf> {
     std::fs::create_dir_all(dir)?;
     let ruta = dir.join(format!("cuadro-{cuadro}-{etiqueta}.png"));
-    std::fs::write(&ruta, png_rgb(&lienzo_compuesto(sw, nat), ANCHO_COMPUESTO, ALTO))?;
+    std::fs::write(
+        &ruta,
+        png_rgb(&lienzo_compuesto(sw, nat), ANCHO_COMPUESTO, ALTO),
+    )?;
     Ok(ruta)
 }
 
@@ -458,7 +483,10 @@ fn rango_registro(dir: usize) -> std::ops::Range<usize> {
 
 /// Componentes (`regs`, `paleta`, `vram`, `oam`) y registros con nombre que alguna línea
 /// tenía distintos del estado de fin de cuadro.
-pub fn cambios_por_linea(fin: EstadoRef, lineas: &[EstadoRef]) -> (Vec<&'static str>, Vec<&'static str>) {
+pub fn cambios_por_linea(
+    fin: EstadoRef,
+    lineas: &[EstadoRef],
+) -> (Vec<&'static str>, Vec<&'static str>) {
     let mut componentes = Vec::new();
     let mut registros = Vec::new();
     for l in lineas {
@@ -473,9 +501,15 @@ pub fn cambios_por_linea(fin: EstadoRef, lineas: &[EstadoRef]) -> (Vec<&'static 
             }
         }
         for dir in (0..0x56).step_by(2) {
-            let Some(nombre) = nombre_registro(dir) else { continue };
+            let Some(nombre) = nombre_registro(dir) else {
+                continue;
+            };
             let r = rango_registro(dir);
-            if r.end <= l.io.len() && r.end <= fin.io.len() && l.io[r.clone()] != fin.io[r] && !registros.contains(&nombre) {
+            if r.end <= l.io.len()
+                && r.end <= fin.io.len()
+                && l.io[r.clone()] != fin.io[r]
+                && !registros.contains(&nombre)
+            {
                 registros.push(nombre);
             }
         }
@@ -535,7 +569,11 @@ pub fn sprites_en_pixel(oam: &[u8], x: usize, y: usize) -> Vec<usize> {
             continue;
         }
         let (w, h) = OBJ_TAMANOS[forma][((a1 >> 14) & 3) as usize];
-        let (w, h) = if afin && a0 & 0x200 != 0 { (w * 2, h * 2) } else { (w, h) };
+        let (w, h) = if afin && a0 & 0x200 != 0 {
+            (w * 2, h * 2)
+        } else {
+            (w, h)
+        };
         let mut sy = (a0 & 0xFF) as i32;
         if sy >= 160 {
             sy -= 256;
@@ -559,7 +597,11 @@ pub fn ventana_en_pixel(io: &[u8], x: usize, y: usize) -> &'static str {
     let dentro = |h: u16, v: u16| {
         let rango = |ini: u16, fin: u16, p: usize| {
             let (ini, fin, p) = (ini as usize, fin as usize, p);
-            if ini <= fin { p >= ini && p < fin } else { p >= ini || p < fin }
+            if ini <= fin {
+                p >= ini && p < fin
+            } else {
+                p >= ini || p < fin
+            }
         };
         rango(h >> 8, h & 0xFF, x) && rango(v >> 8, v & 0xFF, y)
     };
@@ -591,11 +633,17 @@ pub struct Testigo {
 fn testigo(x: usize, y: usize, sw: &[u8], nat: &[u8], estado: EstadoRef) -> Testigo {
     let p = (y * ANCHO + x) * 3;
     let dispcnt = io16(estado.io, 0);
-    let capas = [("BG0", 0x100), ("BG1", 0x200), ("BG2", 0x400), ("BG3", 0x800), ("OBJ", 0x1000)]
-        .into_iter()
-        .filter(|(_, b)| dispcnt & b != 0)
-        .map(|(n, _)| n)
-        .collect();
+    let capas = [
+        ("BG0", 0x100),
+        ("BG1", 0x200),
+        ("BG2", 0x400),
+        ("BG3", 0x800),
+        ("OBJ", 0x1000),
+    ]
+    .into_iter()
+    .filter(|(_, b)| dispcnt & b != 0)
+    .map(|(n, _)| n)
+    .collect();
     Testigo {
         x,
         y,
@@ -678,9 +726,21 @@ impl Diagnostico {
             "diferencias nativa: frente a fin de cuadro {}, frente a estado por linea {}",
             self.dif_fin, self.dif_linea
         ));
-        let lista = |v: &[&str]| if v.is_empty() { "-".to_string() } else { v.join(",") };
-        l.push(format!("componentes que cambian dentro del cuadro: {}", lista(&self.componentes)));
-        l.push(format!("registros que cambian dentro del cuadro: {}", lista(&self.registros)));
+        let lista = |v: &[&str]| {
+            if v.is_empty() {
+                "-".to_string()
+            } else {
+                v.join(",")
+            }
+        };
+        l.push(format!(
+            "componentes que cambian dentro del cuadro: {}",
+            lista(&self.componentes)
+        ));
+        l.push(format!(
+            "registros que cambian dentro del cuadro: {}",
+            lista(&self.registros)
+        ));
         match self.causa {
             "estado_por_linea" => l.push(
                 "veredicto: la logica de dibujo coincide con el estado congelado; la diferencia \
@@ -695,7 +755,8 @@ impl Diagnostico {
                 l.push(format!(
                     "veredicto: {}",
                     if self.resuelve.is_empty() {
-                        "ninguna variante sola deja el residuo en 0 (fallo compartido o del fondo)".to_string()
+                        "ninguna variante sola deja el residuo en 0 (fallo compartido o del fondo)"
+                            .to_string()
                     } else {
                         format!("el residuo cae a 0 con {}", self.resuelve.join(", "))
                     }

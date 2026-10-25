@@ -18,7 +18,9 @@ fn test_informe_promedia_y_reporta_peor_caso() {
             ppu_bg_ms: 1.5,
             ppu_sprite_ms: 0.5,
             ppu_compose_ms: 1.0,
-            apu_ms: 1.0, pump_llamadas: 0, pump_muestras: 0,
+            apu_ms: 1.0,
+            pump_llamadas: 0,
+            pump_muestras: 0,
             lecturas: 50000,
             escrituras: 10000,
         },
@@ -36,7 +38,9 @@ fn test_informe_promedia_y_reporta_peor_caso() {
             ppu_bg_ms: 1.5,
             ppu_sprite_ms: 0.5,
             ppu_compose_ms: 1.0,
-            apu_ms: 1.0, pump_llamadas: 0, pump_muestras: 0,
+            apu_ms: 1.0,
+            pump_llamadas: 0,
+            pump_muestras: 0,
             lecturas: 50000,
             escrituras: 10000,
         },
@@ -54,7 +58,9 @@ fn test_informe_promedia_y_reporta_peor_caso() {
             ppu_bg_ms: 1.5,
             ppu_sprite_ms: 0.5,
             ppu_compose_ms: 1.0,
-            apu_ms: 1.0, pump_llamadas: 0, pump_muestras: 0,
+            apu_ms: 1.0,
+            pump_llamadas: 0,
+            pump_muestras: 0,
             lecturas: 50000,
             escrituras: 10000,
         },
@@ -72,7 +78,9 @@ fn test_informe_promedia_y_reporta_peor_caso() {
             ppu_bg_ms: 1.5,
             ppu_sprite_ms: 0.5,
             ppu_compose_ms: 1.0,
-            apu_ms: 1.0, pump_llamadas: 0, pump_muestras: 0,
+            apu_ms: 1.0,
+            pump_llamadas: 0,
+            pump_muestras: 0,
             lecturas: 50000,
             escrituras: 10000,
         },
@@ -110,7 +118,9 @@ fn test_report_breaks_down_draw_time() {
         ppu_bg_ms: 1.0,
         ppu_sprite_ms: 0.5,
         ppu_compose_ms: 0.5,
-        apu_ms: 0.5, pump_llamadas: 0, pump_muestras: 0,
+        apu_ms: 0.5,
+        pump_llamadas: 0,
+        pump_muestras: 0,
         lecturas: 1000,
         escrituras: 500,
     });
@@ -118,16 +128,46 @@ fn test_report_breaks_down_draw_time() {
     let report = perf.close_window((1200, 2000));
     let line = report.to_line();
 
-    assert!(line.contains("subida=3.0"), "la línea debe reportar la subida: {line}");
-    assert!(line.contains("codificacion=4.0"), "la línea debe reportar la codificación: {line}");
-    assert!(line.contains("present=48.0"), "la línea debe reportar la presentación: {line}");
-    assert!(line.contains("ppu=2.0"), "la línea debe reportar la PPU: {line}");
-    assert!(line.contains("ppubg=1.0"), "la línea debe reportar fondos PPU: {line}");
-    assert!(line.contains("ppuspr=0.5"), "la línea debe reportar sprites PPU: {line}");
-    assert!(line.contains("ppucomp=0.5"), "la línea debe reportar composición PPU: {line}");
-    assert!(line.contains("apu=0.5"), "la línea debe reportar el APU: {line}");
-    assert!(line.contains("lecturas=1000"), "la línea debe reportar las lecturas: {line}");
-    assert!(line.contains("escrituras=500"), "la línea debe reportar las escrituras: {line}");
+    assert!(
+        line.contains("subida=3.0"),
+        "la línea debe reportar la subida: {line}"
+    );
+    assert!(
+        line.contains("codificacion=4.0"),
+        "la línea debe reportar la codificación: {line}"
+    );
+    assert!(
+        line.contains("present=48.0"),
+        "la línea debe reportar la presentación: {line}"
+    );
+    assert!(
+        line.contains("ppu=2.0"),
+        "la línea debe reportar la PPU: {line}"
+    );
+    assert!(
+        line.contains("ppubg=1.0"),
+        "la línea debe reportar fondos PPU: {line}"
+    );
+    assert!(
+        line.contains("ppuspr=0.5"),
+        "la línea debe reportar sprites PPU: {line}"
+    );
+    assert!(
+        line.contains("ppucomp=0.5"),
+        "la línea debe reportar composición PPU: {line}"
+    );
+    assert!(
+        line.contains("apu=0.5"),
+        "la línea debe reportar el APU: {line}"
+    );
+    assert!(
+        line.contains("lecturas=1000"),
+        "la línea debe reportar las lecturas: {line}"
+    );
+    assert!(
+        line.contains("escrituras=500"),
+        "la línea debe reportar las escrituras: {line}"
+    );
     assert!(
         report.dibujo_avg_ms >= report.present_avg_ms,
         "el total de dibujo debe cubrir la fase de presentación"
@@ -168,13 +208,22 @@ fn test_resolve_perf_candidates_prioritizes_downloads() {
     ];
     let candidates = resolve_perf_candidates(&extra);
     assert_eq!(candidates[0], std::path::PathBuf::from("/sdcard/Download"));
-    assert_eq!(candidates[1], std::path::PathBuf::from("/storage/emulated/0/Download"));
+    assert_eq!(
+        candidates[1],
+        std::path::PathBuf::from("/storage/emulated/0/Download")
+    );
     assert_eq!(
         candidates[2],
         std::path::PathBuf::from("/storage/emulated/0/Android/data/com.blazingrecomp.game/files")
     );
     // Verificar que no hay duplicados de /sdcard/Download
-    assert_eq!(candidates.iter().filter(|p| **p == std::path::PathBuf::from("/sdcard/Download")).count(), 1);
+    assert_eq!(
+        candidates
+            .iter()
+            .filter(|p| **p == std::path::PathBuf::from("/sdcard/Download"))
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -194,7 +243,9 @@ fn test_informe_reporta_peor_caso_de_presentacion() {
         ppu_bg_ms: 1.0,
         ppu_sprite_ms: 0.5,
         ppu_compose_ms: 0.5,
-        apu_ms: 0.5, pump_llamadas: 0, pump_muestras: 0,
+        apu_ms: 0.5,
+        pump_llamadas: 0,
+        pump_muestras: 0,
         lecturas: 1000,
         escrituras: 500,
     };
@@ -236,7 +287,9 @@ fn test_report_desglose_ppu_subfases() {
         ppu_bg_ms: 2.5,
         ppu_sprite_ms: 1.0,
         ppu_compose_ms: 2.0,
-        apu_ms: 0.8, pump_llamadas: 0, pump_muestras: 0,
+        apu_ms: 0.8,
+        pump_llamadas: 0,
+        pump_muestras: 0,
         lecturas: 1000,
         escrituras: 500,
     });
@@ -254,7 +307,7 @@ fn test_report_desglose_ppu_subfases() {
 #[test]
 fn test_ppu_hw_muestreo_y_linea_telemetria() {
     let mut perf = FramePerf::new();
-    
+
     // Fotograma 1: GPU, Modo 0, con ventana activa, sin blend, 20 sprites (5 de 8bpp, 2 afines)
     perf.record_ppu_hw(PpuHwFrameSample {
         is_gpu: true,

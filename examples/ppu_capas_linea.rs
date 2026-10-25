@@ -138,8 +138,7 @@ fn main() {
             gba_core::ppu::render_scanline(&mut replay.bus, cap.linea);
 
             let ini = cap.linea * 240;
-            cuadros_var[v][ini..ini + 240]
-                .copy_from_slice(&replay.bus.framebuffer[ini..ini + 240]);
+            cuadros_var[v][ini..ini + 240].copy_from_slice(&replay.bus.framebuffer[ini..ini + 240]);
         }
     }
 
@@ -160,7 +159,10 @@ fn main() {
     let aviso = if capturas.len() == 160 {
         String::new()
     } else {
-        format!(" (AVISO: se esperaban 160 capturas y hay {})", capturas.len())
+        format!(
+            " (AVISO: se esperaban 160 capturas y hay {})",
+            capturas.len()
+        )
     };
     let resumen = format!(
         "resumen cuadro {objetivo}: variante completa vs juego = {d_juego} píxeles distintos de {} (esperado 0); modos de vídeo: {}{aviso}",

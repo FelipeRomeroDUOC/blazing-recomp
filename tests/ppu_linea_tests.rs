@@ -46,5 +46,8 @@ fn test_informe_tiene_160_lineas() {
     }
     let texto = leer_informe();
     let filas = texto.lines().filter(|l| l.starts_with("linea ")).count();
-    assert_eq!(filas, 160, "el informe debe tener una fila por línea visible");
+    assert_eq!(
+        filas, 160,
+        "el informe debe tener una fila por línea visible"
+    );
 }

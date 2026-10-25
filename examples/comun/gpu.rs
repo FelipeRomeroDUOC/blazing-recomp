@@ -21,12 +21,13 @@ impl Gpu {
     /// Arnés con la PPU nativa, que puede fallar al construir su pipeline.
     pub fn nueva_nativa() -> Result<Self, String> {
         let instancia = wgpu::Instance::default();
-        let adaptador = pollster::block_on(instancia.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            compatible_surface: None,
-            force_fallback_adapter: false,
-        }))
-        .map_err(|e| format!("sin adaptador de GPU: {e:?}"))?;
+        let adaptador =
+            pollster::block_on(instancia.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                compatible_surface: None,
+                force_fallback_adapter: false,
+            }))
+            .map_err(|e| format!("sin adaptador de GPU: {e:?}"))?;
         let desc = wgpu::DeviceDescriptor {
             required_limits: adaptador.limits(),
             ..Default::default()
@@ -82,8 +83,17 @@ impl Gpu {
         io_lineas: Option<&[[u8; 0x60]; 160]>,
         paleta_lineas: Option<&[[u8; 1024]; 160]>,
     ) -> Vec<u8> {
-        self.pipeline
-            .render_frame_lineas(&self.device, &self.queue, &self.vista, vram, oam, palette, io, io_lineas, paleta_lineas);
+        self.pipeline.render_frame_lineas(
+            &self.device,
+            &self.queue,
+            &self.vista,
+            vram,
+            oam,
+            palette,
+            io,
+            io_lineas,
+            paleta_lineas,
+        );
 
         let mut codificador = self
             .device

@@ -116,6 +116,34 @@ fn test_render_guide_screen_rasterizes_pixels() {
 }
 
 #[test]
+fn test_render_splash_screen_rasterizes_typography() {
+    let mut buffer = vec![[0u8, 0u8, 0u8, 255u8]; 240 * 160];
+    render_splash_screen(&mut buffer);
+
+    // Debe contener píxeles dorados del título "BLAZING RECOMP" (Outfit Bold, #FFD60A)
+    let gold_pixels = buffer
+        .iter()
+        .filter(|px| px[0] == 255 && px[1] == 214 && px[2] == 10)
+        .count();
+    assert!(
+        gold_pixels > 50,
+        "El splash screen debe rasterizar el título en Outfit Bold: {}",
+        gold_pixels
+    );
+
+    // Debe contener píxeles celestes del subtítulo "CARGANDO MOTOR..." (JetBrains Mono Bold, #B4CDED)
+    let sub_pixels = buffer
+        .iter()
+        .filter(|px| px[0] == 180 && px[1] == 205 && px[2] == 237)
+        .count();
+    assert!(
+        sub_pixels > 30,
+        "El splash screen debe rasterizar el subtítulo en JetBrains Mono Bold: {}",
+        sub_pixels
+    );
+}
+
+#[test]
 fn test_scan_and_load_finds_official_rom_in_roms_directory() {
     let roms_dir = PathBuf::from("roms");
     if roms_dir.is_dir() {

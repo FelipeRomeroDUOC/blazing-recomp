@@ -207,9 +207,18 @@ impl PerfReport {
         valores.insert("apu", Valor::Real(self.apu_avg_ms));
         valores.insert("lecturas", Valor::Entero(self.lecturas_avg));
         valores.insert("escrituras", Valor::Entero(self.escrituras_avg));
-        valores.insert("color", Valor::RealReal(self.color_avg_ms, self.color_max_ms));
-        valores.insert("dibujo", Valor::RealReal(self.dibujo_avg_ms, self.dibujo_max_ms));
-        valores.insert("espera", Valor::RealReal(self.espera_avg_ms, self.espera_max_ms));
+        valores.insert(
+            "color",
+            Valor::RealReal(self.color_avg_ms, self.color_max_ms),
+        );
+        valores.insert(
+            "dibujo",
+            Valor::RealReal(self.dibujo_avg_ms, self.dibujo_max_ms),
+        );
+        valores.insert(
+            "espera",
+            Valor::RealReal(self.espera_avg_ms, self.espera_max_ms),
+        );
         valores.insert("subida", Valor::Real(self.subida_avg_ms));
         valores.insert("codificacion", Valor::Real(self.codificacion_avg_ms));
         valores.insert("present", Valor::Real(self.present_avg_ms));

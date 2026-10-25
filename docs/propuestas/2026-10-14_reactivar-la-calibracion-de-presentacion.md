@@ -2,7 +2,7 @@
 
 Fecha: 2026-10-14
 Nivel: 2
-Estado: aprobada (el usuario aprobó la vía disciplinada el 2026-10-14)
+Estado: cerrada (experimento concluido; sonda desactivada definitivamente el 2026-10-25 tras identificar el artefacto de doble pantalla en TV con OpenGL ES)
 
 <!-- Estados: pendiente | aprobada | modificada | descartada |
      verificada por agente | revisada por humano | discrepada | cerrada -->

@@ -169,8 +169,14 @@ impl FpsCounter {
                 let px = x as f32 + 0.5;
                 let py = y as f32 + 0.5;
 
-                let dx = (px - corner_r).min(0.0).abs().max((px - (w as f32 - corner_r)).max(0.0));
-                let dy = (py - corner_r).min(0.0).abs().max((py - (h as f32 - corner_r)).max(0.0));
+                let dx = (px - corner_r)
+                    .min(0.0)
+                    .abs()
+                    .max((px - (w as f32 - corner_r)).max(0.0));
+                let dy = (py - corner_r)
+                    .min(0.0)
+                    .abs()
+                    .max((py - (h as f32 - corner_r)).max(0.0));
                 let dist = (dx * dx + dy * dy).sqrt();
 
                 let inside = dist <= corner_r;
@@ -178,7 +184,8 @@ impl FpsCounter {
 
                 if inside {
                     // Detectar si está en el borde de 1px
-                    let is_border = x == 0 || x == w - 1 || y == 0 || y == h - 1 || dist >= (corner_r - 1.0);
+                    let is_border =
+                        x == 0 || x == w - 1 || y == 0 || y == h - 1 || dist >= (corner_r - 1.0);
                     if is_border {
                         self.buffer[idx] = border_color;
                     } else {
@@ -233,10 +240,18 @@ impl FpsCounter {
                             let a_factor = (alpha as f32) / 255.0;
 
                             // Alpha compositing (over)
-                            let r_out = ((text_color[0] as f32) * a_factor + (bg[0] as f32) * (1.0 - a_factor)).round() as u8;
-                            let g_out = ((text_color[1] as f32) * a_factor + (bg[1] as f32) * (1.0 - a_factor)).round() as u8;
-                            let b_out = ((text_color[2] as f32) * a_factor + (bg[2] as f32) * (1.0 - a_factor)).round() as u8;
-                            let a_out = ((255.0 * a_factor) + (bg[3] as f32) * (1.0 - a_factor)).round().min(255.0) as u8;
+                            let r_out = ((text_color[0] as f32) * a_factor
+                                + (bg[0] as f32) * (1.0 - a_factor))
+                                .round() as u8;
+                            let g_out = ((text_color[1] as f32) * a_factor
+                                + (bg[1] as f32) * (1.0 - a_factor))
+                                .round() as u8;
+                            let b_out = ((text_color[2] as f32) * a_factor
+                                + (bg[2] as f32) * (1.0 - a_factor))
+                                .round() as u8;
+                            let a_out = ((255.0 * a_factor) + (bg[3] as f32) * (1.0 - a_factor))
+                                .round()
+                                .min(255.0) as u8;
 
                             self.buffer[idx] = [r_out, g_out, b_out, a_out];
                         }

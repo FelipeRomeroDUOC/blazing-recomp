@@ -29,6 +29,19 @@ Para garantizar concordancia determinista entre el archivo `Cargo.toml` y `andro
 
 $$\text{versionCode} = \text{MAJOR} \times 10000 + \text{MINOR} \times 100 + \text{PATCH}$$
 
+La sincronización se gestiona de forma atómica mediante el script [`scripts/bump_version.py`](../../scripts/bump_version.py), el cual exige confirmación explícita previa de la persona antes de aplicar cualquier incremento en los manifiestos y la documentación:
+
+```bash
+# Validar sincronía unánime
+python scripts/bump_version.py --check
+
+# Simular incremento seguro antes de aplicar
+python scripts/bump_version.py --dry-run --patch
+
+# Aplicar incremento con confirmación interactiva
+python scripts/bump_version.py --patch -m "Descripción de la corrección o feature validada"
+```
+
 | SemVer | `versionName` | `versionCode` | Estado / Propósito |
 | :--- | :--- | :--- | :--- |
 | **`0.0.1`** | `"0.0.1"` | `1` | Prototipo inicial de ventana NDK y ciclo de vida de actividad. |

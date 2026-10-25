@@ -41,7 +41,11 @@ fn test_el_esquema_declara_los_23_campos_en_orden_canonico() {
     let esquema = esquema().expect("el esquema embebido tiene que analizarse");
 
     let nombres: Vec<&str> = esquema.campos().iter().map(|campo| campo.nombre).collect();
-    assert_eq!(nombres.len(), 23, "la versión 2 tiene 23 campos: {nombres:?}");
+    assert_eq!(
+        nombres.len(),
+        23,
+        "la versión 2 tiene 23 campos: {nombres:?}"
+    );
     assert_eq!(&nombres[..3], &["t", "fps", "ejec"]);
     assert_eq!(&nombres[21..], &["pump", "pumpm"]);
     assert_eq!(esquema.sello_clave(), "formato");
@@ -50,7 +54,8 @@ fn test_el_esquema_declara_los_23_campos_en_orden_canonico() {
 
 #[test]
 fn test_la_linea_sale_en_orden_canonico_y_remata_con_el_sello() {
-    let linea = escribir_linea(&valores_completos()).expect("los 23 valores declarados deben escribir");
+    let linea =
+        escribir_linea(&valores_completos()).expect("los 23 valores declarados deben escribir");
 
     assert_eq!(
         linea,
@@ -78,7 +83,8 @@ fn test_un_valor_que_el_esquema_no_declara_es_un_error() {
     let mut valores = valores_completos();
     valores.insert("zzz", Valor::Entero(1));
 
-    let error = escribir_linea(&valores).expect_err("un campo fuera del esquema no se puede escribir");
+    let error =
+        escribir_linea(&valores).expect_err("un campo fuera del esquema no se puede escribir");
     assert!(
         error.contains("el valor 'zzz' no está en el esquema"),
         "el error tiene que nombrar el valor sobrante: {error}"
@@ -111,7 +117,8 @@ fn test_el_tipo_entero_s_imprime_el_sufijo() {
 
 #[test]
 fn test_un_esquema_mal_formado_es_un_error_y_no_un_panico() {
-    let roto = "version | 1 | hereda: - | anade: t, fps | prueba\ncampo | t | entero_s | s | segundo\n";
+    let roto =
+        "version | 1 | hereda: - | anade: t, fps | prueba\ncampo | t | entero_s | s | segundo\n";
 
     let error = analizar(roto).expect_err("faltan los campos que el bloque declara");
     assert!(

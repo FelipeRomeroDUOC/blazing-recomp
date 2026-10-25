@@ -67,7 +67,10 @@ fn test_fps_badge_mode_switch_triggers_dirty() {
 
     counter.set_native(false);
     assert!(!counter.is_native());
-    assert!(counter.is_dirty(), "Cambiar a INT debe marcar dirty para actualizar textura");
+    assert!(
+        counter.is_dirty(),
+        "Cambiar a INT debe marcar dirty para actualizar textura"
+    );
 
     counter.mark_clean();
     counter.set_native(false);
@@ -115,7 +118,10 @@ fn test_fps_badge_renderer_switch_triggers_dirty() {
 
     counter.set_renderer("OpenGL");
     assert_eq!(counter.renderer(), "OpenGL");
-    assert!(counter.is_dirty(), "Cambiar renderer a OpenGL debe marcar dirty");
+    assert!(
+        counter.is_dirty(),
+        "Cambiar renderer a OpenGL debe marcar dirty"
+    );
 
     counter.mark_clean();
     counter.set_renderer("OpenGL");
@@ -123,7 +129,10 @@ fn test_fps_badge_renderer_switch_triggers_dirty() {
 
     counter.set_renderer("Vulkan");
     assert_eq!(counter.renderer(), "Vulkan");
-    assert!(counter.is_dirty(), "Cambiar renderer a Vulkan debe marcar dirty");
+    assert!(
+        counter.is_dirty(),
+        "Cambiar renderer a Vulkan debe marcar dirty"
+    );
 }
 
 #[test]
@@ -143,4 +152,3 @@ fn test_fps_counter_on_frames_batches_correctly() {
         "FPS por lotes ({calculated_fps}) debe reflejar 60 GBA frames en [58.0, 62.0]"
     );
 }
-

@@ -18,9 +18,30 @@ fn tramo(latency: u32, modo: PresentMode, scale: f32, rol: Rol, present: f64, fp
 /// Recorrido completo con los cinco tramos de la calibración real.
 fn recorrido(presents: [f64; 5]) -> Vec<Tramo> {
     vec![
-        tramo(1, PresentMode::Mailbox, 1.0, Rol::Referencia, presents[0], 18.0),
-        tramo(2, PresentMode::Mailbox, 1.0, Rol::Adoptable, presents[1], 18.0),
-        tramo(3, PresentMode::Mailbox, 1.0, Rol::Adoptable, presents[2], 18.0),
+        tramo(
+            1,
+            PresentMode::Mailbox,
+            1.0,
+            Rol::Referencia,
+            presents[0],
+            18.0,
+        ),
+        tramo(
+            2,
+            PresentMode::Mailbox,
+            1.0,
+            Rol::Adoptable,
+            presents[1],
+            18.0,
+        ),
+        tramo(
+            3,
+            PresentMode::Mailbox,
+            1.0,
+            Rol::Adoptable,
+            presents[2],
+            18.0,
+        ),
         tramo(
             3,
             PresentMode::Mailbox,
@@ -29,7 +50,14 @@ fn recorrido(presents: [f64; 5]) -> Vec<Tramo> {
             presents[3],
             18.0,
         ),
-        tramo(3, PresentMode::Immediate, 1.0, Rol::Sonda, presents[4], 18.0),
+        tramo(
+            3,
+            PresentMode::Immediate,
+            1.0,
+            Rol::Sonda,
+            presents[4],
+            18.0,
+        ),
     ]
 }
 
@@ -47,7 +75,12 @@ fn test_descripcion_de_candidato() {
 
 #[test]
 fn test_tramo_promedia_solo_ventanas_con_fotogramas() {
-    let mut t = Tramo::new(Candidato::new(1, PresentMode::Mailbox, 1.0, Rol::Referencia));
+    let mut t = Tramo::new(Candidato::new(
+        1,
+        PresentMode::Mailbox,
+        1.0,
+        Rol::Referencia,
+    ));
     t.muestra(100.0, 0.0); // ventana sin fotogramas: no debe contaminar
     t.muestra(20.0, 18.0);
     assert!(!t.completa(), "dos ventanas todavía no cierran el tramo");
@@ -78,7 +111,10 @@ fn test_adopta_mas_imagenes_con_mejora_medible() {
     let (elegido, motivo) = elegir_mejor(&recorrido([52.0, 18.0, 18.0, 19.0, 2.0]));
     assert_eq!(elegido.latency, 2);
     assert_eq!(elegido.scale, 1.0);
-    assert!(motivo.contains("mejora medible sobre la referencia"), "motivo: {motivo}");
+    assert!(
+        motivo.contains("mejora medible sobre la referencia"),
+        "motivo: {motivo}"
+    );
 }
 
 #[test]
@@ -118,7 +154,10 @@ fn test_referencia_sin_muestras_validas_conserva_la_configuracion() {
     ];
     let (elegido, motivo) = elegir_mejor(&tramos);
     assert_eq!(elegido.latency, 1);
-    assert!(motivo.contains("la referencia no tiene muestras válidas"), "motivo: {motivo}");
+    assert!(
+        motivo.contains("la referencia no tiene muestras válidas"),
+        "motivo: {motivo}"
+    );
 }
 
 #[test]
@@ -137,12 +176,18 @@ fn test_tramo_fallido_no_se_adopta() {
 fn test_recorrido_incluye_sonda_solo_si_hay_immediate() {
     let completo = PresentCalibration::new(
         PresentMode::Mailbox,
-        &[PresentMode::Fifo, PresentMode::Mailbox, PresentMode::Immediate],
+        &[
+            PresentMode::Fifo,
+            PresentMode::Mailbox,
+            PresentMode::Immediate,
+        ],
     );
     assert_eq!(completo.total_tramos(), 5);
 
-    let sin_immediate =
-        PresentCalibration::new(PresentMode::Mailbox, &[PresentMode::Fifo, PresentMode::Mailbox]);
+    let sin_immediate = PresentCalibration::new(
+        PresentMode::Mailbox,
+        &[PresentMode::Fifo, PresentMode::Mailbox],
+    );
     assert_eq!(sin_immediate.total_tramos(), 4);
 }
 
@@ -150,7 +195,11 @@ fn test_recorrido_incluye_sonda_solo_si_hay_immediate() {
 fn test_recorrido_completo_emite_telemetria_y_elige() {
     let mut cal = PresentCalibration::new(
         PresentMode::Mailbox,
-        &[PresentMode::Fifo, PresentMode::Mailbox, PresentMode::Immediate],
+        &[
+            PresentMode::Fifo,
+            PresentMode::Mailbox,
+            PresentMode::Immediate,
+        ],
     );
     assert!(!cal.finalizada());
     // El primer candidato (la referencia) queda pendiente de aplicar.
@@ -165,7 +214,10 @@ fn test_recorrido_completo_emite_telemetria_y_elige() {
         }
         // Al cerrar cada tramo queda pendiente la siguiente configuración.
         if indice + 1 < presents.len() {
-            assert!(cal.tomar_pendiente().is_some(), "tramo {indice} sin siguiente");
+            assert!(
+                cal.tomar_pendiente().is_some(),
+                "tramo {indice} sin siguiente"
+            );
         }
     }
 
@@ -182,7 +234,10 @@ fn test_recorrido_completo_emite_telemetria_y_elige() {
         "falta el tramo de escala reducida: {lineas:#?}"
     );
     let veredicto = lineas.last().unwrap();
-    assert!(veredicto.starts_with("# elegido lat=2 modo=Mailbox escala=1.00"), "veredicto: {veredicto}");
+    assert!(
+        veredicto.starts_with("# elegido lat=2 modo=Mailbox escala=1.00"),
+        "veredicto: {veredicto}"
+    );
     assert_eq!(cal.actual().latency, 2);
     assert_eq!(cal.actual().scale, 1.0);
 
@@ -200,7 +255,10 @@ fn test_cambio_de_orientacion_reinicia_y_luego_aborta() {
         cal.registrar_segundo(52.0, 18.0);
     }
     let lineas = cal.notificar_tamano((2000, 1200));
-    assert_eq!(lineas, vec!["# calibracion reiniciada (cambio de orientacion)".to_string()]);
+    assert_eq!(
+        lineas,
+        vec!["# calibracion reiniciada (cambio de orientacion)".to_string()]
+    );
     assert!(!cal.finalizada());
     assert_eq!(cal.actual().latency, 1);
     assert!(cal.tomar_pendiente().is_some());
@@ -208,7 +266,11 @@ fn test_cambio_de_orientacion_reinicia_y_luego_aborta() {
     // Un segundo cambio ya no reinicia: cierra con lo medido.
     let lineas = cal.notificar_tamano((1200, 2000));
     assert_eq!(lineas.len(), 1);
-    assert!(lineas[0].starts_with("# elegido lat=1"), "línea: {}", lineas[0]);
+    assert!(
+        lineas[0].starts_with("# elegido lat=1"),
+        "línea: {}",
+        lineas[0]
+    );
     assert!(lineas[0].contains("abortada por cambio de orientacion"));
     assert!(cal.finalizada());
 }
@@ -279,4 +341,3 @@ fn test_calcular_escala_swapchain_dispositivos() {
     let escala_extrema = calcular_escala_swapchain(4000, 8000);
     assert_eq!(escala_extrema, 0.25);
 }
-

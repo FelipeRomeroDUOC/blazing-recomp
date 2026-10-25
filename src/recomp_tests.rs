@@ -5,7 +5,10 @@ fn bloquear_acumuladores() -> std::sync::MutexGuard<'static, ()> {
     LOCK_ACUMULADORES.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-extern "C" fn dummy_block_fn(_api: *const gba_core::capi::RtApi, mptr: *mut std::ffi::c_void) -> u32 {
+extern "C" fn dummy_block_fn(
+    _api: *const gba_core::capi::RtApi,
+    mptr: *mut std::ffi::c_void,
+) -> u32 {
     let mach = unsafe { &mut *(mptr as *mut Machine) };
     mach.cpu.regs[15] = 0x0800_0100;
     mach.bus.tick(2);
@@ -52,12 +55,25 @@ fn test_run_frame_native_fallback_on_unmapped() {
 
 #[test]
 fn test_block_table_iwram_and_bios_regions() {
-    extern "C" fn dummy_iwram(_api: *const gba_core::capi::RtApi, _m: *mut std::ffi::c_void) -> u32 { 0 }
-    extern "C" fn dummy_bios(_api: *const gba_core::capi::RtApi, _m: *mut std::ffi::c_void) -> u32 { 0 }
+    extern "C" fn dummy_iwram(
+        _api: *const gba_core::capi::RtApi,
+        _m: *mut std::ffi::c_void,
+    ) -> u32 {
+        0
+    }
+    extern "C" fn dummy_bios(_api: *const gba_core::capi::RtApi, _m: *mut std::ffi::c_void) -> u32 {
+        0
+    }
 
     let blocks = [
-        RcgBlock { key: 0x0300_1000 | 1, func: dummy_iwram },
-        RcgBlock { key: 0x0000_0080, func: dummy_bios },
+        RcgBlock {
+            key: 0x0300_1000 | 1,
+            func: dummy_iwram,
+        },
+        RcgBlock {
+            key: 0x0000_0080,
+            func: dummy_bios,
+        },
     ];
     let table = BlockTable::from_blocks(&blocks);
 
@@ -69,7 +85,12 @@ fn test_block_table_iwram_and_bios_regions() {
 
 #[test]
 fn test_block_table_despacha_rutinas_de_combate_en_iwram() {
-    extern "C" fn dummy_combat(_api: *const gba_core::capi::RtApi, _m: *mut std::ffi::c_void) -> u32 { 0 }
+    extern "C" fn dummy_combat(
+        _api: *const gba_core::capi::RtApi,
+        _m: *mut std::ffi::c_void,
+    ) -> u32 {
+        0
+    }
 
     // Clúster crítico de subrutinas de combate en IWRAM (ARM32, bit 0 = 0)
     let combat_addrs = [
@@ -126,11 +147,16 @@ fn test_run_frame_native_despacha_bloque_aot_de_bios_en_modo_bios_real() {
     let _guard = bloquear_acumuladores();
     static mut BIOS_CALLED: bool = false;
     extern "C" fn bios_block(_api: *const gba_core::capi::RtApi, _m: *mut std::ffi::c_void) -> u32 {
-        unsafe { BIOS_CALLED = true; }
+        unsafe {
+            BIOS_CALLED = true;
+        }
         0
     }
 
-    let blocks = [RcgBlock { key: 0x0000_0080, func: bios_block }];
+    let blocks = [RcgBlock {
+        key: 0x0000_0080,
+        func: bios_block,
+    }];
     let table = BlockTable::from_blocks(&blocks);
 
     let rom = vec![0u8; 1024];
@@ -140,7 +166,10 @@ fn test_run_frame_native_despacha_bloque_aot_de_bios_en_modo_bios_real() {
 
     let (native, fallback) = run_frame_native(&mut machine, &table, 1);
 
-    assert!(unsafe { BIOS_CALLED }, "el bloque AOT de la BIOS debe ejecutarse");
+    assert!(
+        unsafe { BIOS_CALLED },
+        "el bloque AOT de la BIOS debe ejecutarse"
+    );
     assert_eq!(native, 1, "un despacho nativo");
     assert_eq!(fallback, 0, "sin pasos de intérprete");
 }
@@ -154,7 +183,10 @@ fn test_run_frame_native_direccion_de_bios_sin_bloque_cae_al_interprete() {
         0
     }
 
-    let blocks = [RcgBlock { key: 0x0000_0080, func: bios_block }];
+    let blocks = [RcgBlock {
+        key: 0x0000_0080,
+        func: bios_block,
+    }];
     let table = BlockTable::from_blocks(&blocks);
 
     let rom = vec![0u8; 1024];
@@ -185,8 +217,14 @@ fn test_run_frame_native_mantiene_pc_in_bios_en_el_despacho() {
     }
 
     let blocks = [
-        RcgBlock { key: 0x0000_0080, func: bios_block },
-        RcgBlock { key: 0x0800_0100, func: rom_block },
+        RcgBlock {
+            key: 0x0000_0080,
+            func: bios_block,
+        },
+        RcgBlock {
+            key: 0x0800_0100,
+            func: rom_block,
+        },
     ];
     let table = BlockTable::from_blocks(&blocks);
     let bios_img = vec![0u8; 16384];
@@ -404,7 +442,10 @@ fn test_contadores_por_region_clasifican_y_formatean() {
         interprete: [1, 2, 3, 4],
         nativos: [10, 20, 0, 40],
     };
-    assert_eq!(rc.to_line(), "# regiones rom=1/10 iwram=2/20 ewram=3/0 bios=4/40");
+    assert_eq!(
+        rc.to_line(),
+        "# regiones rom=1/10 iwram=2/20 ewram=3/0 bios=4/40"
+    );
     assert!(!rc.is_empty());
     assert!(RegionCounters::default().is_empty());
 }
@@ -425,7 +466,11 @@ fn test_la_linea_de_camino_lleva_el_desglose() {
         efbrillo: 0,
         efoscuro: 320,
     };
-    assert_eq!(c.total(), 1600, "el total sigue siendo solo las cuatro cuentas");
+    assert_eq!(
+        c.total(),
+        1600,
+        "el total sigue siendo solo las cuatro cuentas"
+    );
     assert_eq!(c.rectas_pct(), 80);
     assert_eq!(
         c.to_line(),
@@ -454,7 +499,11 @@ fn test_la_linea_de_camino_lleva_el_desglose() {
         mezcla: 45440,
         ..PpuPathCounters::default()
     };
-    assert_eq!(corrida_tv.total(), 60321, "la suma del volcado es la del log");
+    assert_eq!(
+        corrida_tv.total(),
+        60321,
+        "la suma del volcado es la del log"
+    );
     assert_eq!(corrida_tv.rectas_pct(), 25);
 
     // Sin líneas contadas no se inventa un porcentaje ni se escribe la línea.

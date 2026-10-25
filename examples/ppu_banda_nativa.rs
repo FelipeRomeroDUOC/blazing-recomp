@@ -16,7 +16,7 @@ mod comun;
 
 use comun::color::{canal_8bit, cerca_pixel};
 use comun::entrada::leer_secuencia;
-use comun::gpu::{ALTO, ANCHO, Gpu};
+use comun::gpu::{Gpu, ALTO, ANCHO};
 
 const OBJ_TAMANOS: [[(i32, i32); 4]; 3] = [
     [(8, 8), (16, 16), (32, 32), (64, 64)],
@@ -136,10 +136,7 @@ fn mascara_referencia(oam: &[u8], vram: &[u8], dispcnt: u16) -> Vec<bool> {
                 let (u, v) = if affine {
                     let dx = bx - bw / 2;
                     let dy = ly - bh / 2;
-                    (
-                        ((0x100 * dx) >> 8) + w / 2,
-                        ((0x100 * dy) >> 8) + h / 2,
-                    )
+                    (((0x100 * dx) >> 8) + w / 2, ((0x100 * dy) >> 8) + h / 2)
                 } else {
                     let mut u = bx;
                     if a1 & 0x1000 != 0 {
@@ -186,7 +183,9 @@ fn mascara_referencia(oam: &[u8], vram: &[u8], dispcnt: u16) -> Vec<bool> {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 4 {
-        eprintln!("uso: ppu_banda_nativa <ruta.gba> <secuencia.txt> <cuadro> [linea_ini] [linea_fin]");
+        eprintln!(
+            "uso: ppu_banda_nativa <ruta.gba> <secuencia.txt> <cuadro> [linea_ini] [linea_fin]"
+        );
         std::process::exit(2);
     }
     let rom = match std::fs::read(&args[1]) {
@@ -256,8 +255,7 @@ fn main() {
         for l in 0..ALTO {
             gba_core::ppu::render_scanline(&mut replay.bus, l);
             let ini = l * ANCHO;
-            ppu_fin[ini..ini + ANCHO]
-                .copy_from_slice(&replay.bus.framebuffer[ini..ini + ANCHO]);
+            ppu_fin[ini..ini + ANCHO].copy_from_slice(&replay.bus.framebuffer[ini..ini + ANCHO]);
         }
     }
 
@@ -280,11 +278,7 @@ fn main() {
     let nativa_sin_ventana = gpu.renderiza(&vram_fin, &oam_fin, &pal_fin, &io_sin_ventana);
     let dif_ventana = (0..n)
         .filter(|&p| {
-            let a = [
-                nativa[p * 3],
-                nativa[p * 3 + 1],
-                nativa[p * 3 + 2],
-            ];
+            let a = [nativa[p * 3], nativa[p * 3 + 1], nativa[p * 3 + 2]];
             let b = [
                 nativa_sin_ventana[p * 3],
                 nativa_sin_ventana[p * 3 + 1],
@@ -293,7 +287,9 @@ fn main() {
             a != b
         })
         .count();
-    println!("nativa con ventana OBJ frente a nativa sin ventana OBJ: {dif_ventana} píxeles distintos");
+    println!(
+        "nativa con ventana OBJ frente a nativa sin ventana OBJ: {dif_ventana} píxeles distintos"
+    );
 
     let mut ppu_sin_ventana = vec![0u16; n];
     {
@@ -339,15 +335,17 @@ fn main() {
         for l in 0..ALTO {
             gba_core::ppu::render_scanline(&mut replay.bus, l);
             let ini = l * ANCHO;
-            ppu_neutra[ini..ini + ANCHO]
-                .copy_from_slice(&replay.bus.framebuffer[ini..ini + ANCHO]);
+            ppu_neutra[ini..ini + ANCHO].copy_from_slice(&replay.bus.framebuffer[ini..ini + ANCHO]);
         }
     }
 
     // Máscara de la ventana OBJ según la referencia: los píxeles no
     // transparentes de los sprites en modo ventana.
-    let mascara_ref =
-        mascara_referencia(&oam_fin, &vram_fin, u16::from_le_bytes([io_fin[0], io_fin[1]]));
+    let mascara_ref = mascara_referencia(
+        &oam_fin,
+        &vram_fin,
+        u16::from_le_bytes([io_fin[0], io_fin[1]]),
+    );
 
     // Máscara efectiva de la nativa: en los píxeles donde la ventana cambia el
     // resultado, se deduce comparando la imagen nativa con las dos referencias.
@@ -361,11 +359,7 @@ fn main() {
             continue; // la ventana no cambia el resultado en este píxel
         }
         con_info += 1;
-        let nat = [
-            nativa[p * 3],
-            nativa[p * 3 + 1],
-            nativa[p * 3 + 2],
-        ];
+        let nat = [nativa[p * 3], nativa[p * 3 + 1], nativa[p * 3 + 2]];
         let nativa_ventana = cerca_pixel(nat, rm);
         if nativa_ventana != mascara_ref[p] {
             dif_mascaras += 1;
@@ -389,7 +383,6 @@ fn main() {
         println!("    {e}");
     }
 
-
     // Registros de ventana del cuadro.
     {
         let rd = |off: usize| u16::from_le_bytes([io_fin[off], io_fin[off + 1]]);
@@ -405,7 +398,6 @@ fn main() {
             rd(0x40), rd(0x42), rd(0x44), rd(0x46)
         );
     }
-
 
     // Experimento de aislamiento de la máscara: WINOUT = 0x3E00 deja el
     // control de fuera de ventana a 0 (nada visible) y el de dentro de la
@@ -426,8 +418,7 @@ fn main() {
         for l in 0..ALTO {
             gba_core::ppu::render_scanline(&mut replay.bus, l);
             let ini = l * ANCHO;
-            ppu_aisla[ini..ini + ANCHO]
-                .copy_from_slice(&replay.bus.framebuffer[ini..ini + ANCHO]);
+            ppu_aisla[ini..ini + ANCHO].copy_from_slice(&replay.bus.framebuffer[ini..ini + ANCHO]);
         }
     }
     let mut dif_aisla = 0usize;
@@ -489,14 +480,8 @@ fn main() {
 
     // Atribución de capas: se vuelve a renderizar la referencia con cada capa
     // quitada y se mira cómo cambia el color de un píxel.
-    let muestras: [(usize, usize); 6] = [
-        (66, 16),
-        (67, 30),
-        (70, 15),
-        (70, 95),
-        (80, 210),
-        (85, 40),
-    ];
+    let muestras: [(usize, usize); 6] =
+        [(66, 16), (67, 30), (70, 15), (70, 95), (80, 210), (85, 40)];
     let variantes: [(&str, u16); 5] = [
         ("sin OBJ", 0x1000),
         ("sin BG0", 0x0100),
@@ -534,10 +519,7 @@ fn main() {
         ("sin BG3", 0x0800),
     ];
     let mut nats: Vec<Vec<u8>> = Vec::new();
-    for (_nombre, mascara) in [("completa", 0u16)]
-        .into_iter()
-        .chain(variantes_dispcnt)
-    {
+    for (_nombre, mascara) in [("completa", 0u16)].into_iter().chain(variantes_dispcnt) {
         let mut io_v = io_fin.clone();
         io_v[0] &= !(mascara & 0xFF) as u8;
         io_v[1] &= !((mascara >> 8) & 0xFF) as u8;
@@ -702,14 +684,20 @@ fn main() {
                 }
             }
         }
-        println!("  {nombre:5}: {dif} píxeles distintos  {}", ejemplos.join(" | "));
+        println!(
+            "  {nombre:5}: {dif} píxeles distintos  {}",
+            ejemplos.join(" | ")
+        );
     }
 
     println!("atribución de capas (referencia):");
     for (y, x) in muestras {
         let p = y * ANCHO + x;
         let nat = [nativa[p * 3], nativa[p * 3 + 1], nativa[p * 3 + 2]];
-        let mut linea = format!("  y={y:3} x={x:3} referencia={:04X} nativa={:02X?}", refs[0][p], nat);
+        let mut linea = format!(
+            "  y={y:3} x={x:3} referencia={:04X} nativa={:02X?}",
+            refs[0][p], nat
+        );
         for (i, (nombre, _)) in variantes.iter().enumerate() {
             if refs[i + 1][p] != refs[0][p] {
                 linea.push_str(&format!(" | {nombre}={:04X}", refs[i + 1][p]));

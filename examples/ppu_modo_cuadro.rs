@@ -81,7 +81,11 @@ fn main() {
             if activo { "si" } else { "no" }
         );
     }
-    println!("  OBJ: hofs={} vofs={}", io16(&io_fin, 0x28), io16(&io_fin, 0x2A));
+    println!(
+        "  OBJ: hofs={} vofs={}",
+        io16(&io_fin, 0x28),
+        io16(&io_fin, 0x2A)
+    );
     let bldcnt = io16(&io_fin, 0x50);
     println!(
         "  BLDCNT = 0x{bldcnt:04X}  modo_efecto={}  1er_objetivo=0x{:02X}  2o_objetivo=0x{:02X}",
@@ -89,7 +93,11 @@ fn main() {
         bldcnt & 0x3F,
         (bldcnt >> 8) & 0x3F
     );
-    println!("  BLDALPHA = 0x{:04X}  BLDY = 0x{:04X}", io16(&io_fin, 0x52), io16(&io_fin, 0x54));
+    println!(
+        "  BLDALPHA = 0x{:04X}  BLDY = 0x{:04X}",
+        io16(&io_fin, 0x52),
+        io16(&io_fin, 0x54)
+    );
     println!(
         "  ventanas: win0_on={} win1_on={} objwin_on={}  win0v=0x{:04X} win1v=0x{:04X}",
         dispcnt & 0x2000 != 0,
@@ -98,5 +106,9 @@ fn main() {
         io16(&io_fin, 0x44),
         io16(&io_fin, 0x46)
     );
-    println!("  WININ = 0x{:04X}  WINOUT = 0x{:04X}", io16(&io_fin, 0x48), io16(&io_fin, 0x4A));
+    println!(
+        "  WININ = 0x{:04X}  WINOUT = 0x{:04X}",
+        io16(&io_fin, 0x48),
+        io16(&io_fin, 0x4A)
+    );
 }
