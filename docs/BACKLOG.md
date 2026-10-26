@@ -153,10 +153,10 @@ Curado a mano a partir del [registro](#registro-de-hallazgos); el registro es la
 
 ## Índice de Propuestas
 
-164 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
+166 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
 propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
-**164 = 96 `verificada por agente` + 45 `cerrada` + 1 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
+**166 = 98 `verificada por agente` + 45 `cerrada` + 1 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
 
 ### Pendientes (3) — sin ejecutar
 
@@ -238,7 +238,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md`](propuestas/2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md)
 - [`2026-10-25_motor-audio-nativo-aaudio.md`](propuestas/2026-10-25_motor-audio-nativo-aaudio.md)
 
-### Verificadas por agente (96) — con lo medido dentro; varias esperan el televisor
+### Verificadas por agente (98) — con lo medido dentro; varias esperan el televisor
 
 - [`2026-10-08_controles-tactiles-haptica.md`](propuestas/2026-10-08_controles-tactiles-haptica.md)
 - [`2026-10-08_crate-nativo-android.md`](propuestas/2026-10-08_crate-nativo-android.md)
@@ -336,6 +336,8 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-23_ppu-nativa-paleta-lut-vertical.md`](propuestas/2026-10-23_ppu-nativa-paleta-lut-vertical.md)
 - [`2026-10-24_cobertura-aot-combate-iwram.md`](propuestas/2026-10-24_cobertura-aot-combate-iwram.md)
 - [`2026-10-24_reversionado-v0-0-3.md`](propuestas/2026-10-24_reversionado-v0-0-3.md)
+- [`2026-10-25_subagentes-dsh-mecanismo.md`](propuestas/2026-10-25_subagentes-dsh-mecanismo.md)
+- [`2026-10-25_subagentes-modelo-gemini-lite.md`](propuestas/2026-10-25_subagentes-modelo-gemini-lite.md)
 
 ### Modificadas (2) — cambiadas sobre la marcha
 
@@ -348,7 +350,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
 ### Esperando el televisor: propuestas con `Revisión humana` pendiente
 
-Son 85 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuello de botella del proyecto ahora mismo.
+Son 87 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuello de botella del proyecto ahora mismo.
 
 - [`2026-10-09_correccion-escala-y-renderizado-overlay.md`](propuestas/2026-10-09_correccion-escala-y-renderizado-overlay.md)
 - [`2026-10-09_fidelidad-visual-overlay-prototipo.md`](propuestas/2026-10-09_fidelidad-visual-overlay-prototipo.md)
@@ -435,6 +437,8 @@ Son 85 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuel
 - [`2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md`](propuestas/2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md)
 - [`2026-10-24_resolucion-cuarta-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-cuarta-auditoria-rant-md.md)
 - [`2026-10-24_resolucion-tercera-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-tercera-auditoria-rant-md.md)
+- [`2026-10-25_subagentes-dsh-mecanismo.md`](propuestas/2026-10-25_subagentes-dsh-mecanismo.md)
+- [`2026-10-25_subagentes-modelo-gemini-lite.md`](propuestas/2026-10-25_subagentes-modelo-gemini-lite.md)
 
 ---
 

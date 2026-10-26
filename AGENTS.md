@@ -44,18 +44,39 @@ Directrices de arquitectura, plataforma y reglas operativas para el proyecto **B
 
 ## 4. Subagentes Especializados y Matriz de Disparadores
 
-Para evitar contaminación de contexto en el agente principal y reducir consumo de cuota, es **obligatorio** delegar mediante `invoke_subagent` con modelo `flash_lite` o `flash` en lugar de ejecutar comandos verbosos en el hilo principal. Conforme al contrato de Antigravity, se invoca con `TypeName="self"` (herramientas de ejecución/escritura) o `TypeName="research"` (solo lectura), configurando el rol correspondiente:
+Para evitar contaminación de contexto en el agente principal y reducir consumo de cuota, el arnés **bloquea por software** (`PreToolGuard`) la ejecución de comandos verbosos o pesados en el hilo principal. Es **obligatorio** delegar mediante el mecanismo del arnés activo, configurando el rol correspondiente: `invoke_subagent` con modelo `flash_lite` (o `flash`) en Antigravity, o la herramienta `subagent` de DeepSeek Harness (ver §4.1).
 
-| Evento / Tarea | TypeName | Role | Modelo | Disparador Obligatorio (Cuándo activar) |
+| Evento / Tarea | TypeName | Role | Modelo | Disparador Obligatorio (Enforzado por Hook) |
 | :--- | :--- | :--- | :--- | :--- |
-| **Compilación y Empaquetado APK** | `self` | `APK Builder` | `flash_lite` | Compilar AOT C11 (`compilar_recomp_aot.ps1`) o generar el Fat APK (`package_apk.ps1`). |
-| **Pruebas y Regresiones** | `self` | `Test Runner` | `flash_lite` | Ejecutar `cargo test`, arnés de fotogramas dorados o auditoría de mutantes. |
-| **Telemetría y Rendimiento** | `self` | `Telemetry Analyzer` | `flash_lite` | Analizar `blazing-perf.txt`, frametimes o cuellos de botella de GPU/PPU. |
-| **Etiquetas AOT** | `self` | `Label Auditor` | `flash_lite` | Mapear o auditar `blazing.labels.toml`, desensamblar ROM o sembrar labels. |
-| **Gestión Documental** | `self` | `Doc Manager` | `flash_lite` | Validar Diátaxis, regenerar índices de propuestas o actualizar tableros. |
-| **Exploración Profunda** | `research` | `Code Scout` | `flash_lite` | Rastrear dependencias multiarchivo en `CodeGraph` o búsquedas complejas con `rg`. |
+| **Pruebas y Regresiones** | `self` | `Test Runner` | `google/gemini-3.1-flash-lite` | Ejecutar `cargo test`, arnés de fotogramas dorados o auditoría de mutantes. |
+| **Compilación y Empaquetado APK** | `self` | `APK Builder` | `google/gemini-3.5-flash-lite` | Compilar AOT C11 (`compilar_recomp_aot.ps1`), `cargo ndk`, `cargo build` o generar Fat APK (`package_apk.ps1`). |
+| **Telemetría y Rendimiento** | `self` | `Telemetry Analyzer` | `google/gemini-3.1-flash-lite` | Analizar `blazing-perf.txt`, frametimes o cuellos de botella de GPU/PPU (`analizar_telemetria.py`). |
+| **Etiquetas AOT** | `self` | `Label Auditor` | `google/gemini-3.5-flash-lite` | Mapear o auditar `blazing.labels.toml`, desensamblar ROM o sembrar labels (`auditar_labels.py`). |
+
+> [!NOTE]
+> **Poda y automatización:**
+> - **Gestión Documental:** El rol `Doc Manager` ha sido podado. Los hooks automáticos (`post_tool_runner`) se encargan de regenerar índices, validar Diátaxis y actualizar la preview sin intervención.
+> - **Exploración de Código:** El agente principal utiliza directamente la herramienta MCP `codegraph_explore` para consultas puntuales. El rol `Code Scout` (`research`) se reserva exclusivamente como contingencia para búsquedas masivas no indexadas que abarquen más de 10 archivos completos.
 
 El subagente ejecuta el trabajo de forma aislada y reporta al hilo principal una síntesis ejecutiva de 3 a 5 líneas.
+
+Los dos modelos lite tienen 500 peticiones diarias cada uno: el reparto de la tabla permite usar hasta 1000. DSH no cambia de modelo solo, así que si uno agota su cuota se edita el encargo del rol y se pasa el otro id.
+
+### 4.1 Invocación en DeepSeek Harness (DSH)
+
+En DSH no existe `invoke_subagent`: la herramienta se llama `subagent` y acepta `description`, `prompt`, `provider` y `model`. El rol viaja dentro del `prompt`; el modelo se pasa por llamada, con los dos ids permitidos. Cada rol de la tabla tiene su encargo reutilizable en [`.agents/subagents/`](.agents/subagents/):
+
+| Rol | Encargo | Invocación |
+| :--- | :--- | :--- |
+| `Test Runner` | [test-runner.md](.agents/subagents/test-runner.md) | `subagent(description='Test Runner', provider='google', model='gemini-3.1-flash-lite', prompt=<contenido del encargo> + tarea)` |
+| `APK Builder` | [apk-builder.md](.agents/subagents/apk-builder.md) | `subagent(description='APK Builder', provider='google', model='gemini-3.5-flash-lite', prompt=<contenido del encargo> + tarea)` |
+| `Telemetry Analyzer` | [telemetry-analyzer.md](.agents/subagents/telemetry-analyzer.md) | `subagent(description='Telemetry Analyzer', provider='google', model='gemini-3.1-flash-lite', prompt=<contenido del encargo> + tarea)` |
+| `Label Auditor` | [label-auditor.md](.agents/subagents/label-auditor.md) | `subagent(description='Label Auditor', provider='google', model='gemini-3.5-flash-lite', prompt=<contenido del encargo> + tarea)` |
+| `Code Scout` (contingencia) | [code-scout.md](.agents/subagents/code-scout.md) | `subagent(description='Code Scout', provider='google', model='gemini-3.5-flash-lite', prompt=<contenido del encargo> + tarea)` |
+
+- `subagent_fork` no acepta modelo: el hijo hereda el del padre. Solo para tareas que necesiten el contexto de esta conversación.
+- `workflow` cuando hay tres o más tareas, o para modelar varias a la vez.
+- En Antigravity se mantiene `invoke_subagent(TypeName='self', Role='<rol>', Model='flash_lite', Prompt='...')` sin cambios.
 
 ---
 
