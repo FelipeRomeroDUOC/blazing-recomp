@@ -16,7 +16,10 @@ Nota: ejemplo inventado, solo para calibrar cuánta concreción se espera. No co
 ## Propuesta completa (resumida)
 
 # Propuesta: redondear total
-Fecha: 2026-10-05 | Nivel: 2 (lógica compartida) | Estado: pendiente
+
+Fecha: 2026-10-05
+Nivel: 2 (lógica compartida)
+Estado: pendiente
 
 ### 1. Qué cambia
 El total de un pedido se muestra y se acumula en reportes con 2 decimales, sin restos de cálculo.
