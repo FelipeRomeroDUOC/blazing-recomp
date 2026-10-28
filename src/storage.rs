@@ -15,6 +15,9 @@ pub const OFFICIAL_ROM_SIZE: usize = 16 * 1024 * 1024;
 /// Tamaño exacto del binario de BIOS oficial de GBA (16 KB en bytes).
 pub const OFFICIAL_BIOS_SIZE: usize = 16 * 1024;
 
+/// Tamaño exacto de una partida guardada estándar (.sav) de Fire Emblem 7 (64 KB en bytes).
+pub const SAVE_FILE_SIZE: usize = 64 * 1024;
+
 /// Nombres de archivo comunes con los que suele guardarse la ROM de Fire Emblem.
 pub const KNOWN_ROM_FILENAMES: &[&str] = &[
     "fe7.gba",
@@ -239,6 +242,86 @@ pub fn scan_and_load_game(search_dirs: &[PathBuf]) -> Result<LoadedAssets, Stora
         }
         None => Err(StorageError::RomNotFound),
     }
+}
+
+/// Determina la ruta canónica para el archivo de guardado .sav, priorizando el almacenamiento
+/// privado de la aplicación (inmune a Scoped Storage en Android 11 a 16).
+pub fn resolve_save_path(
+    rom_path: &Path,
+    internal_dir: Option<&Path>,
+    external_dir: Option<&Path>,
+) -> PathBuf {
+    let stem = rom_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("fe7");
+    let filename = format!("{stem}.sav");
+
+    if let Some(dir) = internal_dir {
+        return dir.join(&filename);
+    }
+    if let Some(dir) = external_dir {
+        return dir.join(&filename);
+    }
+    if let Some(parent) = rom_path.parent() {
+        return parent.join(&filename);
+    }
+    PathBuf::from(filename)
+}
+
+/// Carga el contenido de un archivo de guardado (.sav).
+///
+/// Retorna `None` si el archivo no existe o su tamaño es inferior a 64 KB (`SAVE_FILE_SIZE`).
+pub fn load_save_file(save_path: &Path) -> Option<Vec<u8>> {
+    let metadata = std::fs::metadata(save_path).ok()?;
+    if (metadata.len() as usize) < SAVE_FILE_SIZE {
+        return None;
+    }
+    let data = std::fs::read(save_path).ok()?;
+    if data.len() < SAVE_FILE_SIZE {
+        return None;
+    }
+    Some(data)
+}
+
+/// Escribe de forma atómica los datos de guardado en el archivo especificado usando un temporal .tmp.
+///
+/// Emplea sincronización forzada a disco (`sync_all`) y renombramiento atómico (`fs::rename`)
+/// para evitar corromper la partida si el proceso es interrumpido durante la escritura.
+pub fn write_save_file_atomic(save_path: &Path, data: &[u8]) -> Result<(), StorageError> {
+    if let Some(parent) = save_path.parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+    }
+
+    let tmp_path = save_path.with_extension("sav.tmp");
+
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&tmp_path).map_err(|e| {
+            StorageError::IoError(format!(
+                "Error creando archivo temporal {:?}: {e}",
+                tmp_path
+            ))
+        })?;
+        file.write_all(data).map_err(|e| {
+            StorageError::IoError(format!("Error escribiendo datos en {:?}: {e}", tmp_path))
+        })?;
+        file.sync_all().map_err(|e| {
+            StorageError::IoError(format!("Error sincronizando a disco {:?}: {e}", tmp_path))
+        })?;
+    }
+
+    std::fs::rename(&tmp_path, save_path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_path);
+        StorageError::IoError(format!(
+            "Error renombrando {:?} a {:?}: {e}",
+            tmp_path, save_path
+        ))
+    })?;
+
+    Ok(())
 }
 
 /// Renderiza un mensaje instructivo nítido en el framebuffer de juego de 240x160 px.

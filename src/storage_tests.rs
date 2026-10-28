@@ -159,3 +159,66 @@ fn test_scan_and_load_finds_official_rom_in_roms_directory() {
         }
     }
 }
+
+#[test]
+fn test_load_and_restore_save_data() {
+    let dummy_save = vec![0x42u8; SAVE_FILE_SIZE];
+    let rom = vec![0u8; 1024];
+    let mut runner = crate::runner::GameRunner::new(rom, None, screen::ScreenKind::Frontlit);
+    assert!(runner.load_save_data(&dummy_save));
+    assert_eq!(runner.save_data(), Some(dummy_save.as_slice()));
+}
+
+#[test]
+fn test_write_save_file_atomic_success_and_cleanup() {
+    let temp_dir = std::path::PathBuf::from("target").join(format!(
+        "blazing_test_save_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let _ = std::fs::create_dir_all(&temp_dir);
+    let target_save = temp_dir.join("test_game.sav");
+    let tmp_save = temp_dir.join("test_game.sav.tmp");
+
+    let data = vec![0x37u8; SAVE_FILE_SIZE];
+    assert!(write_save_file_atomic(&target_save, &data).is_ok());
+    assert!(target_save.exists());
+    assert!(
+        !tmp_save.exists(),
+        "El archivo temporal .tmp debe eliminarse tras el renombramiento atómico"
+    );
+    assert_eq!(std::fs::read(&target_save).unwrap(), data);
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_load_save_file_missing_or_truncated() {
+    let temp_dir = std::path::PathBuf::from("target").join(format!(
+        "blazing_test_trunc_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let _ = std::fs::create_dir_all(&temp_dir);
+
+    // 1. Archivo inexistente
+    let missing_save = temp_dir.join("non_existent.sav");
+    assert_eq!(load_save_file(&missing_save), None);
+
+    // 2. Archivo truncado (< 64 KB)
+    let truncated_save = temp_dir.join("truncated.sav");
+    std::fs::write(&truncated_save, vec![0xAAu8; 1024]).unwrap();
+    assert_eq!(load_save_file(&truncated_save), None);
+
+    // 3. Archivo válido (64 KB)
+    let valid_save = temp_dir.join("valid.sav");
+    let valid_data = vec![0x55u8; SAVE_FILE_SIZE];
+    std::fs::write(&valid_save, &valid_data).unwrap();
+    assert_eq!(load_save_file(&valid_save), Some(valid_data));
+
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}

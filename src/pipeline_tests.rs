@@ -267,3 +267,46 @@ fn test_ppu_frame_state_pool_recycling() {
     let reused = bridge.acquire_ppu_state();
     assert_eq!(reused.vram[0], 0x11, "debe ser el búfer reciclado del pool");
 }
+
+#[test]
+fn test_emulation_worker_save_synchronization() {
+    let bridge = EmulationBridge::new();
+    assert!(!bridge.take_save_requested());
+    bridge.request_save();
+    assert!(bridge.take_save_requested());
+    assert!(!bridge.take_save_requested());
+}
+
+#[test]
+fn test_emulation_worker_autosave_debounce() {
+    let temp_dir = std::path::PathBuf::from("target").join(format!(
+        "blazing_debounce_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let _ = std::fs::create_dir_all(&temp_dir);
+    let save_path = temp_dir.join("debounce.sav");
+
+    let rom = vec![0u8; 1024];
+    let worker = EmulationWorker::start_with_save(
+        rom,
+        None,
+        ScreenKind::Frontlit,
+        None,
+        None,
+        Some(save_path.clone()),
+        None,
+    );
+
+    worker.bridge().request_save();
+    std::thread::sleep(Duration::from_millis(150));
+    drop(worker);
+
+    assert!(
+        save_path.exists(),
+        "El archivo de guardado debe haber sido creado por el worker"
+    );
+    let _ = std::fs::remove_dir_all(&temp_dir);
+}

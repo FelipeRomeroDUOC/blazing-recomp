@@ -1684,6 +1684,8 @@ struct AppState {
     audio_activo: bool,
     /// Calibración de presentación del swapchain mientras está en curso.
     calibracion: Option<crate::present::PresentCalibration>,
+    /// Ruta del archivo de guardado .sav activo.
+    save_path: Option<std::path::PathBuf>,
 }
 
 impl AppState {
@@ -1708,6 +1710,7 @@ impl AppState {
             perf_file: None,
             perf_write_warned: false,
             clock_cost_ns: crate::perf::measure_clock_cost_ns(),
+            save_path: None,
             search_dirs: Vec::new(),
             ppu_nativa_activa: false,
             audio_activo: true,
@@ -1746,14 +1749,23 @@ impl AppState {
 
     /// Inicia el hilo de emulación dedicado con la ROM y BIOS verificadas.
     #[allow(dead_code)]
-    fn load(&mut self, rom: Vec<u8>, bios: Option<&[u8]>) {
+    fn load(
+        &mut self,
+        rom: Vec<u8>,
+        bios: Option<&[u8]>,
+        save_path: Option<std::path::PathBuf>,
+        initial_save: Option<Vec<u8>>,
+    ) {
         let bios_owned = bios.map(|b| b.to_vec());
-        let worker = EmulationWorker::start_with_waker(
+        self.save_path = save_path.clone();
+        let worker = EmulationWorker::start_with_save(
             rom,
             bios_owned,
             self.screen_kind,
             None,
             self.waker.clone(),
+            save_path,
+            initial_save,
         );
         worker
             .bridge()
@@ -1766,8 +1778,9 @@ impl AppState {
     /// Suspende la emulación (0% CPU) y libera recursos GPU al pausar.
     fn suspend(&mut self) {
         if let Some(worker) = &self.worker {
+            worker.bridge().request_save();
             worker.bridge().set_paused(true);
-            log::debug!("EmulationWorker pausado en segundo plano (suspend)");
+            log::debug!("EmulationWorker guardado y pausado en segundo plano (suspend)");
         }
         if self.compositor.take().is_some() || self.window.take().is_some() {
             self.calibracion = None;
@@ -2281,7 +2294,21 @@ pub fn android_main(app: android_activity::AndroidApp) {
                     assets.rom_path,
                     assets.bios_path
                 );
-                state.load(assets.rom, assets.bios.as_deref());
+                let save_path = crate::storage::resolve_save_path(
+                    &assets.rom_path,
+                    internal_dir.as_deref(),
+                    external_dir.as_deref(),
+                );
+                let initial_save = crate::storage::load_save_file(&save_path);
+                if initial_save.is_some() {
+                    log::info!("Partida guardada .sav cargada desde {:?}", save_path);
+                }
+                state.load(
+                    assets.rom,
+                    assets.bios.as_deref(),
+                    Some(save_path),
+                    initial_save,
+                );
             }
             Err(e) => {
                 log::warn!(
@@ -2392,7 +2419,16 @@ pub fn android_main(app: android_activity::AndroidApp) {
                                         "ROM oficial encontrada en {:?} tras Resume. Inicializando motor a 60 FPS.",
                                         assets.rom_path
                                     );
-                                    state.load(assets.rom, assets.bios.as_deref());
+                                    let save_path = crate::storage::resolve_save_path(
+                    &assets.rom_path,
+                    internal_dir.as_deref(),
+                    external_dir.as_deref(),
+                );
+                let initial_save = crate::storage::load_save_file(&save_path);
+                if initial_save.is_some() {
+                    log::info!("Partida guardada .sav cargada desde {:?}", save_path);
+                }
+                state.load(assets.rom, assets.bios.as_deref(), Some(save_path), initial_save);
                                 }
                             }
                             state.redraw();
@@ -2445,7 +2481,21 @@ pub fn android_main(app: android_activity::AndroidApp) {
                             "ROM oficial detectada en {:?}. Inicializando motor.",
                             assets.rom_path
                         );
-                        state.load(assets.rom, assets.bios.as_deref());
+                        let save_path = crate::storage::resolve_save_path(
+                            &assets.rom_path,
+                            internal_dir.as_deref(),
+                            external_dir.as_deref(),
+                        );
+                        let initial_save = crate::storage::load_save_file(&save_path);
+                        if initial_save.is_some() {
+                            log::info!("Partida guardada .sav cargada desde {:?}", save_path);
+                        }
+                        state.load(
+                            assets.rom,
+                            assets.bios.as_deref(),
+                            Some(save_path),
+                            initial_save,
+                        );
                         needs_redraw = true;
                     }
                 }

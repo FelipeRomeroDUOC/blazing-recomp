@@ -114,7 +114,9 @@ Las áreas son de trabajo, no las fases del roadmap: una misma área puede repar
 - Ingestión de ROM/BIOS con verificación SHA-256 desde `Downloads/`
   ([`2026-10-10_ingestion-rom-bios-downloads.md`](propuestas/2026-10-10_ingestion-rom-bios-downloads.md))
   y almacenamiento compatible con Android 16.
-- **Falta:** persistencia de partidas (`.sav`), menú en juego (pausa, controles, audio, filtros).
+- Persistencia de partidas (`.sav`) con escritura atómica y autoguardado continuo de suspensión
+  ([`2026-10-28_persistencia-guardado-sav.md`](propuestas/2026-10-28_persistencia-guardado-sav.md)) [Cerrado: 2026-10-28].
+- **Falta:** menú en juego (pausa, controles, audio, filtros), selector interactivo de ROM/BIOS.
 
 ---
 
@@ -153,10 +155,10 @@ Curado a mano a partir del [registro](#registro-de-hallazgos); el registro es la
 
 ## Índice de Propuestas
 
-166 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
+168 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
 propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
-**166 = 98 `verificada por agente` + 45 `cerrada` + 1 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
+**168 = 99 `verificada por agente` + 46 `cerrada` + 1 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
 
 ### Pendientes (3) — sin ejecutar
 
@@ -190,7 +192,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-23_eliminar-register-spilling-y-bucle-anidado-fs-comp.md`](propuestas/2026-10-23_eliminar-register-spilling-y-bucle-anidado-fs-comp.md)
 - [`2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md`](propuestas/2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md)
 
-### Cerradas (45)
+### Cerradas (46)
 
 - [`2026-10-09_ajustes-fidelidad-ergonomia-overlay.md`](propuestas/2026-10-09_ajustes-fidelidad-ergonomia-overlay.md)
 - [`2026-10-09_auditoria-tests-de-mutacion.md`](propuestas/2026-10-09_auditoria-tests-de-mutacion.md)
@@ -237,8 +239,9 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-25_automatizacion-versionado-aprobacion.md`](propuestas/2026-10-25_automatizacion-versionado-aprobacion.md)
 - [`2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md`](propuestas/2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md)
 - [`2026-10-25_motor-audio-nativo-aaudio.md`](propuestas/2026-10-25_motor-audio-nativo-aaudio.md)
+- [`2026-10-28_persistencia-guardado-sav.md`](propuestas/2026-10-28_persistencia-guardado-sav.md)
 
-### Verificadas por agente (98) — con lo medido dentro; varias esperan el televisor
+### Verificadas por agente (99) — con lo medido dentro; varias esperan el televisor
 
 - [`2026-10-08_controles-tactiles-haptica.md`](propuestas/2026-10-08_controles-tactiles-haptica.md)
 - [`2026-10-08_crate-nativo-android.md`](propuestas/2026-10-08_crate-nativo-android.md)
@@ -338,6 +341,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-24_reversionado-v0-0-3.md`](propuestas/2026-10-24_reversionado-v0-0-3.md)
 - [`2026-10-25_subagentes-dsh-mecanismo.md`](propuestas/2026-10-25_subagentes-dsh-mecanismo.md)
 - [`2026-10-25_subagentes-modelo-gemini-lite.md`](propuestas/2026-10-25_subagentes-modelo-gemini-lite.md)
+- [`2026-10-26_realineacion-estrategica-objetivo-y-plataforma-mods.md`](propuestas/2026-10-26_realineacion-estrategica-objetivo-y-plataforma-mods.md)
 
 ### Modificadas (2) — cambiadas sobre la marcha
 
@@ -350,7 +354,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
 ### Esperando el televisor: propuestas con `Revisión humana` pendiente
 
-Son 87 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuello de botella del proyecto ahora mismo.
+Son 88 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuello de botella del proyecto ahora mismo.
 
 - [`2026-10-09_correccion-escala-y-renderizado-overlay.md`](propuestas/2026-10-09_correccion-escala-y-renderizado-overlay.md)
 - [`2026-10-09_fidelidad-visual-overlay-prototipo.md`](propuestas/2026-10-09_fidelidad-visual-overlay-prototipo.md)
@@ -439,6 +443,7 @@ Son 87 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuel
 - [`2026-10-24_resolucion-tercera-auditoria-rant-md.md`](propuestas/2026-10-24_resolucion-tercera-auditoria-rant-md.md)
 - [`2026-10-25_subagentes-dsh-mecanismo.md`](propuestas/2026-10-25_subagentes-dsh-mecanismo.md)
 - [`2026-10-25_subagentes-modelo-gemini-lite.md`](propuestas/2026-10-25_subagentes-modelo-gemini-lite.md)
+- [`2026-10-26_realineacion-estrategica-objetivo-y-plataforma-mods.md`](propuestas/2026-10-26_realineacion-estrategica-objetivo-y-plataforma-mods.md)
 
 ---
 

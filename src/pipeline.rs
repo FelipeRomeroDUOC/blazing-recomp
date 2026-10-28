@@ -93,6 +93,7 @@ pub struct EmulationBridge {
     gpu_ppu: AtomicBool,
     audio_enabled: AtomicBool,
     audio_underruns: AtomicU64,
+    save_requested: AtomicBool,
     pause_sync: (Mutex<bool>, Condvar),
     /// Notificador opcional para interrumpir la espera del hilo principal.
     waker: Mutex<Option<WakeFn>>,
@@ -117,6 +118,7 @@ impl EmulationBridge {
             gpu_ppu: AtomicBool::new(false),
             audio_enabled: AtomicBool::new(true),
             audio_underruns: AtomicU64::new(0),
+            save_requested: AtomicBool::new(false),
             pause_sync: (Mutex::new(false), Condvar::new()),
             waker: Mutex::new(waker),
         }
@@ -296,6 +298,16 @@ impl EmulationBridge {
         self.paused.load(Ordering::Acquire)
     }
 
+    /// Solicita un guardado asíncrono inmediato de la memoria de respaldo a disco.
+    pub fn request_save(&self) {
+        self.save_requested.store(true, Ordering::Release);
+    }
+
+    /// Comprueba y reinicia la bandera de solicitud de guardado.
+    pub fn take_save_requested(&self) -> bool {
+        self.save_requested.swap(false, Ordering::AcqRel)
+    }
+
     /// Si está en pausa, bloquea el hilo actual en el Condvar hasta que se reanude o se detenga.
     pub fn wait_if_paused(&self) {
         let (lock, cvar) = &self.pause_sync;
@@ -343,6 +355,19 @@ impl EmulationWorker {
         block_table: Option<crate::recomp::BlockTable>,
         waker: Option<WakeFn>,
     ) -> Self {
+        Self::start_with_save(rom, bios, screen_kind, block_table, waker, None, None)
+    }
+
+    /// Inicia un nuevo hilo de trabajo dedicado con soporte de persistencia de partida (.sav).
+    pub fn start_with_save(
+        rom: Vec<u8>,
+        bios: Option<Vec<u8>>,
+        screen_kind: ScreenKind,
+        block_table: Option<crate::recomp::BlockTable>,
+        waker: Option<WakeFn>,
+        save_path: Option<std::path::PathBuf>,
+        initial_save: Option<Vec<u8>>,
+    ) -> Self {
         let bridge = Arc::new(EmulationBridge::new_with_waker(waker));
         let b_clone = Arc::clone(&bridge);
 
@@ -353,6 +378,25 @@ impl EmulationWorker {
                 if let Some(table) = block_table {
                     runner.set_block_table(Some(table));
                 }
+                if let Some(ref data) = initial_save {
+                    runner.load_save_data(data);
+                }
+
+                let flush_save = |runner: &mut GameRunner| {
+                    if let Some(ref path) = save_path {
+                        if let Some(data) = runner.save_data() {
+                            if let Err(e) = crate::storage::write_save_file_atomic(path, data) {
+                                log::error!(
+                                    "Error al guardar partida atómicamente en {:?}: {e}",
+                                    path
+                                );
+                            } else {
+                                runner.mark_save_clean();
+                                log::debug!("Partida guardada atómicamente en {:?}", path);
+                            }
+                        }
+                    }
+                };
 
                 let mut audio =
                     crate::audio::NativeAudioEngine::new(crate::audio::DEFAULT_SAMPLE_RATE);
@@ -361,6 +405,7 @@ impl EmulationWorker {
                 }
 
                 let mut frame_count = 0u64;
+                let mut dirty_since: Option<Instant> = None;
 
                 while b_clone.is_running() {
                     let audio_target = b_clone.is_audio_enabled();
@@ -372,7 +417,14 @@ impl EmulationWorker {
                         }
                     }
 
+                    if b_clone.take_save_requested() {
+                        flush_save(&mut runner);
+                    }
+
                     if b_clone.is_paused() {
+                        if runner.is_save_dirty() {
+                            flush_save(&mut runner);
+                        }
                         audio.pause();
                         b_clone.wait_if_paused();
                         if b_clone.is_running() && b_clone.is_audio_enabled() {
@@ -393,6 +445,22 @@ impl EmulationWorker {
                     }
 
                     runner.step_frame();
+
+                    // Comprobación de debounce para autoguardado (1.5 segundos tras detectar modificaciones)
+                    if frame_count % 30 == 0 {
+                        if runner.is_save_dirty() {
+                            if let Some(since) = dirty_since {
+                                if since.elapsed() >= Duration::from_millis(1500) {
+                                    flush_save(&mut runner);
+                                    dirty_since = None;
+                                }
+                            } else {
+                                dirty_since = Some(Instant::now());
+                            }
+                        } else {
+                            dirty_since = None;
+                        }
+                    }
 
                     let audio_samples = runner.drain_audio_samples();
                     audio.push_raw_gba_samples(&audio_samples);
@@ -439,6 +507,10 @@ impl EmulationWorker {
                     if elapsed < FRAME_DURATION {
                         std::thread::sleep(FRAME_DURATION - elapsed);
                     }
+                }
+
+                if runner.is_save_dirty() || b_clone.take_save_requested() {
+                    flush_save(&mut runner);
                 }
 
                 audio.stop();

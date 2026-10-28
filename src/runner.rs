@@ -62,6 +62,17 @@ pub struct GameRunner {
     rgba: Vec<[u8; 4]>,
     frames_elapsed: u64,
     last_timing: StepTiming,
+    last_save_hash: u64,
+}
+
+#[inline]
+fn compute_backup_hash(data: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    for &b in data {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
 }
 
 impl GameRunner {
@@ -95,6 +106,11 @@ impl GameRunner {
             screen::blend::default_rho(screen_kind),
         );
         let rgba = vec![[0u8, 0u8, 0u8, 255u8]; GBA_PIXELS];
+        let last_save_hash = if let Some(ref flash) = machine.bus.flash {
+            compute_backup_hash(&flash.data)
+        } else {
+            compute_backup_hash(&machine.bus.sram)
+        };
 
         Self {
             machine,
@@ -106,6 +122,7 @@ impl GameRunner {
             rgba,
             frames_elapsed: 0,
             last_timing: StepTiming::default(),
+            last_save_hash,
         }
     }
 
@@ -337,6 +354,55 @@ impl GameRunner {
             1,
             screen::blend::default_rho(screen_kind),
         );
+    }
+
+    /// Carga los datos de partida guardada en la memoria de respaldo de la máquina.
+    ///
+    /// Soporta tanto `BackupKind::Sram` como `BackupKind::Flash64` y `BackupKind::Flash128`.
+    pub fn load_save_data(&mut self, data: &[u8]) -> bool {
+        if data.is_empty() {
+            return false;
+        }
+        if let Some(ref mut flash) = self.machine.bus.flash {
+            let len = data.len().min(flash.data.len());
+            flash.data[..len].copy_from_slice(&data[..len]);
+        } else if let Some(ref mut eeprom) = self.machine.bus.eeprom {
+            let len = data.len().min(eeprom.data.len());
+            eeprom.data[..len].copy_from_slice(&data[..len]);
+        } else {
+            let len = data.len().min(self.machine.bus.sram.len());
+            self.machine.bus.sram[..len].copy_from_slice(&data[..len]);
+        }
+        self.mark_save_clean();
+        true
+    }
+
+    /// Obtiene una referencia a los datos actuales de la memoria de guardado del juego.
+    pub fn save_data(&self) -> Option<&[u8]> {
+        if let Some(ref flash) = self.machine.bus.flash {
+            Some(&flash.data)
+        } else if let Some(ref eeprom) = self.machine.bus.eeprom {
+            Some(&eeprom.data)
+        } else if !self.machine.bus.sram.is_empty() {
+            Some(&self.machine.bus.sram)
+        } else {
+            None
+        }
+    }
+
+    /// Comprueba si la memoria de guardado ha sido modificada respecto a la última sincronización.
+    pub fn is_save_dirty(&self) -> bool {
+        match self.save_data() {
+            Some(d) => compute_backup_hash(d) != self.last_save_hash,
+            None => false,
+        }
+    }
+
+    /// Marca la memoria de guardado como limpia tras una sincronización exitosa a disco.
+    pub fn mark_save_clean(&mut self) {
+        if let Some(d) = self.save_data() {
+            self.last_save_hash = compute_backup_hash(d);
+        }
     }
 }
 

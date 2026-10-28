@@ -6,50 +6,62 @@ Catastro exhaustivo de tareas pendientes, refactorizaciones y deuda técnica rea
 
 ---
 
-## 1. Audio Nativo (Fase 2 / v0.2.0 del Roadmap — Bloque Crítico)
+## 1. Hito MVP Jugable & Showcase (Fase 1 / v0.1.0 del Roadmap — Frente Crítico)
 
-- [ ] **Backend de audio nativo con AAudio / Oboe:** Diseñar e implementar la salida de audio de baja latencia en Android enlazada al buffer circular del APU de GBA.
-- [ ] **Eliminar cálculo en vacío del APU:** Condicionar `pump_audio` para que no ejecute 65.536 veces por segundo la síntesis de audio si el backend de salida no está activo.
-- [ ] **Gestión de foco de audio (`AudioFocus`):** Pausar o atenuar el audio automáticamente cuando entra una llamada telefónica, cambian los auriculares o la aplicación pasa a segundo plano.
-- [ ] **Sincronización de audio y video:** Coordinar el reloj del APU con el framerate nativo a 60 FPS para evitar distorsiones de buffer (*underruns* / *overflows*).
-
----
-
-## 2. Almacenamiento, Partidas y Distribución (Fase 1 / v0.1.0 MVP y Fase 2 / v0.3.0)
-
-- [ ] **Persistencia de partidas (`.sav`):** Conectar la memoria de guardado (SRAM / Flash de 64K y 128K) de la GBA con el almacenamiento interno de la aplicación (`filesDir`) para guardar y cargar el progreso de la partida en archivos `.sav`.
-- [ ] **Selector interactivo de ROM y BIOS en UI:** Crear una interfaz gráfica en la pantalla de error/inicio para que el usuario pueda examinar carpetas y seleccionar sus archivos `.gba` y `.bin` si no están en `Downloads/`.
-- [ ] **Importación y exportación de partidas:** Flujo en Android Storage Access Framework (SAF) para respaldar o transferir partidas guardadas hacia y desde el almacenamiento del usuario.
-- [ ] **Menú en juego:** Menú superpuesto (*in-game menu*) con opciones de pausa, reinicio de partida y selección de escala de pantalla.
-
----
-
-## 3. Entrada y Mandos Físicos (Fase 2 / v0.4.0 del Roadmap)
-
-- [ ] **Soporte de Gamepads físicos (Bluetooth y USB-C):** Mapear los botones del mando mediante la API de Gamepad de Android y los eventos `KeyEvent` / `MotionEvent` de `android-activity`.
+- [x] **Persistencia de partidas (`.sav`):** Resuelto en la propuesta [`2026-10-28_persistencia-guardado-sav.md`](propuestas/2026-10-28_persistencia-guardado-sav.md). Conectada la memoria de guardado (SRAM / Flash de 64K y 128K) de la GBA con el almacenamiento interno de la aplicación (`filesDir`) con reemplazo atómico `.sav.tmp` y autoguardado táctico continuo (datos de suspensión y semilla PRNG) con debounce de 1,5 segundos.
+- [ ] **Soporte de mandos físicos (Bluetooth y USB-C):** Mapear los botones del mando mediante la API de Gamepad de Android y los eventos `KeyEvent` / `MotionEvent` de `android-activity`.
 - [ ] **Auto-desactivación del overlay táctil:** Ocultar dinámicamente los controles virtuales en pantalla al detectar actividad de un mando físico externo conectado.
-- [ ] **Configuración y remapeo de botones:** Pantalla de configuración para personalizar la asignación de botones tanto en mandos físicos como en la interfaz táctil.
+- [ ] **Menú nativo y remapeo de botones:** Menú superpuesto en pantalla (*in-game menu*) con opciones de pausa, reinicio de partida y pantalla de configuración para personalizar la asignación de botones (táctiles y físicos).
+- [ ] **Selector interactivo de ROM y BIOS en UI:** Interfaz gráfica en la pantalla de error/inicio para examinar carpetas y seleccionar archivos `.gba` y `.bin` sin depender de rutas fijas o ADB.
+- [ ] **Feature Insignia: Widescreen adaptativo (16:9 y 21:9):** Extender el viewport horizontal en el mapa táctico (Modo 0) manipulando la composición en [`NativePpu`](../src/ppu_nativa.rs) para proyectar más columnas de tiles del mapa en lugar de mostrar bandas negras.
 
 ---
 
-## 4. Recompilación AOT y Rendimiento de CPU (Fase 1 / v0.1.0 MVP)
+## 2. Audio Nativo y Rendimiento (Consolidado en Fase 0 / v0.0.3)
 
-- [x] **Cobertura AOT de rutinas de combate en IWRAM:** Resuelto en la propuesta [`2026-10-24_cobertura-aot-combate-iwram.md`](propuestas/2026-10-24_cobertura-aot-combate-iwram.md). Catalogadas las 14 subrutinas críticas de combate en IWRAM en [`blazing.labels.toml`](../blazing.labels.toml) (`0x03003478`, `0x03003568`, `0x030035C8`–`0x030035DC`, `0x03003620`, `0x03003654`, `0x03003688`, `0x030036BC`, `0x030036CC`, `0x030036EC`, `0x03003708`) y regeneradas las unidades C11 en `src-c/` con guardas FNV-1a (`a->guard(m, addr, len, hash)`), eliminando las caídas al intérprete en las secuencias de combate.
-- [ ] **Auditar cobertura de etiquetas en runtime:** Clarificar la relación entre las 18.483 funciones canónicas catalogadas en [`blazing.labels.toml`](../blazing.labels.toml) (cosecha preliminar de 17.207 funciones) y los 144.875 bloques básicos emitidos en `src-c/` (`rcg_blocks[]`), garantizando la cobertura AOT completa de todo el código recompilado frente a caídas al intérprete.
+- [x] **Backend de audio nativo con AAudio NDK:** Resuelto en las propuestas [`2026-10-25_motor-audio-nativo-aaudio.md`](propuestas/2026-10-25_motor-audio-nativo-aaudio.md) y [`2026-10-25_audio-mejorado-mp2k-hle.md`](propuestas/2026-10-25_audio-mejorado-mp2k-hle.md) (commit `fb26fe0`). Implementado el backend de baja latencia en `src/audio.rs` con resampler de 65.536 Hz a 48.000 Hz, control dinámico de deriva (DRC), buffer circular SPSC acotado y mezclador flotante MP2K HLE en 32 bits con fallback a audio fiel.
+- [x] **Gestión de ciclo de vida y foco de audio (`AudioFocus`):** Pausa y reanudación automática enlazada a las transiciones de `android-activity` y el pipeline de emulación.
+- [ ] **Eliminar cálculo en vacío del APU:** Condicionar `pump_audio` para que no ejecute 65.536 veces por segundo la síntesis de audio si el backend de salida no está activo.
+
+---
+
+## 3. Plataforma de Mods y Plugins (Fase 2 / v0.2.0 - v0.4.0)
+
+- [ ] **Arquitectura de plugins / inyección en Rust y C:** Diseñar un sistema de hooks para interceptar llamadas nativas del juego (eventos de combate, cálculo de daño, condiciones de victoria) sin alterar el código C11 base.
+- [ ] **Sustitución de assets (texturas y retratos HD):** Pipeline para reemplazar baldosas y retratos por texturas de mayor resolución aprovechando el renderizado en GPU.
+- [ ] **Samples de audio HD:** Interfaz en el mezclador MP2K HLE flotante para cargar muestras de audio de mayor resolución (*soundfonts* / muestras PCM limpias).
+- [ ] **Shaders LCD/CRT avanzados:** Catálogo de shaders WGSL seleccionables por el usuario (rejilla de píxeles GBA SP, corrección de color y curvatura CRT).
+- [ ] **Guardados de estado instantáneos (Savestates) y rebobinado:** Serialización de la memoria completa (IWRAM/EWRAM/VRAM/registros) para congelar y reanudar partidas instantáneamente.
+
+---
+
+## 4. Ecosistema de la Trilogía GBA y Hackroms (Fase 3 / v0.5.0 - v0.8.0)
+
+- [ ] **Soporte de parches de hackroms (IPS / UPS / BPS):** Aplicación de parches en memoria al vuelo al cargar la ROM base.
+- [ ] **Compatibilidad con Fire Emblem 6 (The Binding Blade):** Cosecha de etiquetas AOT y adaptación del runtime para FE6.
+- [ ] **Compatibilidad con Fire Emblem 8 (The Sacred Stones):** Cosecha de etiquetas AOT y adaptación del runtime para FE8 (soporte del mapa de mundo y split de rutas).
+- [ ] **Optimización para pantallas plegables y tablets:** Disposición ergonómica del overlay táctil para relaciones de aspecto 4:3 y pantallas divididas.
+
+---
+
+## 5. Recompilación AOT y Rendimiento de CPU
+
+- [x] **Cobertura AOT de rutinas de combate en IWRAM:** Resuelto en la propuesta [`2026-10-24_cobertura-aot-combate-iwram.md`](propuestas/2026-10-24_cobertura-aot-combate-iwram.md). Catalogadas las 14 subrutinas críticas de combate en IWRAM en [`blazing.labels.toml`](../blazing.labels.toml) y regeneradas las unidades C11 con guardas FNV-1a, eliminando las caídas al intérprete en secuencias de combate.
+- [ ] **Auditar cobertura de etiquetas en runtime:** Clarificar la relación entre las 18.483 funciones canónicas catalogadas en [`blazing.labels.toml`](../blazing.labels.toml) y los 144.875 bloques básicos emitidos en `src-c/` (`rcg_blocks[]`), garantizando la cobertura AOT completa de todo el código recompilado frente a caídas al intérprete.
 - [ ] **Optimización de llamadas de memoria cruzada C-Rust:** Evaluar caminos directos para lecturas/escrituras de IWRAM/EWRAM que eviten el salto por la vtable en funciones críticas.
 
 ---
 
-## 5. Renderizado GPU y PPU Nativa (Fase 0 / v0.0.2 y Fase 1 / v0.1.0 MVP)
+## 6. Renderizado GPU y PPU Nativa
 
-- [x] **Desactivación de la sonda de calibración de arranque:** Resuelto en [`docs/propuestas/2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md`](propuestas/2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md). Apagada la constante `CALIBRAR_PRESENTACION` a `false` tras concluir los experimentos en TV Stick, eliminando la reducción a media resolución (`0.5x`) causante de la segunda pantalla superpuesta en la esquina inferior izquierda con OpenGL ES y los reinicios innecesarios del swapchain.
+- [x] **Desactivación de la sonda de calibración de arranque:** Resuelto en [`docs/propuestas/2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md`](propuestas/2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md). Apagada la constante `CALIBRAR_PRESENTACION` a `false`.
 - [ ] **Liberación de memoria en cambio en caliente:** Liberar las texturas de la PPU nativa si el usuario activa el archivo de marca `ppu-nativa-off.flag`.
 - [ ] **Poda dinámica de búferes de sprites:** Dimensionar el búfer de instancias de la GPU en función del recuento real de sprites activos en lugar de reservar siempre el tamaño fijo para 128 sprites.
 - [ ] **Soporte de ventana OBJ en caminos optimizados:** Ampliar la evaluación de máscaras complejas si alguna escena secundaria lo requiere.
 
 ---
 
-## 6. Higiene de Pruebas, Herramientas y Documentación
+## 7. Higiene de Pruebas, Herramientas y Documentación
 
 - [ ] **Eliminación de intermitencia en tests de worker:** Corregir el límite de tiempo de 500 ms en `test_emulation_worker_lifecycle_and_frame_generation` ([`src/pipeline_tests.rs`](../src/pipeline_tests.rs)) para que sea determinista bajo alta concurrencia de CPU.
 - [ ] **Saneamiento de métricas en `DECISIONES.md`:** Actualizar cifras desfasadas de recuento de pruebas, tamaño del instalador APK (39 MB vs 42.5 MB) y frecuencia de telemetría.
