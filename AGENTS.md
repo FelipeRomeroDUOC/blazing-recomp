@@ -6,13 +6,14 @@ Directrices de arquitectura, plataforma y reglas operativas para el proyecto **B
 
 ## 1. Visión y Arquitectura del Proyecto
 
-- **Objetivo:** Port nativo de **Fire Emblem: The Blazing Blade (GBA)** para **Android** mediante recompilación estática AOT (*Ahead-Of-Time*) sin emulación tradicional de CPU.
+- **Misión y Visión:** Plataforma nativa de recompilación para Android de **Fire Emblem: The Blazing Blade** (con proyección arquitectónica hacia la trilogía GBA: *Binding Blade*, *Blazing Blade* y *The Sacred Stones*). No es un simple reproductor/wrapper de emulación ni un port superficial: busca maximizar el porcentaje de funciones nativas in-house (hacia el 100% nativo), manipular directamente la composición en GPU/hardware moderno y proveer una plataforma extensible mediante mods y plugins para la comunidad (filosofía *Recomp* moderna).
+- **Independencia y Créditos Upstream:** Basado inicialmente en la tecnología fundacional de [`JRickey/gba-recomp`](https://github.com/JRickey/gba-recomp) y `gba-core`, acreditando siempre sus aportes pero con una trayectoria de independencia técnica progresiva hacia subsistemas nativos propios en Rust y C. `Cargo.toml` mantiene activa la directiva `[patch]` apuntando a `../gba-recomp/crates/gba-core`. `pack.toml` es consumido exclusivamente por `recomp build`, no por el runtime en Android.
 - **Topología de Bibliotecas en APK (`lib/<abi>/`):**
-  - `libblazing_recomp.so`: Runtime Rust generado por `cargo-ndk`. Punto de entrada de `NativeActivity` (`android:hasCode="false"`, `lib_name="blazing_recomp"`). Gestiona GPU, audio, memoria, DMA, timers y controles.
+  - `libblazing_recomp.so`: Runtime Rust generado por `cargo-ndk`. Punto de entrada de `NativeActivity` (`android:hasCode="false"`, `lib_name="blazing_recomp"`). Gestiona GPU, audio de baja latencia con AAudio, memoria, DMA, timers, controles y subsistema de extensiones.
   - `libblazing_recompiled.so`: Lógica C11 AOT del juego compilada por Clang del NDK (144.875 bloques en `src-c/`). Se carga dinámicamente vía `dlopen`.
-- **Renderizado GPU:** **`NativePpu`** en GPU con shaders WGSL (`src/ppu_nativa.rs` y `src/present.rs`), con respaldo automático de Vulkan a OpenGL ES 3.0 vía `wgpu`. Conforme al ADR 42, `PpuShim` está extinto; el rasterizador por software en CPU se reserva solo como contingencia (`ppu-nativa-off.flag`).
-- **Controles y Pacing:** Mando físico (Gamepad API), touch overlay en pantalla y 60 FPS estables coordinados con `Choreographer` / VSync.
-- **Upstream y dependencias:** Motor base en [`JRickey/gba-recomp`](https://github.com/JRickey/gba-recomp). `Cargo.toml` mantiene activa la directiva `[patch]` apuntando a `../gba-recomp/crates/gba-core`. `pack.toml` es consumido exclusivamente por `recomp build`, no por el runtime en Android.
+- **Renderizado GPU y Filosofía de Composición Directa:** **`NativePpu`** en GPU con shaders WGSL (`src/ppu_nativa.rs` y `src/present.rs`), con respaldo automático de Vulkan a OpenGL ES 3.0 vía `wgpu`. Se rechaza la emulación scanline a scanline en CPU; se manipula directamente la composición en la GPU de Android, permitiendo features nativas avanzadas (como Widescreen adaptativo 16:9 y 21:9). Conforme al ADR 42, `PpuShim` está extinto; el rasterizador por software en CPU se reserva solo como contingencia (`ppu-nativa-off.flag`).
+- **Controles, Audio y Pacing:** Mando físico (Gamepad API con autodetección), touch overlay procedimental en pantalla y 60 FPS estables coordinados con `Choreographer` / VSync. Motor de audio nativo de baja latencia con AAudio NDK y mezclador de punto flotante MP2K HLE en 32 bits (`src/audio.rs`).
+- **Alcance del Hito MVP (`v0.1.0`):** Juego 100% jugable de inicio a fin con persistencia de partidas `.sav` en almacenamiento Android (`filesDir`), soporte completo de mandos físicos (Bluetooth/USB) y táctiles, interfaz gráfica nativa con menús y remapeo de botones, y Widescreen adaptativo (16:9 / 21:9) como feature insignia demostrativa.
 
 ---
 
@@ -44,39 +45,45 @@ Directrices de arquitectura, plataforma y reglas operativas para el proyecto **B
 
 ## 4. Subagentes Especializados y Matriz de Disparadores
 
-Para evitar contaminación de contexto en el agente principal y reducir consumo de cuota, el arnés **bloquea por software** (`PreToolGuard`) la ejecución de comandos verbosos o pesados en el hilo principal. Es **obligatorio** delegar mediante el mecanismo del arnés activo, configurando el rol correspondiente: `invoke_subagent` con modelo `flash_lite` (o `flash`) en Antigravity, o la herramienta `subagent` de DeepSeek Harness (ver §4.1).
+Para evitar contaminación de contexto en el agente principal y optimizar la cuota semanal, el arnés opera bajo una **arquitectura híbrida**: plantillas de encargo fijas en [`.agents/subagents/`](.agents/subagents/) combinadas con **ciclo de vida efímero** (un subproceso limpio por tarea que se desecha al entregar su reporte). El arnés **bloquea por software** (`PreToolGuard`) la ejecución de comandos verbosos o pesados en el hilo principal.
 
-| Evento / Tarea | TypeName | Role | Modelo | Disparador Obligatorio (Enforzado por Hook) |
-| :--- | :--- | :--- | :--- | :--- |
-| **Pruebas y Regresiones** | `self` | `Test Runner` | `google/gemini-3.1-flash-lite` | Ejecutar `cargo test`, arnés de fotogramas dorados o auditoría de mutantes. |
-| **Compilación y Empaquetado APK** | `self` | `APK Builder` | `google/gemini-3.5-flash-lite` | Compilar AOT C11 (`compilar_recomp_aot.ps1`), `cargo ndk`, `cargo build` o generar Fat APK (`package_apk.ps1`). |
-| **Telemetría y Rendimiento** | `self` | `Telemetry Analyzer` | `google/gemini-3.1-flash-lite` | Analizar `blazing-perf.txt`, frametimes o cuellos de botella de GPU/PPU (`analizar_telemetria.py`). |
-| **Etiquetas AOT** | `self` | `Label Auditor` | `google/gemini-3.5-flash-lite` | Mapear o auditar `blazing.labels.toml`, desensamblar ROM o sembrar labels (`auditar_labels.py`). |
+Los roles se dividen estrictamente según su naturaleza: **Razonamiento Crítico (`pro`)** y **Ejecución Mecánica (`flash_lite`)**:
+
+### División 1: Razonamiento Crítico (Modelos Pro)
+| Evento / Tarea | TypeName | Role | Modelo Antigravity | Modelo DSH | Disparador Obligatorio |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Diagnóstico y Arquitectura** | `research` | `Investigador` | `pro` | `google/gemini-1.5-pro` | Diagnóstico de causas raíz de bugs complejos, análisis de hardware GBA, PPU/Audio y ROM. |
+| **Auditoría de Propuestas** | `research` | `Proposal Reviewer` | `pro` | `google/gemini-1.5-pro` | Auditar borradores de Propuestas N2 (Lenguaje claro ISO 24495-1 y verificabilidad) antes de entregar al usuario. |
+| **Implementación de Código** | `self` | `Constructor` | `pro` (o `flash`) | `google/gemini-1.5-pro` | Programación de nuevos módulos, algoritmos de renderizado/audio y refactorizaciones aprobadas. |
+
+### División 2: Ejecución Mecánica (Modelos Flash-Lite)
+| Evento / Tarea | TypeName | Role | Modelo Antigravity | Modelo DSH | Disparador Obligatorio (Enforzado por Hook) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Pruebas y Regresiones** | `self` | `Test Runner` | `flash_lite` | `google/gemini-3.1-flash-lite` | Ejecutar `cargo test`, arnés de fotogramas dorados o auditoría de mutantes. |
+| **Compilación y Empaquetado APK** | `self` | `APK Builder` | `flash_lite` | `google/gemini-3.5-flash-lite` | Compilar AOT C11 (`compilar_recomp_aot.ps1`), `cargo ndk`, `cargo build` o Fat APK (`package_apk.ps1`). |
+| **Búsqueda Masiva (Contingencia)**| `research` | `Code Scout` | `flash_lite` | `google/gemini-3.5-flash-lite` | Búsquedas no indexadas de más de 10 archivos completos cuando CodeGraph no baste. |
 
 > [!NOTE]
-> **Poda y automatización:**
-> - **Gestión Documental:** El rol `Doc Manager` ha sido podado. Los hooks automáticos (`post_tool_runner`) se encargan de regenerar índices, validar Diátaxis y actualizar la preview sin intervención.
-> - **Exploración de Código:** El agente principal utiliza directamente la herramienta MCP `codegraph_explore` para consultas puntuales. El rol `Code Scout` (`research`) se reserva exclusivamente como contingencia para búsquedas masivas no indexadas que abarquen más de 10 archivos completos.
-
-El subagente ejecuta el trabajo de forma aislada y reporta al hilo principal una síntesis ejecutiva de 3 a 5 líneas.
-
-Los dos modelos lite tienen 500 peticiones diarias cada uno: el reparto de la tabla permite usar hasta 1000. DSH no cambia de modelo solo, así que si uno agota su cuota se edita el encargo del rol y se pasa el otro id.
+> **Ciclo de vida y absorción de roles:**
+> - **Efímeros por defecto:** Cada subagente se invoca para una tarea puntual, entrega su reporte ejecutivo (3 a 5 líneas) y se destruye. Esto previene la acumulación de logs muertos y protege la cuota semanal.
+> - **Excepción de ciclo corto:** El `Constructor` puede recibir 2 o 3 mensajes iterativos de corrección (`send_message`) únicamente dentro del bucle de depuración de una misma feature activa.
+> - **Roles absorbidos:** `Telemetry Analyzer` y `Label Auditor` quedan absorbidos como misiones dinámicas del `Investigador`. `Doc Manager` está podado (automatizado por `post_tool_runner`).
 
 ### 4.1 Invocación en DeepSeek Harness (DSH)
 
-En DSH no existe `invoke_subagent`: la herramienta se llama `subagent` y acepta `description`, `prompt`, `provider` y `model`. El rol viaja dentro del `prompt`; el modelo se pasa por llamada, con los dos ids permitidos. Cada rol de la tabla tiene su encargo reutilizable en [`.agents/subagents/`](.agents/subagents/):
+En DSH la herramienta `subagent` acepta `description`, `prompt`, `provider` y `model`. Cada rol consume su encargo desde [`.agents/subagents/`](.agents/subagents/):
 
-| Rol | Encargo | Invocación |
+| Rol | Encargo | Invocación en DSH |
 | :--- | :--- | :--- |
-| `Test Runner` | [test-runner.md](.agents/subagents/test-runner.md) | `subagent(description='Test Runner', provider='google', model='gemini-3.1-flash-lite', prompt=<contenido del encargo> + tarea)` |
-| `APK Builder` | [apk-builder.md](.agents/subagents/apk-builder.md) | `subagent(description='APK Builder', provider='google', model='gemini-3.5-flash-lite', prompt=<contenido del encargo> + tarea)` |
-| `Telemetry Analyzer` | [telemetry-analyzer.md](.agents/subagents/telemetry-analyzer.md) | `subagent(description='Telemetry Analyzer', provider='google', model='gemini-3.1-flash-lite', prompt=<contenido del encargo> + tarea)` |
-| `Label Auditor` | [label-auditor.md](.agents/subagents/label-auditor.md) | `subagent(description='Label Auditor', provider='google', model='gemini-3.5-flash-lite', prompt=<contenido del encargo> + tarea)` |
-| `Code Scout` (contingencia) | [code-scout.md](.agents/subagents/code-scout.md) | `subagent(description='Code Scout', provider='google', model='gemini-3.5-flash-lite', prompt=<contenido del encargo> + tarea)` |
+| `Investigador` | [investigador.md](.agents/subagents/investigador.md) | `subagent(description='Investigador', provider='google', model='gemini-1.5-pro', prompt=<contenido> + tarea)` |
+| `Proposal Reviewer`| [proposal-reviewer.md](.agents/subagents/proposal-reviewer.md) | `subagent(description='Proposal Reviewer', provider='google', model='gemini-1.5-pro', prompt=<contenido> + tarea)` |
+| `Constructor` | [constructor.md](.agents/subagents/constructor.md) | `subagent(description='Constructor', provider='google', model='gemini-1.5-pro', prompt=<contenido> + tarea)` |
+| `Test Runner` | [test-runner.md](.agents/subagents/test-runner.md) | `subagent(description='Test Runner', provider='google', model='gemini-3.1-flash-lite', prompt=<contenido> + tarea)` |
+| `APK Builder` | [apk-builder.md](.agents/subagents/apk-builder.md) | `subagent(description='APK Builder', provider='google', model='gemini-3.5-flash-lite', prompt=<contenido> + tarea)` |
+| `Code Scout` | [code-scout.md](.agents/subagents/code-scout.md) | `subagent(description='Code Scout', provider='google', model='gemini-3.5-flash-lite', prompt=<contenido> + tarea)` |
 
 - `subagent_fork` no acepta modelo: el hijo hereda el del padre. Solo para tareas que necesiten el contexto de esta conversación.
-- `workflow` cuando hay tres o más tareas, o para modelar varias a la vez.
-- En Antigravity se mantiene `invoke_subagent(TypeName='self', Role='<rol>', Model='flash_lite', Prompt='...')` sin cambios.
+- En Antigravity se invoca mediante `invoke_subagent(TypeName='research'|'self', Role='<rol>', Model='pro'|'flash_lite', Prompt='...')`.
 
 ---
 

@@ -1,6 +1,16 @@
 # Blazing Recomp — Fire Emblem: The Blazing Blade
 
-Proyecto independiente de port nativo para **Fire Emblem: The Blazing Blade (GBA)** utilizando la tecnología de recompilación estática de `gba-recomp`.
+Plataforma nativa de recompilación estática para **Android** de **Fire Emblem: The Blazing Blade**, con proyección arquitectónica hacia la trilogía completa de GBA (*Binding Blade*, *Blazing Blade* y *The Sacred Stones*). 
+
+El proyecto busca maximizar el porcentaje de funciones nativas in-house (hacia el 100% nativo), manipular directamente la composición en GPU/hardware moderno y proveer una plataforma extensible mediante mods y plugins para la comunidad (filosofía *Recomp* moderna).
+
+---
+
+## Filosofía del Proyecto y Créditos Upstream
+
+* **Ingeniería Nativa Orientada al Dispositivo (Android-First):** En lugar de un simple wrapper o un port superficial que emula scanlines por CPU, Blazing Recomp manipula directamente la composición en GPU mediante [`NativePpu`](src/ppu_nativa.rs) con shaders WGSL sobre Vulkan y OpenGL ES 3.0, lo que permite capacidades que exceden al hardware original (como Widescreen adaptativo 16:9 / 21:9).
+* **Plataforma Extensible de Mods:** Diseñado para que la comunidad de entusiastas y desarrolladores pueda inyectar código nativo C/Rust, sustituir texturas, orquestar música y crear plugins sin alterar la lógica de juego base (inspirado en proyectos de referencia como `gen1-recomp`).
+* **Independencia Técnica Progresiva y Reconocimiento Upstream:** El proyecto nació a partir de la tecnología fundacional de recompilación estática de [`JRickey/gba-recomp`](https://github.com/JRickey/gba-recomp) y `gba-core`. Damos crédito explícito a sus aportes y mantenemos compatibilidad upstream en `pack.toml`, al tiempo que desarrollamos nuestra propia arquitectura independiente de runtime, GPU, audio y controles para Android.
 
 ---
 
@@ -9,15 +19,17 @@ Proyecto independiente de port nativo para **Fire Emblem: The Blazing Blade (GBA
 - **ROM Requerida:** `Fire Emblem (Europe)` (volcado de referencia No-Intro: `1575 - Fire Emblem (E)(Independent).gba`). La app valida exclusivamente el hash SHA-256 (`6f2c3082...`), por lo que cualquier nombre de archivo es aceptado si coincide su suma criptográfica.
 - **ROM SHA-256:** `6f2c30823ab0237310b138739ccfad879f1a07c4a782a9cbb92317d60d03cee9`
 - **BIOS SHA-256:** `fd2547724b505f487e6dcb29ec2ecff3af35a841a77ab2e85fd87350abd36570`
-- **Motor de Audio:** Estructura `M4A / MusicPlayer2000` procesada por el núcleo de hardware (`gba-core`). *Nota:* El backend de audio nativo para Android (`AAudio / Oboe`) se encuentra actualmente en desarrollo (planificado para `v0.2.0` / Fase 2 del Roadmap).
-- **Persistencia de Guardado:** En desarrollo. La memoria SRAM opera en memoria volátil durante la sesión activa; la sincronización y persistencia en archivo `.sav` en el almacenamiento de Android se encuentra en desarrollo (Hito `v0.1.0` del Roadmap). Al cerrar la app se reinicia la partida.
+- **Motor de Audio:** Implementado y operativo. Backend nativo de baja latencia con **AAudio NDK**, resampler de 65.536 Hz a 48.000 Hz, control dinámico de deriva (DRC) y mezclador de alta fidelidad **MP2K HLE** en punto flotante de 32 bits ([`src/audio.rs`](src/audio.rs)).
+- **Persistencia de Guardado:** En desarrollo activo (rama `implementacion-guardado`) para el hito **`v0.1.0` (MVP Jugable)**. Conecta la SRAM/Flash de GBA con el almacenamiento interno de Android (`filesDir`) para almacenar partidas en archivos `.sav`.
+- **Controles y UI:** Overlay táctil procedural por shaders activo. La integración de mandos físicos (Bluetooth/USB) y menús nativos de configuración forma parte del hito `v0.1.0`.
+- **Feature Insignia MVP:** Widescreen adaptativo (16:9 y 21:9) en mapas tácticos mediante ampliación del frustum en `NativePpu`.
 
 ---
 
 ## Estructura del Proyecto
 
-- [`src/`](src/): Runtime principal del port en Rust (`NativeActivity`, pipeline de renderizado `NativePpu` con shaders WGSL, compositor de presentación, puente de emulación multihilo, capa táctil y telemetría).
-- [`src-c/`](src-c/): Código fuente C11 recompilado del juego (7.256.939 líneas distribuidas en 12 unidades de traducción, compiladas a `libblazing_recompiled.so` por Clang del NDK).
+- [`src/`](src/): Runtime principal del port en Rust (`NativeActivity`, pipeline de renderizado `NativePpu` con shaders WGSL, compositor de presentación, motor de audio AAudio, puente multihilo, capa táctil y telemetría).
+- [`src-c/`](src-c/): Código fuente C11 recompilado del juego (7.256.939 líneas distribuidas en 12 unidades de traducción, compiladas a `libblazing_recompiled.so` por Clang del NDK con 0 caídas al intérprete en combate).
 - [`android/`](android/): Manifiesto `AndroidManifest.xml` y recursos de la aplicación para el empaquetado directo con AAPT2.
 - [`scripts/`](scripts/): Suite de herramientas CLI y diagnóstico (`package_apk.ps1`, análisis de telemetría, desensamblador de ROM, auditoría de labels AOT y validación Diátaxis).
 - [`docs/`](docs/README.md): Portal de documentación técnica estructurado bajo el estándar Diátaxis (guías prácticas, explicaciones arquitectónicas, referencias formales y fuentes).
@@ -86,4 +98,3 @@ La documentación del proyecto sigue el estándar Diátaxis y se encuentra organ
   - [Registro de Cambios (Changelog)](CHANGELOG.md): Historial de versiones publicadas.
   - [Tareas Pendientes y Deuda Técnica](docs/PENDIENTES.md): Catastro de tareas accionables del código.
   - [Backlog del Proyecto](docs/BACKLOG.md): Tareas completadas y hoja de ruta activa.
-
