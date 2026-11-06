@@ -549,7 +549,6 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
 
     let modo = (cfg_comp.bldcnt >> 6u) & 3u;
     let efectos = (control & 0x20u) != 0u;
-    let es_fuego_dragon = cfg_comp.bg_prio2 == 3u && cfg_comp.bg_prio3 <= 1u && (cfg_comp.dispcnt & 0x0C00u) == 0x0C00u;
     let backdrop = paleta[upy * 512u];
 
     // --- Las dos capas más altas ---
@@ -652,17 +651,13 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
 
         // BG3
         if (cfg_comp.bg_prio3 == p && (control & 8u) != 0u) {
-            let c3_raw = color_capa(upy, 3u, upx, upy);
-            if (c3_raw != 0xFFFFu) {
-                var c3 = c3_raw;
-                if (hay_primera && es_fuego_dragon) {
-                    c3 = alpha_blend(c3_raw, backdrop, 16u, 8u);
-                }
+            let c3 = color_capa(upy, 3u, upx, upy);
+            if (c3 != 0xFFFFu) {
                 if (!hay_primera) {
                     primera = c3;
                     primera_id = 3u;
                     hay_primera = true;
-                    if (!es_fuego_dragon && !necesita_segunda(primera_id, obj_visible, obj_semi, efectos, modo, cfg_comp.bldcnt)) {
+                    if (!necesita_segunda(primera_id, obj_visible, obj_semi, efectos, modo, cfg_comp.bldcnt)) {
                         corte = true;
                         break;
                     }
@@ -706,10 +701,6 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
         } else if (modo == 3u) {
             color = darken(primera, evy);
         }
-    } else if (es_fuego_dragon && primera_id == 3u) {
-        // Respaldo de cinematica del dragon si BLDCNT conmuto a modo texto o no tiene BG3 en 1st target:
-        // Mezclar fuego (primera) sobre dragon/backdrop (segunda) usando pesos nominales 16, 8.
-        color = alpha_blend(primera, segunda, 16u, 8u);
     }
 
     // Conversión a 8 bits: la misma que usa el arnés de comparación.

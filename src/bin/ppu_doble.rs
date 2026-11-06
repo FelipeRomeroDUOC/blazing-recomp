@@ -534,11 +534,7 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>, ruta_hash_out: Option<Pat
                 let bldcnt = io16(&maquina.bus.io, 0x50);
 
                 if let Some(ref r_out) = ruta_hash_out {
-                    let es_dragon = (dispcnt & 7) == 0
-                        && (dispcnt & 0x0C00) == 0x0C00
-                        && (bldcnt & 0x2008) == 0x2008
-                        && ((bldcnt >> 6) & 3) == 1;
-                    if es_dragon && rel_dragon.is_none() {
+                    if rel_dragon.is_none() {
                         rel_dragon = Some(0);
                     }
                     if let Some(rel) = rel_dragon {
@@ -547,16 +543,14 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>, ruta_hash_out: Option<Pat
                                 blazing_recomp::ppu_nativa::EstadoPpuNativa::decodificar_lineas(
                                     &io_lineas,
                                 );
-                            let mut comps_sanadas = comps_staging;
-                            blazing_recomp::ppu_nativa::EstadoPpuNativa::sanear_bldcnt_cinematica_dragon(&mut comps_sanadas);
                             let h = blazing_recomp::ppu_nativa::calcular_hash_entrada(
-                                &comps_sanadas,
+                                &comps_staging,
                                 &maquina.bus.vram,
                                 &maquina.bus.oam,
                                 &maquina.bus.palette,
                             );
                             let hu = blazing_recomp::ppu_nativa::calcular_huellas_componentes(
-                                &comps_sanadas,
+                                &comps_staging,
                                 &maquina.bus.vram,
                                 &maquina.bus.oam,
                                 &maquina.bus.palette,

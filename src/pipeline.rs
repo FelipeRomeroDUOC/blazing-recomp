@@ -187,8 +187,6 @@ pub struct EmulationBridge {
     pause_sync: (Mutex<bool>, Condvar),
     /// Notificador opcional para interrumpir la espera del hilo principal.
     waker: Mutex<Option<WakeFn>>,
-    /// Acumulador de anomalías de raster detectadas en la cinemática del dragón.
-    dragon_anomalias: Mutex<AnomaliasDragonAcumuladas>,
 }
 
 impl EmulationBridge {
@@ -214,7 +212,6 @@ impl EmulationBridge {
             save_requested: AtomicBool::new(false),
             pause_sync: (Mutex::new(false), Condvar::new()),
             waker: Mutex::new(waker),
-            dragon_anomalias: Mutex::new(AnomaliasDragonAcumuladas::default()),
         }
     }
 
@@ -432,23 +429,6 @@ impl EmulationBridge {
         }
     }
 
-    /// Registra una anomalía de raster en la cinemática del dragón para el reporte periódico.
-    pub fn record_dragon_anomalia(&self, diag: DiagnosticoDragon) {
-        if let Ok(mut stats) = self.dragon_anomalias.lock() {
-            stats.count += 1;
-            stats.bldcnt_l50 = diag.bldcnt_linea50;
-            stats.bldcnt_fin = diag.bldcnt_fin;
-            stats.blend_lines = diag.lineas_blend;
-        }
-    }
-
-    /// Drena las anomalías acumuladas del dragón, reiniciando el acumulador a su valor por defecto.
-    pub fn drain_dragon_anomalias(&self) -> AnomaliasDragonAcumuladas {
-        match self.dragon_anomalias.lock() {
-            Ok(mut stats) => std::mem::take(&mut *stats),
-            Err(_) => AnomaliasDragonAcumuladas::default(),
-        }
-    }
 }
 
 impl Default for EmulationBridge {
@@ -534,7 +514,6 @@ impl EmulationWorker {
                 let mut frame_count = 0u64;
                 let mut dirty_since: Option<Instant> = None;
                 let mut pacer = FramePacer::new(FRAME_DURATION);
-                let mut monitor_dragon = MonitorRasterDragon::new();
 
                 while b_clone.is_running() {
                     let audio_target = b_clone.is_audio_enabled();
@@ -580,20 +559,6 @@ impl EmulationWorker {
                     }
 
                     runner.step_frame();
-
-                    let io_lineas_dragon = if gpu_ppu {
-                        Some(runner.io_lineas())
-                    } else {
-                        None
-                    };
-                    let diag = monitor_dragon.registrar_fotograma(
-                        frame_count,
-                        io_lineas_dragon,
-                        runner.io(),
-                    );
-                    if diag.hay_anomalia {
-                        b_clone.record_dragon_anomalia(diag);
-                    }
 
                     // Comprobación de debounce para autoguardado (1.5 segundos tras detectar modificaciones)
                     if frame_count % 30 == 0 {
@@ -686,137 +651,6 @@ impl EmulationWorker {
 impl Drop for EmulationWorker {
     fn drop(&mut self) {
         self.stop();
-    }
-}
-
-/// Monitor de diagnóstico en segundo plano para la cinemática del dragón.
-///
-/// Detecta anomalías donde el blending alfa de la llamarada (BG3 sobre BG2)
-/// en las scanlines 0..99 se apaga o desincroniza de forma anómala.
-pub struct MonitorRasterDragon {
-    pub anomalias_detectadas: u32,
-    ultimo_log: Option<Instant>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DiagnosticoDragon {
-    pub hay_anomalia: bool,
-    pub bldcnt_linea50: u16,
-    pub bldcnt_fin: u16,
-    pub lineas_blend: u32,
-    pub tiene_io_lineas: bool,
-}
-
-/// Estadísticas agregadas de anomalías de raster en la cinemática del dragón.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct AnomaliasDragonAcumuladas {
-    pub count: u32,
-    pub bldcnt_l50: u16,
-    pub bldcnt_fin: u16,
-    pub blend_lines: u32,
-}
-
-impl MonitorRasterDragon {
-    pub fn new() -> Self {
-        Self {
-            anomalias_detectadas: 0,
-            ultimo_log: None,
-        }
-    }
-
-    /// Analiza los registros I/O del fotograma y detecta si hubo pérdida de modulación raster en la cinemática.
-    pub fn analizar_lineas(
-        io_lineas: Option<&[[u8; 0x60]; 160]>,
-        io_fin: &[u8],
-    ) -> DiagnosticoDragon {
-        let bldcnt_fin = if io_fin.len() >= 0x52 {
-            u16::from_le_bytes([io_fin[0x50], io_fin[0x51]])
-        } else {
-            0
-        };
-
-        let Some(lineas) = io_lineas else {
-            return DiagnosticoDragon {
-                hay_anomalia: false,
-                bldcnt_linea50: 0,
-                bldcnt_fin,
-                lineas_blend: 0,
-                tiene_io_lineas: false,
-            };
-        };
-
-        let dispcnt_l50 = u16::from_le_bytes([lineas[50][0x00], lineas[50][0x01]]);
-        let bldcnt_l50 = u16::from_le_bytes([lineas[50][0x50], lineas[50][0x51]]);
-
-        // Solo se analizan anomalías si la cinemática del dragón está activa
-        // (Modo 0 con BG2 y BG3 habilitados, y BG1 apagado en DISPCNT, y bldcnt != 0).
-        let es_escena_dragon = (dispcnt_l50 & 0x0E07) == 0x0C00 && bldcnt_l50 != 0;
-        if !es_escena_dragon {
-            return DiagnosticoDragon {
-                hay_anomalia: false,
-                bldcnt_linea50: bldcnt_l50,
-                bldcnt_fin,
-                lineas_blend: 0,
-                tiene_io_lineas: true,
-            };
-        }
-
-        let mut lineas_blend = 0u32;
-        for py in 0..100 {
-            let bld = u16::from_le_bytes([lineas[py][0x50], lineas[py][0x51]]);
-            // Modo alfa = 1 (bits 6-7 = 01b), 1st target BG3 (bit 3 = 1)
-            let modo = (bld >> 6) & 3;
-            if modo == 1 && (bld & 8) != 0 {
-                lineas_blend += 1;
-            }
-        }
-
-        // Se considera anomalía si el blending alfa está ausente en scanlines 0..99
-        let hay_anomalia =
-            lineas_blend == 0 || ((bldcnt_l50 >> 6) & 3 != 1) || ((bldcnt_l50 & 8) == 0);
-
-        DiagnosticoDragon {
-            hay_anomalia,
-            bldcnt_linea50: bldcnt_l50,
-            bldcnt_fin,
-            lineas_blend,
-            tiene_io_lineas: true,
-        }
-    }
-
-    /// Procesa el fotograma y emite una advertencia con limitador de tasa si se detecta anomalía.
-    pub fn registrar_fotograma(
-        &mut self,
-        frame: u64,
-        io_lineas: Option<&[[u8; 0x60]; 160]>,
-        io_fin: &[u8],
-    ) -> DiagnosticoDragon {
-        let diag = Self::analizar_lineas(io_lineas, io_fin);
-        if diag.hay_anomalia {
-            self.anomalias_detectadas += 1;
-            let emitir = match self.ultimo_log {
-                Some(inst) => inst.elapsed() >= Duration::from_secs(1),
-                None => true,
-            };
-            if emitir {
-                log::warn!(
-                    "DRAGON_ANOMALY: frame={}, bldcnt_l50=0x{:04X}, bldcnt_fin=0x{:04X}, blend_lines={}/100, io_lineas={}",
-                    frame,
-                    diag.bldcnt_linea50,
-                    diag.bldcnt_fin,
-                    diag.lineas_blend,
-                    diag.tiene_io_lineas
-                );
-                self.ultimo_log = Some(Instant::now());
-            }
-        }
-        diag
-    }
-}
-
-impl Default for MonitorRasterDragon {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

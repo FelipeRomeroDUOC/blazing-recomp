@@ -407,10 +407,7 @@ fn test_telemetria_capas_diferencial() {
     let bldcnt_dragon = 0x2048; // 1st=BG3, 2nd=BD, modo=1 (alfa)
 
     let linea = formatear_telemetria_capas(1240, &estado_dragon, bldcnt_dragon);
-    assert_eq!(
-        linea,
-        "# capas frame=1240 bg0=OFF bg1=OFF bg2=ON(prio=2,dragon) bg3=ON(prio=3,fuego) obj=ON(cnt=12) comp=multicapa_dragon correccion=ACTIVA(multicapa)"
-    );
+    assert_eq!(linea, "# capas frame=1240 bg0=OFF bg1=OFF bg2=ON(prio=2,bg2) bg3=ON(prio=3,bg3) obj=ON(cnt=12) comp=estandar correccion=INACTIVA");
 
     // Caso con objwin purgado:
     let estado_objwin_purgado = EstadoCapas {

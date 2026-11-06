@@ -2694,11 +2694,7 @@ pub fn android_main(app: android_activity::AndroidApp) {
                         if let Some((frame, (actual, bldcnt))) = capas_info {
                             state.registrar_cambio_capas(frame, actual, bldcnt);
                             if state.hash_cuadros_activo {
-                                let es_dragon = (actual.dispcnt & 7) == 0
-                                    && (actual.dispcnt & 0x0C00) == 0x0C00
-                                    && (bldcnt & 0x2008) == 0x2008
-                                    && ((bldcnt >> 6) & 3) == 1;
-                                if es_dragon && state.rel_dragon.is_none() {
+                                if state.rel_dragon.is_none() {
                                     state.rel_dragon = Some(0);
                                 }
                                 if let Some(rel) = state.rel_dragon {
@@ -2706,17 +2702,15 @@ pub fn android_main(app: android_activity::AndroidApp) {
                                         if let Some(pkt) = state.latest_frame.as_ref() {
                                             if let Some(ps) = pkt.ppu_state.as_ref() {
                                                 let (_capas_staging, comps_staging) = crate::ppu_nativa::EstadoPpuNativa::decodificar_lineas(&ps.io_lineas);
-                                                let mut comps_sanadas = comps_staging;
-                                                crate::ppu_nativa::EstadoPpuNativa::sanear_bldcnt_cinematica_dragon(&mut comps_sanadas);
                                                 let h = crate::ppu_nativa::calcular_hash_entrada(
-                                                    &comps_sanadas,
+                                                    &comps_staging,
                                                     &ps.vram[..],
                                                     &ps.oam[..],
                                                     &ps.palette[..],
                                                 );
                                                 let hu =
                                                     crate::ppu_nativa::calcular_huellas_componentes(
-                                                        &comps_sanadas,
+                                                        &comps_staging,
                                                         &ps.vram[..],
                                                         &ps.oam[..],
                                                         &ps.palette[..],
@@ -2902,17 +2896,6 @@ pub fn android_main(app: android_activity::AndroidApp) {
                         // la ventana `t=` a la que describen.
                         state.calibrar_presentacion(&report, (win_w, win_h));
                         state.write_perf_report(&report);
-                        if let Some(worker) = &state.worker {
-                            let stats = worker.bridge().drain_dragon_anomalias();
-                            if stats.count > 0 {
-                                let msg = format!(
-                                    "# dragon_anomalias count={} bldcnt_l50=0x{:04X} bldcnt_fin=0x{:04X} blend_lines={}",
-                                    stats.count, stats.bldcnt_l50, stats.bldcnt_fin, stats.blend_lines
-                                );
-                                log::info!("PERF: {}", msg);
-                                state.append_perf_line(&msg);
-                            }
-                        }
                         if report.second_index % 2 == 0 {
                             let top = crate::recomp::drain_top_hotspots(6);
                             if !top.is_empty() {

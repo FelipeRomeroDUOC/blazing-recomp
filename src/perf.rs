@@ -569,7 +569,7 @@ pub fn extraer_estado_capas(
 }
 
 /// Formatea la línea de telemetría `# capas ...` según el estado de las capas.
-pub fn formatear_telemetria_capas(frame: u64, estado: &EstadoCapas, bldcnt: u16) -> String {
+pub fn formatear_telemetria_capas(frame: u64, estado: &EstadoCapas, _bldcnt: u16) -> String {
     let dispcnt = estado.dispcnt;
     let bg0_on = (dispcnt & 0x0100) != 0;
     let bg1_on = (dispcnt & 0x0200) != 0;
@@ -582,14 +582,8 @@ pub fn formatear_telemetria_capas(frame: u64, estado: &EstadoCapas, bldcnt: u16)
     let prio2 = estado.bg2cnt & 3;
     let prio3 = estado.bg3cnt & 3;
 
-    let es_dragon = (dispcnt & 7) == 0
-        && (dispcnt & 0x0C00) == 0x0C00
-        && (bldcnt & 0x2008) == 0x2008
-        && ((bldcnt >> 6) & 3) == 1;
-
     let s_bg0 = if bg0_on {
-        let rol = if es_dragon { "texto" } else { "bg0" };
-        format!("ON(prio={},{})", prio0, rol)
+        format!("ON(prio={},bg0)", prio0)
     } else {
         "OFF".to_string()
     };
@@ -601,15 +595,13 @@ pub fn formatear_telemetria_capas(frame: u64, estado: &EstadoCapas, bldcnt: u16)
     };
 
     let s_bg2 = if bg2_on {
-        let rol = if es_dragon { "dragon" } else { "bg2" };
-        format!("ON(prio={},{})", prio2, rol)
+        format!("ON(prio={},bg2)", prio2)
     } else {
         "OFF".to_string()
     };
 
     let s_bg3 = if bg3_on {
-        let rol = if es_dragon { "fuego" } else { "bg3" };
-        format!("ON(prio={},{})", prio3, rol)
+        format!("ON(prio={},bg3)", prio3)
     } else {
         "OFF".to_string()
     };
@@ -620,16 +612,10 @@ pub fn formatear_telemetria_capas(frame: u64, estado: &EstadoCapas, bldcnt: u16)
         "OFF".to_string()
     };
 
-    let s_comp = if es_dragon {
-        "multicapa_dragon"
-    } else {
-        "estandar"
-    };
+    let s_comp = "estandar";
 
     let s_corr = if (dispcnt & 0x8000) != 0 && estado.num_sprites_ventana == 0 {
         "APLICADA(objwin_purgado)"
-    } else if es_dragon {
-        "ACTIVA(multicapa)"
     } else {
         "INACTIVA"
     };

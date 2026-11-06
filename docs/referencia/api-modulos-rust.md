@@ -27,9 +27,9 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | [`fps.rs`](#módulo-fpsrs) | 20 | Contador de FPS y generador de HUD visual en pantalla. |
 | [`perf.rs`](#módulo-perfrs) | 20 | Módulo de medición de rendimiento por fase del fotograma. |
 | [`telemetria.rs`](#módulo-telemetriars) | 13 | Contrato de la línea de segundo (`t=`) de la telemetría de rendimiento. |
-| [`pipeline.rs`](#módulo-pipeliners) | 59 | Módulo de pipeline multihilo para desacoplar la emulación del renderizado GPU. |
+| [`pipeline.rs`](#módulo-pipeliners) | 51 | Módulo de pipeline multihilo para desacoplar la emulación del renderizado GPU. |
 | [`present.rs`](#módulo-presentrs) | 27 | Calibración de presentación del swapchain (módulo puro, testeable en host). |
-| [`ppu_nativa.rs`](#módulo-ppu_nativars) | 89 | Módulo PPU nativa: dibuja el cuadro de la GBA con la GPU del dispositivo. |
+| [`ppu_nativa.rs`](#módulo-ppu_nativars) | 86 | Módulo PPU nativa: dibuja el cuadro de la GBA con la GPU del dispositivo. |
 
 ---
 
@@ -1788,7 +1788,7 @@ Formatea la línea de telemetría `# capas ...` según el estado de las capas.
 
 **Firma:**
 ```rust
-pub fn formatear_telemetria_capas(frame: u64, estado: &EstadoCapas, bldcnt: u16) -> String
+pub fn formatear_telemetria_capas(frame: u64, estado: &EstadoCapas, _bldcnt: u16) -> String
 ```
 
 ---
@@ -2370,24 +2370,6 @@ Si está en pausa, bloquea el hilo actual en el Condvar hasta que se reanude o s
 pub fn wait_if_paused(&self)
 ```
 
-### `record_dragon_anomalia` (Función)
-
-Registra una anomalía de raster en la cinemática del dragón para el reporte periódico.
-
-**Firma:**
-```rust
-pub fn record_dragon_anomalia(&self, diag: DiagnosticoDragon)
-```
-
-### `drain_dragon_anomalias` (Función)
-
-Drena las anomalías acumuladas del dragón, reiniciando el acumulador a su valor por defecto.
-
-**Firma:**
-```rust
-pub fn drain_dragon_anomalias(&self) -> AnomaliasDragonAcumuladas
-```
-
 ### `EmulationWorker` (Struct)
 
 Gestor y controlador del hilo de trabajo de emulación en segundo plano.
@@ -2440,63 +2422,6 @@ Detiene y espera a que el hilo finalice de forma limpia.
 **Firma:**
 ```rust
 pub fn stop(&mut self)
-```
-
-### `MonitorRasterDragon` (Struct)
-
-Monitor de diagnóstico en segundo plano para la cinemática del dragón.
-
-Detecta anomalías donde el blending alfa de la llamarada (BG3 sobre BG2)
-en las scanlines 0..99 se apaga o desincroniza de forma anómala.
-
-**Firma:**
-```rust
-pub struct MonitorRasterDragon
-```
-
-### `DiagnosticoDragon` (Struct)
-
-*Sin comentario de documentación en código fuente.*
-
-**Firma:**
-```rust
-pub struct DiagnosticoDragon
-```
-
-### `AnomaliasDragonAcumuladas` (Struct)
-
-Estadísticas agregadas de anomalías de raster en la cinemática del dragón.
-
-**Firma:**
-```rust
-pub struct AnomaliasDragonAcumuladas
-```
-
-### `new` (Función)
-
-*Sin comentario de documentación en código fuente.*
-
-**Firma:**
-```rust
-pub fn new() -> Self
-```
-
-### `analizar_lineas` (Función)
-
-Analiza los registros I/O del fotograma y detecta si hubo pérdida de modulación raster en la cinemática.
-
-**Firma:**
-```rust
-pub fn analizar_lineas( io_lineas: Option<&[[u8; 0x60]; 160]>,
-```
-
-### `registrar_fotograma` (Función)
-
-Procesa el fotograma y emite una advertencia con limitador de tasa si se detecta anomalía.
-
-**Firma:**
-```rust
-pub fn registrar_fotograma( &mut self, frame: u64, io_lineas: Option<&[[u8; 0x60]; 160]>,
 ```
 
 ---
@@ -3226,31 +3151,6 @@ marcada como 1.er objetivo en `BLDCNT`.
 pub fn necesita_segunda( primera_id: u32, obj_visible: bool, obj_semi: bool, efectos: bool, modo: u32, bldcnt: u32, ) -> bool
 ```
 
-### `compone_pixel_jerarquica_dragon` (Función)
-
-Composición jerárquica bottom-up de la cinemática del dragón (equivalente CPU del shader WGSL).
-
-Compone en orden ascendente:
-1. Cielo Dinámico (BG3 fuego sobre Backdrop con pesos nominales blindados EVA=16, EVB=8).
-2. Dragón (BG2 opaco sobre el cielo de fuego).
-2b. Humo/nubes (BG1 sobre dragón si está visible).
-3. Subtítulos y Caja de Diálogo (BG0 sobre Dragón/Cielo con posible alfa).
-4. Sprites y Cursor Parpadeante (OBJ sobre todo lo anterior).
-
-**Firma:**
-```rust
-pub fn compone_pixel_jerarquica_dragon( c0: u16, c1: u16, c2: u16, c3: u16, obj_color: u16, obj_visible: bool, obj_semi: bool, control: u16, bldcnt: u16, eva: u32, evb: u32, evy: u32, backdrop: u16, ) -> u16
-```
-
-### `compone_pixel_fuego_dragon_wgsl` (Función)
-
-Equivalente CPU del fragment shader `fs_comp` en GPU con el tratamiento específico del fuego del dragón.
-
-**Firma:**
-```rust
-pub fn compone_pixel_fuego_dragon_wgsl( c0: u16, c1: u16, c2: u16, c3: u16, obj_color: u16, obj_visible: bool, obj_semi: bool, bg_prio: [u8; 4],
-```
-
 ### `CapaFondoGpu` (Struct)
 
 Configuración de un fondo (textos) tal y como la lee la GPU.
@@ -3534,21 +3434,6 @@ Decodifica las 160 filas de registros I/O en tablas de parámetros para la GPU.
 **Firma:**
 ```rust
 pub fn decodificar_lineas( io_lineas: &[[u8; 0x60]; 160],
-```
-
-### `sanear_bldcnt_cinematica_dragon` (Función)
-
-Sanea el registro BLDCNT y BLDALPHA en las 160 scanlines de la cinemática del dragón.
-
-Exige la firma estricta de la cinemática: Modo 0 con BG2 y BG3 habilitados en DISPCNT,
-con BG3 como primer objetivo y Backdrop como segundo objetivo (`(bldcnt & 0x2008) == 0x2008`),
-y modo de mezcla alfa activo (`((bldcnt >> 6) & 3) == 1`).
-Si coincide, asegura que `bldalpha` tenga los coeficientes nominales `0x0810` (EVA=16, EVB=8)
-si estaban atenuados. No muta si las prioridades son 3 pero la mezcla está apagada.
-
-**Firma:**
-```rust
-pub fn sanear_bldcnt_cinematica_dragon(comps: &mut [ConfigCompGpu; 160])
 ```
 
 ### `preparar_staging_filas` (Función)
