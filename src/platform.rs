@@ -23,8 +23,6 @@ use crate::overlay::{build_elems_with_orientation, build_globals};
 const GBA_W: u32 = 240;
 const GBA_H: u32 = 160;
 const GBA_PIXELS: usize = (GBA_W * GBA_H) as usize;
-const NOMBRE_BANDERA_HASH_CUADROS: &str = "hash-cuadros.flag";
-const NOMBRE_BANDERA_SYNC_VRAM: &str = "sync-vram.flag";
 
 /// Duración de la vibración háptica de pulsación, en ms (~35 ms permite
 /// vencer la inercia mecánica de motores ERM en tablets sin demorar el feedback).
@@ -1014,7 +1012,6 @@ impl Compositor {
         touch: &TouchController,
         is_native: bool,
         ppu_nativa_activa: bool,
-        sync_vram_activo: bool,
     ) -> Result<DrawPhases, String> {
         let t_render_start = std::time::Instant::now();
         // Dos espacios de coordenadas distintos y no intercambiables:
@@ -1807,9 +1804,6 @@ impl AppState {
             bandera_volcado_previa: false,
             combo_volcado_previo: false,
             estado_capas_previo: None,
-            hash_cuadros_activo: false,
-            sync_vram_activo: false,
-            rel_dragon: None,
         }
     }
 
@@ -1983,7 +1977,6 @@ impl AppState {
             &self.touch,
             is_native,
             self.ppu_nativa_activa,
-            self.sync_vram_activo,
         );
         if compositor.ppu_nativa_fallida && self.ppu_nativa_activa {
             self.ppu_nativa_activa = false;
@@ -2891,7 +2884,6 @@ pub fn android_main(app: android_activity::AndroidApp) {
                         state.reevaluar_ppu_nativa();
                         state.reevaluar_audio_nativo();
                         state.reevaluar_volcado();
-                        state.reevaluar_hash_cuadros();
                         // La calibración va primero: así sus líneas `#` preceden a
                         // la ventana `t=` a la que describen.
                         state.calibrar_presentacion(&report, (win_w, win_h));

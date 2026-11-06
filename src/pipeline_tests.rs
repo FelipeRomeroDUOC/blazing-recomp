@@ -435,4 +435,3 @@ fn test_frame_pacer_clamp_on_large_lag() {
     assert_eq!(next_sleep, target - Duration::from_millis(2));
     assert_eq!(pacer.next_frame_time(), jump_time + target * 2);
 }
-

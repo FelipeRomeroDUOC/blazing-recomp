@@ -157,10 +157,10 @@ Curado a mano a partir del [registro](#registro-de-hallazgos); el registro es la
 
 ## Índice de Propuestas
 
-206 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
+207 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
 propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
-**206 = 122 `verificada por agente` + 49 `cerrada` + 2 `aprobada` + 6 `pendiente` + 14 `discrepada` + 9 `revisada por humano` + 2 `modificada` + 2 `descartada`.**
+**207 = 122 `verificada por agente` + 49 `cerrada` + 2 `aprobada` + 6 `pendiente` + 14 `discrepada` + 10 `revisada por humano` + 2 `modificada` + 2 `descartada`.**
 
 ### Pendientes (6) — sin ejecutar
 
@@ -193,7 +193,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-11-06_mezcla-unica-fuego-sobre-dragon-wgsl.md`](propuestas/2026-11-06_mezcla-unica-fuego-sobre-dragon-wgsl.md)
 - [`2026-11-06_sincronia-irq-hblank-vcount-aot.md`](propuestas/2026-11-06_sincronia-irq-hblank-vcount-aot.md)
 
-### Revisada por humano (9)
+### Revisada por humano (10)
 
 - [`2026-10-09_compatibilidad-android-tv-y-armeabi-v7a.md`](propuestas/2026-10-09_compatibilidad-android-tv-y-armeabi-v7a.md)
 - [`2026-10-09_optimizacion-latencia-y-fillrate-gpu-modesta.md`](propuestas/2026-10-09_optimizacion-latencia-y-fillrate-gpu-modesta.md)
@@ -203,6 +203,7 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md`](propuestas/2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md)
 - [`2026-11-06_carga-aot-windows-y-paridad-ppu-doble.md`](propuestas/2026-11-06_carga-aot-windows-y-paridad-ppu-doble.md)
 - [`2026-11-06_limpieza-codigo-muerto-y-heuristicas-dragon.md`](propuestas/2026-11-06_limpieza-codigo-muerto-y-heuristicas-dragon.md)
+- [`2026-11-06_limpieza-volcado-hash-cuadros.md`](propuestas/2026-11-06_limpieza-volcado-hash-cuadros.md)
 - [`2026-11-06_paso-fino-scanlines-visibles-y-chain-gate-raster.md`](propuestas/2026-11-06_paso-fino-scanlines-visibles-y-chain-gate-raster.md)
 
 ### Cerradas (49)

@@ -428,7 +428,6 @@ impl EmulationBridge {
             }
         }
     }
-
 }
 
 impl Default for EmulationBridge {

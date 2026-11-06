@@ -360,7 +360,6 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>, ruta_hash_out: Option<Pat
         let mut resaltar_dif = false;
         let mut ver_ref_fin = false; // Tecla L: false = línea (emulador), true = fin de cuadro
         let mut capturas_totales = 0usize;
-        let mut rel_dragon: Option<u32> = None;
         if let Some(ref r_out) = ruta_hash_out {
             let _ = fs::write(r_out, "");
         }
