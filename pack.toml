@@ -8,7 +8,7 @@
 
 [package]
 name = "blazing-recomp"
-version = "0.0.3"
+version = "0.0.4"
 platforms = ["windows", "linux", "macos"]
 
 [image]

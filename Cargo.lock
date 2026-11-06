@@ -119,7 +119,7 @@ dependencies = [
 
 [[package]]
 name = "blazing-recomp"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "android-activity",
  "android_logger",

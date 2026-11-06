@@ -32,7 +32,7 @@ Controla la identidad del paquete y las plataformas destino:
 ```toml
 [package]
 name = "blazing-recomp"
-version = "0.0.3"
+version = "0.0.4"
 platforms = ["windows", "linux", "macos"]
 icon = "assets/icon.png"   # Opcional: PNG cuadrado (mínimo 256x256, ideal 1024x1024)
 ```

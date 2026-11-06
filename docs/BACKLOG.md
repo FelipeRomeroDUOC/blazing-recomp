@@ -6,13 +6,13 @@ Hoja de ruta, tareas pendientes y seguimiento de hitos para el port nativo de **
 > No es una página Diátaxis — el validador lo excluye por nombre —, así que no lleva front-matter.
 > Los hallazgos históricos fuera de alcance viven en el [registro de hallazgos](#registro-de-hallazgos) (y su coherencia con las propuestas la comprueba `python scripts/auditar_hallazgos.py`), mientras que las tareas accionables abiertas se gestionan en [`docs/PENDIENTES.md`](PENDIENTES.md).
 
-**Última actualización:** 2026-10-24
+**Última actualización:** 2026-11-06
 
 ---
 
 ## Estado del Proyecto
 
-- **Versión:** `0.0.3` / `versionCode` 3 ([`Cargo.toml`](../Cargo.toml), [`android/AndroidManifest.xml`](../android/AndroidManifest.xml))
+- **Versión:** `0.0.4` / `versionCode` 4 ([`Cargo.toml`](../Cargo.toml), [`android/AndroidManifest.xml`](../android/AndroidManifest.xml))
 - **Hito del [roadmap](explicacion/roadmap-y-versionado.md):** **Fase 0 (Cimientos, `0.0.x`)**, camino a
   `0.1.0` (MVP jugable de principio a fin).
 - **ROM Objetivo:** `Fire Emblem (Europe)` — `6f2c30823ab0237310b138739ccfad879f1a07c4a782a9cbb92317d60d03cee9`

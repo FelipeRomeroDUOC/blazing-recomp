@@ -23,7 +23,7 @@ El versionado se organiza en torno a hitos canónicos:
 - **`v0.5.0 - v0.8.0` (Trilogía GBA & Ecosistema):** Extensión del motor hacia *Fire Emblem 6* y *Fire Emblem 8*, parches de hackroms al vuelo y adaptaciones de pantalla extendida.
 - **`v1.0.0` (Lanzamiento Estable y Completo):** La versión de producción final que opera sin fallos en todos los dispositivos Android compatibles, con soporte completo para la trilogía GBA y mods comunitarios.
 
-Todo el trabajo previo al primer arranque jugable con guardado se cataloga bajo el prefijo **`0.0.x`** (Fase de Cimientos y Prototipo). La versión actual del repositorio es **`0.0.3`**.
+Todo el trabajo previo al primer arranque jugable con guardado se cataloga bajo el prefijo **`0.0.x`** (Fase de Cimientos y Prototipo). La versión actual del repositorio es **`0.0.4`**.
 
 ### Fórmula de Sincronización con Android
 

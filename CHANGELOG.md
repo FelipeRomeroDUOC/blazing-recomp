@@ -10,6 +10,28 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 
 ---
 
+## [0.0.4] - 2026-11-06
+
+* `versionName`: "0.0.4"
+* `versionCode`: 4
+* Target principal: `arm64-v8a`, `armeabi-v7a`, `x86_64`
+
+### Hitos Principales
+* **Erradicación definitiva del parpadeo en la cinemática del dragón (AOT C11 & IRQs de Ráster):**
+  - Corrección de la causa raíz en la sincronización AOT: `rt_chain_gate` (`gba-core/src/capi.rs`) ahora cede el control al reloj del hardware en la transición a HBlank (ciclo 1006) y pre-roll (línea 227) cuando las interrupciones de ráster están armadas en `DISPSTAT` (`0x30`).
+  - Paso fino en scanlines visibles dentro de `run_frame_native` (`src/recomp.rs`), asegurando la entrega oportuna de IRQs a la ISR de la ROM y eliminando retrasos de un fotograma en escrituras de `BLDCNT`, `BLDALPHA` y `BG2VOFS`.
+  - Paridad y estabilidad verificadas en PC y Android (60–61 FPS estables, 0 caídas al intérprete, 0 anomalías de composición GPU).
+* **Paridad de ejecución AOT en Windows (`src/recomp.rs` & `src/bin/ppu_doble.rs`):**
+  - Carga dinámica de la biblioteca AOT en Windows (`recomp_blocks.dll`) con `LoadLibraryA` / `GetProcAddress`, permitiendo reproducir y diagnosticar localmente en PC cualquier divergencia entre el intérprete y el código C11 compilado.
+* **Poda integral de heurísticas de escena y código muerto:**
+  - Erradicación de todas las heurísticas ad-hoc en la GPU: eliminados `sanear_bldcnt_cinematica_dragon`, `compone_pixel_jerarquica_dragon` y `compone_pixel_fuego_dragon_wgsl` de `src/ppu_nativa.rs` y `src/ppu_nativa.wgsl`.
+  - Supresión de monitores diagnósticos redundantes (`MonitorRasterDragon`, `DiagnosticoDragon`, anomalías acumuladas y contención por mutex) en `src/pipeline.rs`.
+  - Retiro de instrumentación diagnóstica temporal: eliminadas banderas `hash-cuadros.flag`, `sync-vram.flag`, `rel_dragon`, `reevaluar_hash_cuadros` y volcados de cuadros 86/150 a disco (`src/platform.rs`, `src/bin/ppu_doble.rs`).
+* **Protocolo de diagnóstico de errores y reglas de bisección (`AGENTS.md` §3.1 & `propuesta-verificable`):**
+  - Formalización obligatoria de 6 directivas de trabajo: bisección desde el primer minuto, cero saneamientos heurísticos, regla de un solo fallo por hipótesis (*1-Strike Rule*), reproducción local en PC antes de editar, principio de absolución previa de componentes y preferencia por pruebas de humo deterministas (*headless*).
+
+---
+
 ## [0.0.3] - 2026-10-24
 
 * `versionName`: "0.0.3"
