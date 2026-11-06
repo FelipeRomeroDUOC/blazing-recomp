@@ -75,3 +75,4 @@ Catastro exhaustivo de tareas pendientes, refactorizaciones y deuda técnica rea
 - [ ] **Saneamiento de métricas en `DECISIONES.md`:** Actualizar cifras desfasadas de recuento de pruebas, tamaño del instalador APK (39 MB vs 42.5 MB) y frecuencia de telemetría.
 - [ ] **Histórico continuo en telemetría:** Evitar truncar el archivo de telemetría de rendimiento en cada inicio de la aplicación o añadir rotación de logs para facilitar comparativas A/B entre sesiones.
 - [ ] **Enriquecimiento del comparador de telemetría:** Incorporar el peor fotograma aislado (*frame drop spike*) al informe `--comparar` de `scripts/diagnostico/analizar_telemetria.py`.
+- [ ] **Refinamiento de herramientas locales de visualización e inspección en PC:** Ampliar las herramientas de diagnóstico en PC para facilitar el acceso directo a la visualización y al estado del juego, permitiendo sustentar hipótesis con evidencia objetiva antes de modificar código.

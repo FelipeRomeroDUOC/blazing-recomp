@@ -17,6 +17,16 @@ Mantén el esfuerzo proporcional al riesgo: más detalle donde un error cuesta c
 2. **El archivo final no contiene instrucciones de la plantilla.** Sin corchetes, sin comentarios, sin textos de ayuda.
 3. **Si una suposición resulta falsa, primero evalúas la propuesta que existe; después decide la persona; solo entonces se escribe algo nuevo.** Lee `references/suposicion-falsa.md`. Escribir otra propuesta de inmediato hace que la persona relea todo y oculta qué cambió de verdad.
 
+### Diagnóstico previo y prevención de bucles de parches (al corregir errores)
+
+Antes de redactar una propuesta para corregir un fallo, aplica estas 4 reglas:
+1. **Bisección desde el primer minuto:** Discierne primero todas las capas desde donde puede venir el fallo (`Origen/Lógica -> Transporte/Sincronía -> Transformación -> Salida`) y haz una comprobación para aislar en qué frontera nace la discrepancia, en vez de parchar directamente el síntoma visible.
+2. **Cero "saneamientos" heurísticos:** No propongas parches basados en combinaciones específicas de una pantalla, cuadro o escena para forzar estados artificiales. La corrección debe respetar las reglas generales del hardware o del subsistema.
+3. **Un solo fallo por hipótesis (*1-Strike Rule*):** Si una propuesta anterior sobre el mismo problema quedó como `discrepada`, está prohibido proponer una variante de la misma hipótesis en el mismo lugar sin antes presentar evidencia nueva que explique por qué falló el intento previo y descarte esa capa.
+4. **Reproducción local en PC:** Siempre que el fallo no sea exclusivo del entorno Android, busca reproducirlo y verificarlo localmente en PC antes de proponer ediciones a ciegas.
+5. **Principio de absolución previa:** Plantea la prueba mínima que demuestre si el componente sospechoso es inocente (ej. ¿el componente de referencia o software falla igual con la misma entrada?). Si falla igual, queda absuelto: descártalo y no toques ese archivo.
+6. **Pruebas de humo deterministas en PC:** Favorece comprobaciones rápidas o scripts headless locales en PC en lugar de depender de iteraciones completas de empaquetado de APK para validar hipótesis.
+
 ## 1. Elige el nivel
 
 Usa criterios que puedas comprobar (contar archivos, buscar referencias), no tu impresión de si algo es riesgoso.

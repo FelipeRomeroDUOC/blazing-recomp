@@ -42,6 +42,15 @@ Directrices de arquitectura, plataforma y reglas operativas para el proyecto **B
    - `docs/PENDIENTES.md`: Exclusivo para tareas de desarrollo reales y accionables en código (`[x]`).
 6. **Versionado Canónico y Compuerta de Aprobación Previa:** El versionado de la aplicación (`Cargo.toml`, `android/AndroidManifest.xml`, `pack.toml`, `CHANGELOG.md`, `docs/`) debe gestionarse mediante `python scripts/bump_version.py`. Queda estrictamente prohibido que el agente o un proceso desasistido incremente la versión de la app en disco sin la confirmación y aprobación explícita previa del usuario.
 
+### 3.1 Diagnóstico de Errores y Prevención de Bucles de Parches
+
+1. **Bisección desde el primer minuto:** Antes de proponer cambios en código ante un fallo, identificar todas las capas por donde pasa el flujo afectado (`Origen/Lógica -> Transporte/Sincronía -> Transformación -> Salida`) y realizar una comprobación que divida el problema para aislar en qué frontera nace el error, en lugar de parchar el último eslabón visible.
+2. **Cero "saneamientos" heurísticos por caso o escena:** Queda prohibido introducir condiciones que detecten combinaciones específicas de una pantalla, cuadro o momento del juego para forzar estados o registros artificiales. Toda corrección debe cumplir el contrato general del hardware o del subsistema.
+3. **Un solo fallo por hipótesis (*1-Strike Rule*):** Si una propuesta resulta **`discrepada`**, está prohibido iterar variantes de la misma idea sobre el mismo punto. Antes de presentar una nueva propuesta es obligatorio aportar evidencia nueva que explique por qué falló la suposición anterior y descarte esa capa.
+4. **Reproducción local en PC antes de editar:** Salvo fallos exclusivos de las APIs o ciclo de vida de Android, todo error del motor o del juego debe reproducirse y verificarse localmente en PC antes de modificar código y empaquetar un APK.
+5. **Principio de absolución previa:** Antes de modificar un archivo o shader, formular la prueba mínima que demuestre si ese componente es inocente (ej. ¿el rasterizador software de referencia falla con los mismos datos de entrada?). Si la referencia falla idénticamente, el componente queda absuelto y se descarta de inmediato para no perder tiempo en falsas sospechas.
+6. **Pruebas de humo deterministas (*Headless* en PC):** Preferir scripts de ejecución sin ventana en PC que avancen $N$ cuadros y verifiquen el estado en segundos, reservando el ciclo lento de empaquetado de APK e instalación manual en Android para la confirmación de hitos o fallos intrínsecos de la plataforma móvil.
+
 ---
 
 ## 4. Subagentes Especializados y Matriz de Disparadores
