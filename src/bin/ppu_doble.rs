@@ -67,8 +67,21 @@ fn main() {
         std::process::exit(1);
     });
 
-    let bios = if args.len() >= 3 {
-        let ruta_bios = PathBuf::from(&args[2]);
+    let mut ruta_hash_out: Option<PathBuf> = None;
+    let mut args_pos = Vec::new();
+    let mut idx = 1;
+    while idx < args.len() {
+        if args[idx] == "--hash-cuadros" && idx + 1 < args.len() {
+            ruta_hash_out = Some(PathBuf::from(&args[idx + 1]));
+            idx += 2;
+        } else {
+            args_pos.push(&args[idx]);
+            idx += 1;
+        }
+    }
+
+    let bios = if args_pos.len() >= 2 {
+        let ruta_bios = PathBuf::from(args_pos[1]);
         fs::read(&ruta_bios).ok()
     } else {
         fs::read("roms/gba_bios.bin").ok()
@@ -91,7 +104,7 @@ fn main() {
     println!("               N (Paso a paso), Shift (Turbo)");
     println!("------------------------------------------------------------");
 
-    ejecutar_visor(rom, bios);
+    ejecutar_visor(rom, bios, ruta_hash_out);
 }
 
 /// Trabajo enviado al hilo en segundo plano para no demorar el bucle a 60 FPS.
@@ -108,7 +121,7 @@ struct TareaDiagnostico {
 }
 
 #[cfg(windows)]
-fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
+fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>, ruta_hash_out: Option<PathBuf>) {
     use windows_sys::Win32::Foundation::*;
     use windows_sys::Win32::Graphics::Gdi::*;
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -265,6 +278,13 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
         maquina.bus.bios = b;
     }
 
+    let block_table = blazing_recomp::recomp::load_native_blocks();
+    if block_table.is_some() {
+        println!("[PpuDoble] Bloques AOT cargados para paridad de timing 1:1 con Android.");
+    } else {
+        println!("[PpuDoble] Aviso: Bloques AOT no disponibles, usando intérprete.");
+    }
+
     // Inicializar GPU principal
     let mut gpu = match Gpu::nueva_nativa() {
         Ok(g) => g,
@@ -340,6 +360,10 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
         let mut resaltar_dif = false;
         let mut ver_ref_fin = false; // Tecla L: false = línea (emulador), true = fin de cuadro
         let mut capturas_totales = 0usize;
+        let mut rel_dragon: Option<u32> = None;
+        if let Some(ref r_out) = ruta_hash_out {
+            let _ = fs::write(r_out, "");
+        }
 
         let mut ultimo_fps = Instant::now();
         let mut cuadros_en_segundo = 0u32;
@@ -470,7 +494,11 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
                 maquina.bus.capturas_linea.clear();
                 maquina.bus.capturar_linea = true;
 
-                maquina.run_frame(5_000_000);
+                if let Some(ref table) = block_table {
+                    blazing_recomp::recomp::run_frame_native(&mut maquina, table, 2_000_000);
+                } else {
+                    maquina.run_frame(5_000_000);
+                }
                 maquina.bus.capturar_linea = false;
 
                 cuadro += 1;
@@ -504,6 +532,93 @@ fn ejecutar_visor(rom: Vec<u8>, bios: Option<Vec<u8>>) {
 
                 let dispcnt = io16(&maquina.bus.io, 0x00);
                 let bldcnt = io16(&maquina.bus.io, 0x50);
+
+                if let Some(ref r_out) = ruta_hash_out {
+                    let es_dragon = (dispcnt & 7) == 0
+                        && (dispcnt & 0x0C00) == 0x0C00
+                        && (bldcnt & 0x2008) == 0x2008
+                        && ((bldcnt >> 6) & 3) == 1;
+                    if es_dragon && rel_dragon.is_none() {
+                        rel_dragon = Some(0);
+                    }
+                    if let Some(rel) = rel_dragon {
+                        if rel <= 600 {
+                            let (_capas, comps_staging) =
+                                blazing_recomp::ppu_nativa::EstadoPpuNativa::decodificar_lineas(
+                                    &io_lineas,
+                                );
+                            let mut comps_sanadas = comps_staging;
+                            blazing_recomp::ppu_nativa::EstadoPpuNativa::sanear_bldcnt_cinematica_dragon(&mut comps_sanadas);
+                            let h = blazing_recomp::ppu_nativa::calcular_hash_entrada(
+                                &comps_sanadas,
+                                &maquina.bus.vram,
+                                &maquina.bus.oam,
+                                &maquina.bus.palette,
+                            );
+                            let hu = blazing_recomp::ppu_nativa::calcular_huellas_componentes(
+                                &comps_sanadas,
+                                &maquina.bus.vram,
+                                &maquina.bus.oam,
+                                &maquina.bus.palette,
+                                &*paleta_lineas,
+                            );
+                            let sal = blazing_recomp::ppu_nativa::fnv1a_32(&nat_rgb);
+                            let linea_hash = format!(
+                                "# hash rel={} frame={} ent={:08X} sal={:08X} bld0={:04X} bld50={:04X} bld100={:04X} bld150={:04X} bg3_blend={} hc={:08X} hv={:08X} ho={:08X} hp={:08X} hl={:08X}\n",
+                                rel,
+                                cuadro,
+                                h.hash,
+                                sal,
+                                h.bld0,
+                                h.bld50,
+                                h.bld100,
+                                h.bld150,
+                                h.bg3_blend,
+                                hu.comps,
+                                hu.vram,
+                                hu.oam,
+                                hu.paleta,
+                                hu.paleta_lineas
+                            );
+                            use std::io::Write;
+                            if let Ok(mut f) =
+                                fs::OpenOptions::new().create(true).append(true).open(r_out)
+                            {
+                                let _ = f.write_all(linea_hash.as_bytes());
+                            }
+                            for target in [86, 150] {
+                                if rel == target {
+                                    let mut ppm_pc = Vec::with_capacity(15 + nat_rgb.len());
+                                    ppm_pc.extend_from_slice(b"P6\n240 160\n255\n");
+                                    ppm_pc.extend_from_slice(&nat_rgb);
+                                    let _ = fs::write(format!("cuadro-{target}-pc.ppm"), &ppm_pc);
+
+                                    let mut ppm_sw = Vec::with_capacity(15 + sw_linea_rgb.len());
+                                    ppm_sw.extend_from_slice(b"P6\n240 160\n255\n");
+                                    ppm_sw.extend_from_slice(&sw_linea_rgb);
+                                    let _ =
+                                        fs::write(format!("cuadro-{target}-pc-sw.ppm"), &ppm_sw);
+
+                                    let _ = fs::write(
+                                        format!("cuadro-{target}-lineas-pc.txt"),
+                                        blazing_recomp::ppu_nativa::volcar_registros_lineas(
+                                            &*io_lineas,
+                                            160,
+                                        ),
+                                    );
+                                    let _ = fs::write(
+                                        format!("cuadro-{target}-bg2-pc.txt"),
+                                        blazing_recomp::ppu_nativa::volcar_bg2_y_dma(
+                                            &*io_lineas,
+                                            &maquina.bus.io,
+                                        ),
+                                    );
+                                }
+                            }
+                            rel_dragon = Some(rel + 1);
+                        }
+                    }
+                }
 
                 let diff_linea = diagnostico::diferencias(&sw_linea_rgb, &nat_rgb);
                 let dif_linea_count = diff_linea.as_ref().map_or(0, |d| d.distintos);

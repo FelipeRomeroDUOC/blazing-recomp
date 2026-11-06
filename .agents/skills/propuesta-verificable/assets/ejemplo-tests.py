@@ -7,43 +7,47 @@ valores; copia el estilo.
 
 Estado previo VERIFICADO ejecutando estos tests contra el proyecto de juguete,
 antes de cambiar nada:
-  - test_total_redondeado      -> falla por la razón correcta: devuelve
-                                  35.699999999999996 y se esperaba 35.7
-  - test_total_un_centavo      -> falla por la razón correcta: devuelve
-                                  0.011899999999999999 y se esperaba 0.01
-  - test_pantalla_sin_cambios  -> pasa (regresión: debe seguir pasando)
-Después de aplicar el redondeo, los tres pasan.
+  - test_fecha_en_pantalla       -> falla por la razón correcta: la pantalla
+                                    muestra "2026-11-20" y se esperaba "20/11/2026"
+  - test_pedido_sin_fecha        -> falla por la razón correcta: la pantalla
+                                    muestra "Entrega:  [Guardar]" y se esperaba
+                                    "Entrega: sin fecha [Guardar]"
+  - test_pantalla_mantiene_formato -> pasa (no debe cambiar: debe seguir pasando)
+  - test_reporte_sin_cambios     -> pasa (no debe cambiar: debe seguir pasando)
+Después de aplicar el cambio, los cuatro pasan.
 """
 
-# --- tests/test_totales.py -------------------------------------------------
-from app.totales import calcular_total
+# --- tests/test_entregas.py ------------------------------------------------
+from app.ui import mostrar_pedido
+from app.reportes import linea_reporte
 
 
-# Escenario: Total redondeado a 2 decimales   (tipo: normal)
-# Un comportamiento por test; el nombre es el título del escenario.
-# El valor esperado (35.7) sale del escenario aprobado, NO de ejecutar el
-# código nuevo y copiar lo que devuelva.
-def test_total_redondeado():
-    items = [{"precio": 10, "cantidad": 3}]
-    assert calcular_total(items) == 35.7
+# C1 · Fecha en formato día/mes/año   (tipo: normal)
+# Un comportamiento por test; el nombre es el título de la comprobación.
+# El valor esperado ("20/11/2026") sale de la comprobación aprobada, NO de
+# ejecutar el código nuevo y copiar lo que devuelva.
+def test_fecha_en_pantalla():
+    pedido = {"id": 1, "entrega": "2026-11-20"}
+    assert mostrar_pedido(pedido) == "Entrega: 20/11/2026 [Guardar]"
 
 
-# Escenario: Total de un solo centavo   (tipo: límite)
-# Valor muy pequeño, donde el resto del cálculo más se nota.
-def test_total_un_centavo():
-    items = [{"precio": 0.01, "cantidad": 1}]
-    assert calcular_total(items) == 0.01
+# C2 · Pedido sin fecha   (tipo: extremo)
+# El dato que falta es el caso extremo más probable en un pedido antiguo.
+def test_pedido_sin_fecha():
+    pedido = {"id": 2}
+    assert mostrar_pedido(pedido) == "Entrega: sin fecha [Guardar]"
 
 
-# --- tests/test_ui.py ------------------------------------------------------
-from app.ui import mostrar
+# C3 · La pantalla mantiene su formato   (tipo: no debe cambiar)
+# Protege la regla R1. Prueba lo observable (el texto que ve la persona), no
+# qué función interna se llamó. Si deja de pasar, el cambio rompió algo que
+# ya existía.
+def test_pantalla_mantiene_formato():
+    texto = mostrar_pedido({"id": 3, "entrega": "2026-11-20"})
+    assert texto.startswith("Entrega: ") and texto.endswith(" [Guardar]")
 
 
-# Escenario: Pantalla sin cambios   (tipo: regresión)
-# Protege la restricción "la pantalla mantiene su formato actual".
-# Prueba lo observable (el texto que ve la persona), no qué función interna
-# se llamó. Con un total exacto (119.0) no debería cambiar nada: si este test
-# deja de pasar, el cambio rompió algo que existía.
-def test_pantalla_sin_cambios():
-    items = [{"precio": 100, "cantidad": 1}]
-    assert mostrar(items) == "Total: 119.0 [Guardar]"
+# C4 · El reporte sigue igual   (tipo: no debe cambiar)
+# Protege la regla R2.
+def test_reporte_sin_cambios():
+    assert linea_reporte({"id": 7, "entrega": "2026-11-20"}) == "7;2026-11-20"

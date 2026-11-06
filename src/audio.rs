@@ -217,6 +217,20 @@ impl AudioRingBuffer {
         let mut guard = self.buffer.lock().unwrap();
         guard.clear();
     }
+
+    /// Precarga el búfer con silencio (muestras a cero) hasta alcanzar `target_frames`.
+    ///
+    /// Esto previene caídas iniciales (*underruns*) antes de que el hilo de emulación
+    /// produzca sus primeros bloques de audio al iniciar o reanudar el flujo.
+    pub fn prime(&self, target_frames: usize) {
+        let mut guard = self.buffer.lock().unwrap();
+        let target_samples = target_frames * 2;
+        let max_samples = self.capacity_frames * 2;
+        let to_fill = target_samples.min(max_samples);
+        if guard.len() < to_fill {
+            guard.resize(to_fill, 0);
+        }
+    }
 }
 
 /// Controlador dinámico de deriva de reloj (Dynamic Rate Control).
@@ -309,6 +323,7 @@ impl NativeAudioEngine {
             self.resampler.set_out_rate(actual_rate);
         }
 
+        self.ring_buffer.prime(TARGET_WATERMARK_FRAMES);
         stream
             .request_start()
             .map_err(|e| format!("fallo al iniciar AAudioStream: {e}"))?;
@@ -333,6 +348,7 @@ impl NativeAudioEngine {
 
     pub fn resume(&mut self) {
         if let Some(ref stream) = self.stream {
+            self.ring_buffer.prime(TARGET_WATERMARK_FRAMES);
             let _ = stream.request_start();
             self.active = true;
         }
@@ -400,6 +416,7 @@ impl NativeAudioEngine {
     }
 
     pub fn start(&mut self) -> Result<(), String> {
+        self.ring_buffer.prime(TARGET_WATERMARK_FRAMES);
         self.active = true;
         Ok(())
     }
@@ -409,6 +426,7 @@ impl NativeAudioEngine {
     }
 
     pub fn resume(&mut self) {
+        self.ring_buffer.prime(TARGET_WATERMARK_FRAMES);
         self.active = true;
     }
 

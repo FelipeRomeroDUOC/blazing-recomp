@@ -389,3 +389,40 @@ fn test_ppu_hw_distingue_los_fotogramas_de_la_ppu_nativa() {
         "la línea debe distinguir los fotogramas de la PPU nativa: {line}"
     );
 }
+
+#[test]
+fn test_telemetria_capas_diferencial() {
+    use super::{formatear_telemetria_capas, EstadoCapas};
+
+    let estado_dragon = EstadoCapas {
+        dispcnt: 0x1C00, // BG2, BG3 y OBJ activos en Modo 0
+        bg0cnt: 0x0000,
+        bg1cnt: 0x0000,
+        bg2cnt: 0x0002, // Prio 2
+        bg3cnt: 0x0003, // Prio 3
+        num_sprites: 12,
+        es_nativa: true,
+        num_sprites_ventana: 0,
+    };
+    let bldcnt_dragon = 0x2048; // 1st=BG3, 2nd=BD, modo=1 (alfa)
+
+    let linea = formatear_telemetria_capas(1240, &estado_dragon, bldcnt_dragon);
+    assert_eq!(
+        linea,
+        "# capas frame=1240 bg0=OFF bg1=OFF bg2=ON(prio=2,dragon) bg3=ON(prio=3,fuego) obj=ON(cnt=12) comp=multicapa_dragon correccion=ACTIVA(multicapa)"
+    );
+
+    // Caso con objwin purgado:
+    let estado_objwin_purgado = EstadoCapas {
+        dispcnt: 0x9F00, // DISPCNT con 0x8000
+        bg0cnt: 0,
+        bg1cnt: 0,
+        bg2cnt: 0,
+        bg3cnt: 0,
+        num_sprites: 5,
+        es_nativa: true,
+        num_sprites_ventana: 0, // Sin sprites de ventana -> corrección aplicada
+    };
+    let linea_corr = formatear_telemetria_capas(5602, &estado_objwin_purgado, 0);
+    assert!(linea_corr.contains("correccion=APLICADA(objwin_purgado)"));
+}

@@ -20,16 +20,16 @@ Este documento describe con exactitud y neutralidad técnica las estructuras, en
 | [`overlay.rs`](#módulo-overlayrs) | 12 | Overlay táctil y marco GBA SP (Fase 5.2, propuesta `2026-10-09_renderizado-overlay-tactil`). |
 | [`overlay_shader.rs`](#módulo-overlay_shaderrs) | 3 | Módulo del shader del overlay: incluye el WGSL como constante y lo expone como `&str` para el pipeline y para el test de validación con Naga en host (criterio `test_overlay_shader_validates`). |
 | [`error_screen.rs`](#módulo-error_screenrs) | 4 | Renderizador de pantalla de error por software y blindaje de GPU. |
-| [`platform.rs`](#módulo-platformrs) | 2 | Plataforma Android (solo compila con `cfg(target_os = "android")`): ciclo de vida NativeActivity, presentación GPU, entrada táctil con háptica y logging a Logcat. |
-| [`storage.rs`](#módulo-storagers) | 15 | Módulo interno del port. |
-| [`runner.rs`](#módulo-runnerrs) | 26 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
-| [`recomp.rs`](#módulo-recomprs) | 30 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
-| [`fps.rs`](#módulo-fpsrs) | 18 | Contador de FPS y generador de HUD visual en pantalla. |
-| [`perf.rs`](#módulo-perfrs) | 17 | Módulo de medición de rendimiento por fase del fotograma. |
+| [`platform.rs`](#módulo-platformrs) | 4 | Plataforma Android (solo compila con `cfg(target_os = "android")`): ciclo de vida NativeActivity, presentación GPU, entrada táctil con háptica y logging a Logcat. |
+| [`storage.rs`](#módulo-storagers) | 19 | Módulo interno del port. |
+| [`runner.rs`](#módulo-runnerrs) | 32 | Ejecución y sincronización del motor de emulación GBA (Fase 4 y Fase 5). |
+| [`recomp.rs`](#módulo-recomprs) | 32 | Subsistema de despacho y ejecución de bloques C11 recompilados Ahead-Of-Time (AOT). |
+| [`fps.rs`](#módulo-fpsrs) | 20 | Contador de FPS y generador de HUD visual en pantalla. |
+| [`perf.rs`](#módulo-perfrs) | 20 | Módulo de medición de rendimiento por fase del fotograma. |
 | [`telemetria.rs`](#módulo-telemetriars) | 13 | Contrato de la línea de segundo (`t=`) de la telemetría de rendimiento. |
-| [`pipeline.rs`](#módulo-pipeliners) | 36 | Módulo de pipeline multihilo para desacoplar la emulación del renderizado GPU. |
+| [`pipeline.rs`](#módulo-pipeliners) | 59 | Módulo de pipeline multihilo para desacoplar la emulación del renderizado GPU. |
 | [`present.rs`](#módulo-presentrs) | 27 | Calibración de presentación del swapchain (módulo puro, testeable en host). |
-| [`ppu_nativa.rs`](#módulo-ppu_nativars) | 72 | Módulo PPU nativa: dibuja el cuadro de la GBA con la GPU del dispositivo. |
+| [`ppu_nativa.rs`](#módulo-ppu_nativars) | 89 | Módulo PPU nativa: dibuja el cuadro de la GBA con la GPU del dispositivo. |
 
 ---
 
@@ -548,6 +548,25 @@ Por defecto `false` (usar GPU nativa cuando esté disponible).
 pub const FORZAR_PPU_SOFTWARE: bool
 ```
 
+### `leer_textura_juego_rgb` (Función)
+
+Lee los 240x160 píxeles renderizados en `game_texture` (GPU) hacia un búfer RGB de 8 bits.
+
+**Firma:**
+```rust
+pub fn leer_textura_juego_rgb(&self) -> Result<Vec<u8>, String>
+```
+
+### `registrar_cambio_capas` (Función)
+
+Evalúa si el estado de capas cambió respecto al fotograma previo y registra
+la línea de telemetría `# capas ...` correspondiente.
+
+**Firma:**
+```rust
+pub fn registrar_cambio_capas(&mut self, frame: u64, actual: EstadoCapas, bldcnt: u16)
+```
+
 ### `android_main` (Función)
 
 *Sin comentario de documentación en código fuente.*
@@ -595,6 +614,15 @@ Tamaño exacto del binario de BIOS oficial de GBA (16 KB en bytes).
 **Firma:**
 ```rust
 pub const OFFICIAL_BIOS_SIZE: usize
+```
+
+### `SAVE_FILE_SIZE` (Constante)
+
+Tamaño exacto de una partida guardada estándar (.sav) de Fire Emblem 7 (64 KB en bytes).
+
+**Firma:**
+```rust
+pub const SAVE_FILE_SIZE: usize
 ```
 
 ### `KNOWN_ROM_FILENAMES` (Constante)
@@ -680,6 +708,39 @@ escaneo general del directorio para máxima compatibilidad con Scoped Storage en
 **Firma:**
 ```rust
 pub fn scan_and_load_game(search_dirs: &[PathBuf]) -> Result<LoadedAssets, StorageError>
+```
+
+### `resolve_save_path` (Función)
+
+Determina la ruta canónica para el archivo de guardado .sav, priorizando el almacenamiento
+privado de la aplicación (inmune a Scoped Storage en Android 11 a 16).
+
+**Firma:**
+```rust
+pub fn resolve_save_path( rom_path: &Path, internal_dir: Option<&Path>, external_dir: Option<&Path>, ) -> PathBuf
+```
+
+### `load_save_file` (Función)
+
+Carga el contenido de un archivo de guardado (.sav).
+
+Retorna `None` si el archivo no existe o su tamaño es inferior a 64 KB (`SAVE_FILE_SIZE`).
+
+**Firma:**
+```rust
+pub fn load_save_file(save_path: &Path) -> Option<Vec<u8>>
+```
+
+### `write_save_file_atomic` (Función)
+
+Escribe de forma atómica los datos de guardado en el archivo especificado usando un temporal .tmp.
+
+Emplea sincronización forzada a disco (`sync_all`) y renombramiento atómico (`fs::rename`)
+para evitar corromper la partida si el proceso es interrumpido durante la escritura.
+
+**Firma:**
+```rust
+pub fn write_save_file_atomic(save_path: &Path, data: &[u8]) -> Result<(), StorageError>
 ```
 
 ### `render_guide_screen` (Función)
@@ -805,6 +866,24 @@ Activa o desactiva el renderizado por GPU mediante PPU Shim.
 **Firma:**
 ```rust
 pub fn set_gpu_ppu_enabled(&mut self, enabled: bool)
+```
+
+### `set_omitir_ppu_software` (Función)
+
+Permite forzar o anular la omisión de la PPU por software (para volcado de fotogramas).
+
+**Firma:**
+```rust
+pub fn set_omitir_ppu_software(&mut self, omitir: bool)
+```
+
+### `is_omitir_ppu_software` (Función)
+
+Indica si se está omitiendo la PPU por software en el bus.
+
+**Firma:**
+```rust
+pub fn is_omitir_ppu_software(&self) -> bool
 ```
 
 ### `is_gpu_ppu_enabled` (Función)
@@ -958,6 +1037,44 @@ Actualiza el perfil de simulación de pantalla (LUT y respuesta temporal).
 **Firma:**
 ```rust
 pub fn set_screen_kind(&mut self, screen_kind: ScreenKind)
+```
+
+### `load_save_data` (Función)
+
+Carga los datos de partida guardada en la memoria de respaldo de la máquina.
+
+Soporta tanto `BackupKind::Sram` como `BackupKind::Flash64` y `BackupKind::Flash128`.
+
+**Firma:**
+```rust
+pub fn load_save_data(&mut self, data: &[u8]) -> bool
+```
+
+### `save_data` (Función)
+
+Obtiene una referencia a los datos actuales de la memoria de guardado del juego.
+
+**Firma:**
+```rust
+pub fn save_data(&self) -> Option<&[u8]>
+```
+
+### `is_save_dirty` (Función)
+
+Comprueba si la memoria de guardado ha sido modificada respecto a la última sincronización.
+
+**Firma:**
+```rust
+pub fn is_save_dirty(&self) -> bool
+```
+
+### `mark_save_clean` (Función)
+
+Marca la memoria de guardado como limpia tras una sincronización exitosa a disco.
+
+**Firma:**
+```rust
+pub fn mark_save_clean(&mut self)
 ```
 
 ---
@@ -1252,11 +1369,27 @@ pub unsafe fn open_library(name: &str) -> Option<*mut c_void>
 pub unsafe fn get_symbol<T>(handle: *mut c_void, name: &str) -> Option<T>
 ```
 
+### `load_native_blocks_from_path` (Función)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub fn load_native_blocks_from_path(path: &Path) -> Option<BlockTable>
+```
+
+### `load_native_blocks_from_path` (Función)
+
+Carga los bloques C11 recompilados desde una ruta específica a una biblioteca dinámica (.dll o .so).
+
+**Firma:**
+```rust
+pub fn load_native_blocks_from_path(path: &std::path::Path) -> Option<BlockTable>
+```
+
 ### `load_native_blocks` (Función)
 
-Intenta cargar la biblioteca de bloques C11 recompilados (`libblazing_recompiled.so`)
-presente en el paquete APK en Android. Retorna `None` si la biblioteca no está presente
-(en host o entornos de prueba pura), activando el modo intérprete de respaldo.
+*Sin comentario de documentación en código fuente.*
 
 **Firma:**
 ```rust
@@ -1327,6 +1460,24 @@ Indica si el motor está reportando modo nativo AOT.
 **Firma:**
 ```rust
 pub fn is_native(&self) -> bool
+```
+
+### `set_recording` (Función)
+
+Actualiza el estado del indicador de volcado/grabación [REC].
+
+**Firma:**
+```rust
+pub fn set_recording(&mut self, recording: bool)
+```
+
+### `is_recording` (Función)
+
+Consulta si el indicador de grabación está activo.
+
+**Firma:**
+```rust
+pub fn is_recording(&self) -> bool
 ```
 
 ### `set_renderer` (Función)
@@ -1613,6 +1764,33 @@ priorizando la carpeta compartida Descargas sobre el almacenamiento privado de l
 pub fn resolve_perf_candidates(search_dirs: &[std::path::PathBuf]) -> Vec<std::path::PathBuf>
 ```
 
+### `EstadoCapas` (Struct)
+
+Estado de visibilidad y configuración de capas para telemetría diferencial.
+
+**Firma:**
+```rust
+pub struct EstadoCapas
+```
+
+### `extraer_estado_capas` (Función)
+
+Extrae el estado de capas y BLDCNT a partir del volcado PPU del fotograma.
+
+**Firma:**
+```rust
+pub fn extraer_estado_capas( ps: &crate::pipeline::PpuFrameState, es_nativa: bool, ) -> (EstadoCapas, u16)
+```
+
+### `formatear_telemetria_capas` (Función)
+
+Formatea la línea de telemetría `# capas ...` según el estado de las capas.
+
+**Firma:**
+```rust
+pub fn formatear_telemetria_capas(frame: u64, estado: &EstadoCapas, bldcnt: u16) -> String
+```
+
 ---
 
 ## Módulo `telemetria.rs`
@@ -1804,6 +1982,101 @@ Duración exacta de un fotograma de GBA a 60 FPS (16.666 ms).
 pub const FRAME_DURATION: Duration
 ```
 
+### `FramePacer` (Struct)
+
+Temporizador de fotogramas acumulativo para mantener una tasa constante de 60 FPS
+compensando los excesos de reposo del planificador del sistema operativo sin deriva temporal.
+
+**Firma:**
+```rust
+pub struct FramePacer
+```
+
+### `DEFAULT_MAX_LAG` (Constante)
+
+Retraso máximo tolerado antes de reiniciar el ancla temporal (100 ms).
+
+**Firma:**
+```rust
+pub const DEFAULT_MAX_LAG: Duration
+```
+
+### `new` (Función)
+
+Crea un nuevo regulador de fotogramas con el intervalo especificado.
+
+**Firma:**
+```rust
+pub fn new(target_interval: Duration) -> Self
+```
+
+### `with_max_lag` (Función)
+
+Crea un nuevo regulador de fotogramas con intervalo y techo de retraso configurables.
+
+**Firma:**
+```rust
+pub fn with_max_lag(target_interval: Duration, max_lag: Duration) -> Self
+```
+
+### `with_start_time` (Función)
+
+Constructor determinista para pruebas unitarias fijando el instante inicial.
+
+**Firma:**
+```rust
+pub fn with_start_time( target_interval: Duration, max_lag: Duration, start_time: Instant, ) -> Self
+```
+
+### `reset` (Función)
+
+Reinicia el ancla temporal al tiempo actual más el intervalo objetivo.
+
+**Firma:**
+```rust
+pub fn reset(&mut self, now: Instant)
+```
+
+### `next_frame_time` (Función)
+
+Consulta el instante límite programado para el siguiente fotograma.
+
+**Firma:**
+```rust
+pub fn next_frame_time(&self) -> Instant
+```
+
+### `target_interval` (Función)
+
+Consulta el intervalo objetivo configurado entre fotogramas.
+
+**Firma:**
+```rust
+pub fn target_interval(&self) -> Duration
+```
+
+### `max_lag` (Función)
+
+Consulta el retraso máximo permitido.
+
+**Firma:**
+```rust
+pub fn max_lag(&self) -> Duration
+```
+
+### `advance` (Función)
+
+Avanza el temporizador calculando el tiempo de reposo necesario para el fotograma.
+
+Si el hilo acumula retraso debido a sobre-reposo del kernel, el tiempo se deduce
+del siguiente reposo para mantener un promedio exacto de 60.0 FPS. Si el retraso
+supera `max_lag`, se reinicia el ancla temporal para evitar espirales de aceleración.
+
+**Firma:**
+```rust
+pub fn advance(&mut self, now: Instant) -> Duration
+```
+
 ### `PpuFrameState` (Struct)
 
 Estado de memoria de video para renderizado acelerado en GPU (PPU Nativa).
@@ -1963,6 +2236,24 @@ Activa o desactiva el renderizado acelerado en GPU (PPU Nativa).
 pub fn set_gpu_ppu_enabled(&self, enabled: bool)
 ```
 
+### `is_dumping_enabled` (Función)
+
+Consulta si el volcado de fotogramas para diagnóstico está activo.
+
+**Firma:**
+```rust
+pub fn is_dumping_enabled(&self) -> bool
+```
+
+### `set_dumping_enabled` (Función)
+
+Activa o desactiva el volcado de fotogramas para diagnóstico.
+
+**Firma:**
+```rust
+pub fn set_dumping_enabled(&self, enabled: bool)
+```
+
 ### `send_frame` (Función)
 
 Deposita el fotograma más reciente en el buzón **sin bloquearse**.
@@ -2052,6 +2343,24 @@ Consulta si la emulación está en pausa.
 pub fn is_paused(&self) -> bool
 ```
 
+### `request_save` (Función)
+
+Solicita un guardado asíncrono inmediato de la memoria de respaldo a disco.
+
+**Firma:**
+```rust
+pub fn request_save(&self)
+```
+
+### `take_save_requested` (Función)
+
+Comprueba y reinicia la bandera de solicitud de guardado.
+
+**Firma:**
+```rust
+pub fn take_save_requested(&self) -> bool
+```
+
 ### `wait_if_paused` (Función)
 
 Si está en pausa, bloquea el hilo actual en el Condvar hasta que se reanude o se detenga.
@@ -2059,6 +2368,24 @@ Si está en pausa, bloquea el hilo actual en el Condvar hasta que se reanude o s
 **Firma:**
 ```rust
 pub fn wait_if_paused(&self)
+```
+
+### `record_dragon_anomalia` (Función)
+
+Registra una anomalía de raster en la cinemática del dragón para el reporte periódico.
+
+**Firma:**
+```rust
+pub fn record_dragon_anomalia(&self, diag: DiagnosticoDragon)
+```
+
+### `drain_dragon_anomalias` (Función)
+
+Drena las anomalías acumuladas del dragón, reiniciando el acumulador a su valor por defecto.
+
+**Firma:**
+```rust
+pub fn drain_dragon_anomalias(&self) -> AnomaliasDragonAcumuladas
 ```
 
 ### `EmulationWorker` (Struct)
@@ -2088,6 +2415,15 @@ Inicia un nuevo hilo de trabajo dedicado con un notificador de despertar.
 pub fn start_with_waker( rom: Vec<u8>, bios: Option<Vec<u8>>, screen_kind: ScreenKind, block_table: Option<crate::recomp::BlockTable>, waker: Option<WakeFn>, ) -> Self
 ```
 
+### `start_with_save` (Función)
+
+Inicia un nuevo hilo de trabajo dedicado con soporte de persistencia de partida (.sav).
+
+**Firma:**
+```rust
+pub fn start_with_save( rom: Vec<u8>, bios: Option<Vec<u8>>, screen_kind: ScreenKind, block_table: Option<crate::recomp::BlockTable>, waker: Option<WakeFn>, save_path: Option<std::path::PathBuf>, initial_save: Option<Vec<u8>>, ) -> Self
+```
+
 ### `bridge` (Función)
 
 Acceso al puente de sincronización del worker.
@@ -2104,6 +2440,63 @@ Detiene y espera a que el hilo finalice de forma limpia.
 **Firma:**
 ```rust
 pub fn stop(&mut self)
+```
+
+### `MonitorRasterDragon` (Struct)
+
+Monitor de diagnóstico en segundo plano para la cinemática del dragón.
+
+Detecta anomalías donde el blending alfa de la llamarada (BG3 sobre BG2)
+en las scanlines 0..99 se apaga o desincroniza de forma anómala.
+
+**Firma:**
+```rust
+pub struct MonitorRasterDragon
+```
+
+### `DiagnosticoDragon` (Struct)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub struct DiagnosticoDragon
+```
+
+### `AnomaliasDragonAcumuladas` (Struct)
+
+Estadísticas agregadas de anomalías de raster en la cinemática del dragón.
+
+**Firma:**
+```rust
+pub struct AnomaliasDragonAcumuladas
+```
+
+### `new` (Función)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub fn new() -> Self
+```
+
+### `analizar_lineas` (Función)
+
+Analiza los registros I/O del fotograma y detecta si hubo pérdida de modulación raster en la cinemática.
+
+**Firma:**
+```rust
+pub fn analizar_lineas( io_lineas: Option<&[[u8; 0x60]; 160]>,
+```
+
+### `registrar_fotograma` (Función)
+
+Procesa el fotograma y emite una advertencia con limitador de tasa si se detecta anomalía.
+
+**Firma:**
+```rust
+pub fn registrar_fotograma( &mut self, frame: u64, io_lineas: Option<&[[u8; 0x60]; 160]>,
 ```
 
 ---
@@ -2820,6 +3213,44 @@ Compone el píxel final aplicando las reglas de `compose()` de la referencia.
 pub fn compone_pixel( bg: &[u16; 4],
 ```
 
+### `necesita_segunda` (Función)
+
+Indica si la pasada de composición necesita buscar una segunda capa tras encontrar la primera.
+
+Solo se necesita segunda capa si la primera es un sprite semitransparente, o si los
+efectos están activos, el modo de mezcla es Alfa (modo 1) y la primera capa está
+marcada como 1.er objetivo en `BLDCNT`.
+
+**Firma:**
+```rust
+pub fn necesita_segunda( primera_id: u32, obj_visible: bool, obj_semi: bool, efectos: bool, modo: u32, bldcnt: u32, ) -> bool
+```
+
+### `compone_pixel_jerarquica_dragon` (Función)
+
+Composición jerárquica bottom-up de la cinemática del dragón (equivalente CPU del shader WGSL).
+
+Compone en orden ascendente:
+1. Cielo Dinámico (BG3 fuego sobre Backdrop con pesos nominales blindados EVA=16, EVB=8).
+2. Dragón (BG2 opaco sobre el cielo de fuego).
+2b. Humo/nubes (BG1 sobre dragón si está visible).
+3. Subtítulos y Caja de Diálogo (BG0 sobre Dragón/Cielo con posible alfa).
+4. Sprites y Cursor Parpadeante (OBJ sobre todo lo anterior).
+
+**Firma:**
+```rust
+pub fn compone_pixel_jerarquica_dragon( c0: u16, c1: u16, c2: u16, c3: u16, obj_color: u16, obj_visible: bool, obj_semi: bool, control: u16, bldcnt: u16, eva: u32, evb: u32, evy: u32, backdrop: u16, ) -> u16
+```
+
+### `compone_pixel_fuego_dragon_wgsl` (Función)
+
+Equivalente CPU del fragment shader `fs_comp` en GPU con el tratamiento específico del fuego del dragón.
+
+**Firma:**
+```rust
+pub fn compone_pixel_fuego_dragon_wgsl( c0: u16, c1: u16, c2: u16, c3: u16, obj_color: u16, obj_visible: bool, obj_semi: bool, bg_prio: [u8; 4],
+```
+
 ### `CapaFondoGpu` (Struct)
 
 Configuración de un fondo (textos) tal y como la lee la GPU.
@@ -2873,6 +3304,60 @@ Configuración de la pasada de composición.
 **Firma:**
 ```rust
 pub struct ConfigCompGpu
+```
+
+### `zeroed` (Función)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub fn zeroed() -> Self
+```
+
+### `HashEntradaCuadro` (Struct)
+
+Hash y metadatos de entrada de un cuadro para diagnóstico de sincronización.
+
+**Firma:**
+```rust
+pub struct HashEntradaCuadro
+```
+
+### `fnv1a_32` (Función)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub fn fnv1a_32(datos: &[u8]) -> u32
+```
+
+### `calcular_hash_entrada` (Función)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub fn calcular_hash_entrada( comps: &[ConfigCompGpu; 160],
+```
+
+### `HuellasComponentes` (Struct)
+
+*Sin comentario de documentación en código fuente.*
+
+**Firma:**
+```rust
+pub struct HuellasComponentes
+```
+
+### `calcular_huellas_componentes` (Función)
+
+Huella FNV-1a de 32 bits por componente de la entrada de un cuadro.
+
+**Firma:**
+```rust
+pub fn calcular_huellas_componentes( comps: &[ConfigCompGpu; 160],
 ```
 
 ### `SpriteNativa` (Struct)
@@ -3015,6 +3500,15 @@ La referencia solo dibuja sprites si `DISPCNT` bit 12 está activo.
 pub fn decode_oam(&mut self, oam: &[u8]) -> usize
 ```
 
+### `contar_sprites_oam` (Función)
+
+Cuenta el número de sprites visibles y de ventana en la OAM para telemetría.
+
+**Firma:**
+```rust
+pub fn contar_sprites_oam(oam: &[u8], dispcnt: u16) -> (usize, usize)
+```
+
 ### `config_capa` (Función)
 
 Configuración de la pasada de capas.
@@ -3042,6 +3536,36 @@ Decodifica las 160 filas de registros I/O en tablas de parámetros para la GPU.
 pub fn decodificar_lineas( io_lineas: &[[u8; 0x60]; 160],
 ```
 
+### `sanear_bldcnt_cinematica_dragon` (Función)
+
+Sanea el registro BLDCNT y BLDALPHA en las 160 scanlines de la cinemática del dragón.
+
+Exige la firma estricta de la cinemática: Modo 0 con BG2 y BG3 habilitados en DISPCNT,
+con BG3 como primer objetivo y Backdrop como segundo objetivo (`(bldcnt & 0x2008) == 0x2008`),
+y modo de mezcla alfa activo (`((bldcnt >> 6) & 3) == 1`).
+Si coincide, asegura que `bldalpha` tenga los coeficientes nominales `0x0810` (EVA=16, EVB=8)
+si estaban atenuados. No muta si las prioridades son 3 pero la mezcla está apagada.
+
+**Firma:**
+```rust
+pub fn sanear_bldcnt_cinematica_dragon(comps: &mut [ConfigCompGpu; 160])
+```
+
+### `preparar_staging_filas` (Función)
+
+Prepara los búferes de staging para las 160 scanlines.
+
+Si `io_lineas` está presente (`Some`), decodifica de forma autoritativa cada scanline
+sin permitir que el estado de fin de cuadro (`self.estado`) sobrescriba las modulaciones
+raster ni fuerce `OBJWIN`.
+Si `io_lineas` es `None`, rellena con la configuración estática de fin de cuadro y aplica
+consolidación y propagación global como contingencia.
+
+**Firma:**
+```rust
+pub fn preparar_staging_filas( &mut self, io_lineas: Option<&[[u8; 0x60]; 160]>,
+```
+
 ### `decodificar_paletas_linea` (Función)
 
 Decodifica las 160 paletas por línea para la GPU, enmascarando el bit 15 a 15 bits.
@@ -3058,6 +3582,36 @@ Decodifica una única paleta uniforme replicándola en las 160 líneas.
 **Firma:**
 ```rust
 pub fn decodificar_paleta_uniforme(palette: &[u8], destino: &mut [[u32; 512]; 160])
+```
+
+### `consolidar_dispcnt_fondos` (Función)
+
+Sincroniza los bits de fondos (BG0..BG3 enable) a partir de las
+configuraciones por línea calculadas para el fotograma.
+
+**Firma:**
+```rust
+pub fn consolidar_dispcnt_fondos(&mut self, comps: &[ConfigCompGpu])
+```
+
+### `propagar_fondos_a_staging` (Función)
+
+Propaga la activación y prioridades de los fondos consolidados en
+`self.dispcnt` hacia los búferes de staging para GPU.
+
+**Firma:**
+```rust
+pub fn propagar_fondos_a_staging( &self, capas: &mut [ConfigCapaGpu; 160],
+```
+
+### `consolidar_dispcnt_sprites` (Función)
+
+Sincroniza los bits de sprites (OBJ enable y mapeo 1D) a partir de las
+configuraciones por línea calculadas para el fotograma.
+
+**Firma:**
+```rust
+pub fn consolidar_dispcnt_sprites(&mut self, comps: &mut [ConfigCompGpu])
 ```
 
 ### `rango_filas_modificadas` (Función)
@@ -3168,6 +3722,25 @@ composición) sobre `target_view`. Requiere haber llamado antes a
 **Firma:**
 ```rust
 pub fn grabar_pases( &mut self, encoder: &mut wgpu::CommandEncoder, target_view: &wgpu::TextureView, )
+```
+
+### `volcar_registros_lineas` (Función)
+
+Vuelca los registros I/O relevantes de las primeras `n` líneas de `io_lineas` a un String de diagnóstico.
+
+**Firma:**
+```rust
+pub fn volcar_registros_lineas(io_lineas: &[[u8; 0x60]], n: usize) -> String
+```
+
+### `volcar_bg2_y_dma` (Función)
+
+Vuelca los registros BG2 (HOFS y VOFS) de cada línea activa (hasta 160) y el estado final de los cuatro
+canales DMA (SAD, DAD y CNT) a un String de diagnóstico.
+
+**Firma:**
+```rust
+pub fn volcar_bg2_y_dma(io_lineas: &[[u8; 0x60]], io: &[u8]) -> String
 ```
 
 ---

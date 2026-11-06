@@ -47,8 +47,22 @@ scripts/diagnostico/log_*.txt
 
 # Grafo de conocimiento de la codebase (CodeGraph)
 .codegraph/
+graphify-out/
 
 # Estado efímero de la barra de agentes
 .agents/agent_state.json
 .agents/ui/
 .agents/skills/live-dock/
+
+# Registro persistente de actividad de agentes y visor nativo
+.agents/telemetry/
+abrir_visor_agentes.bat
+
+# Scratch local y volcados efímeros
+/scratch/
+/brain/
+.cloud-attachments/
+/telemetria/cuadro-*
+/telemetria/blazing-perf-*.txt
+/secuencias/arranque_libre.txt
+abrir_visor.bat

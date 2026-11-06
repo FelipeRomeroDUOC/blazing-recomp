@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Regenera el índice de propuestas de `docs/BACKLOG.md` a partir de cada ficha.
+"""Regenera el índice de propuestas de `docs/BACKLOG.md` a partir de cada ficha
+y sincroniza los hallazgos `Fuera de alcance` de propuestas cerradas hacia `docs/PENDIENTES.md`.
 
 Las secciones por estado se reconstruyen desde la línea `Estado:` de cada
 propuesta, sin tocar las anotaciones curadas que ya estaban escritas. Los
@@ -30,6 +31,7 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 PROPUESTAS = RAIZ / "docs" / "propuestas"
 BACKLOG = RAIZ / "docs" / "BACKLOG.md"
+PENDIENTES = RAIZ / "docs" / "PENDIENTES.md"
 
 VOCABULARIO = [
     "verificada por agente",
@@ -63,10 +65,13 @@ SECCIONES = [
 
 def estado_de(texto: str) -> str | None:
     for linea in texto.splitlines():
-        if linea.startswith("Estado:"):
-            valor = linea.split(":", 1)[1].strip()
+        linea_limpia = linea.strip().lstrip("-* ").strip()
+        if linea_limpia.startswith("Estado:") or "· Estado:" in linea or "Estado:" in linea_limpia:
+            partes = linea_limpia.split("Estado:", 1)
+            valor = partes[1].strip() if len(partes) > 1 else ""
+            valor_lower = valor.lower()
             for v in VOCABULARIO:
-                if valor.startswith(v):
+                if valor_lower.startswith(v):
                     return v
     return None
 
@@ -98,12 +103,48 @@ def revision_humana(texto: str) -> tuple[bool, bool]:
     return True, True
 
 
+def extraer_fuera_de_alcance(texto: str) -> list[str]:
+    """Extrae ítems de '**Fuera de alcance:**' en la sección '## Resultado'."""
+    m_res = re.search(r"^##+\s*Resultado\b[^\n]*$([\s\S]*)", texto, re.M)
+    if not m_res:
+        return []
+    cuerpo = re.split(r"^##\s", m_res.group(1), maxsplit=1, flags=re.M)[0]
+    m_fa = re.search(r"^\*\*Fuera de alcance:\*\*\s*([^\n]*)\n((?:- .*\n?)*)", cuerpo, re.M)
+    if not m_fa:
+        return []
+    inline = m_fa.group(1).strip()
+    bullets = m_fa.group(2).strip()
+    items: list[str] = []
+    if inline and not re.match(r"^(?:ningun[oa]|nada|\[una l[ií]nea)\b", inline, re.I):
+        items.append(inline)
+    for ln in bullets.splitlines():
+        limpio = re.sub(r"^-\s*(?:\[.\]\s*)?", "", ln.strip()).strip()
+        if limpio and not re.match(r"^(?:ningun[oa]|nada)\b", limpio, re.I):
+            items.append(limpio)
+    return items
+
+
+def sincronizar_pendientes(nuevos_items: list[str], dry: bool) -> int:
+    """Añade ítems nuevos a docs/PENDIENTES.md sin duplicar y devuelve el total de pendientes abiertos."""
+    if not PENDIENTES.exists():
+        return 0
+    contenido = PENDIENTES.read_text(encoding="utf-8")
+    existentes = set(re.findall(r"^- \[.\] (.+)$", contenido, flags=re.M))
+    por_agregar = [it for it in nuevos_items if it not in existentes and it not in contenido]
+    if por_agregar and not dry:
+        bloque_nuevo = "\n".join(f"- [ ] {it}" for it in por_agregar) + "\n"
+        contenido = contenido.rstrip() + "\n" + bloque_nuevo
+        PENDIENTES.write_text(contenido, encoding="utf-8")
+    return len(re.findall(r"^- \[ \] ", contenido, flags=re.M))
+
+
 def main() -> int:
     dry = "--dry-run" in sys.argv
 
     fichas: dict[str, str] = {}
     pendientes_tv: list[str] = []
     resueltas_tv: set[str] = set()
+    items_fuera_alcance: list[str] = []
     for ruta in sorted(PROPUESTAS.glob("*.md")):
         if ruta.name == "README.md":
             continue
@@ -113,6 +154,9 @@ def main() -> int:
             print(f"AVISO: {ruta.name} no declara un estado válido", file=sys.stderr)
             continue
         fichas[ruta.name] = estado
+        if estado in ("cerrada", "revisada por humano", "verificada por agente"):
+            for it in extraer_fuera_de_alcance(texto):
+                items_fuera_alcance.append(f"{it} (origen: [`{ruta.name}`](propuestas/{ruta.name}))")
         tiene_seccion, pendiente = revision_humana(texto)
         if not tiene_seccion:
             continue
@@ -224,13 +268,16 @@ def main() -> int:
     bloque = re.sub(r"\d+ propuestas en \[`docs/propuestas/`\]", f"{total} propuestas en [`docs/propuestas/`]", bloque)
     bloque = re.sub(r"\*\*\d+ = [^.]+\.\*\*", f"**{total} = {reparto}.**", bloque)
 
+    abiertos = sincronizar_pendientes(items_fuera_alcance, dry)
+
     if dry:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
         print(bloque)
         return 0
 
     BACKLOG.write_text(backlog[:ini] + bloque + backlog[fin:], encoding="utf-8")
-    print(f"índice actualizado: {total} propuestas, {len(pendientes_tv)} esperando el televisor")
+    msg_pend = f", {abiertos} pendientes abiertos (umbral >= 10)" if abiertos >= 10 else ""
+    print(f"índice actualizado: {total} propuestas, {len(pendientes_tv)} esperando el televisor{msg_pend}")
     return 0
 
 

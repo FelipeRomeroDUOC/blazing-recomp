@@ -10,7 +10,11 @@ Un test vale lo que vale su capacidad de **fallar cuando el código está mal**.
 ## Flujo de trabajo
 
 1. **Entender el contrato** antes de escribir nada (ver abajo).
-2. **Descubrir el entorno**: lenguaje, framework de tests, estructura de carpetas, fixtures y helpers existentes, comando para ejecutar los tests. Copiar las convenciones del proyecto; no inventar otras.
+2. **Entorno preconfigurado en Blazing Recomp (0 llamadas exploratorias):**
+   - **Lenguaje y Framework:** Rust (`cargo test`) + scripts de validación en Python (`unittest`).
+   - **Topología obligatoria (§3.2 `AGENTS.md`):** Si un módulo en `src/<mod>.rs` supera 350 líneas (o sus tests superan 150 líneas), los tests unitarios viven en `src/<mod>_tests.rs` enlazado con `#[cfg(test)] #[path = "<mod>_tests.rs"] mod tests;`. Pruebas de integración en `tests/*.rs`. Consulta el `Termómetro de Módulos src/` ya inyectado en `<SYSTEM_MESSAGE>`.
+   - **Exactitud matemática (§3.3 `AGENTS.md`):** Prohibido usar `assert_eq!` directo con literales `f32`; usa ternas pitagóricas o deltas epsilon `((a - b).abs() < 1e-5)`. Prohibido debilitar o reducir el conteo de `assert!`.
+   - **Ejecución:** Desde el Orquestador usa `python scripts/run_tests_summary.py [filtro]`; desde el `Constructor` usa `cargo test --lib <modulo>`.
 3. **Elegir el tipo de test y la estrategia temporal** según lo que se prueba y la tarea (ver tabla y sección de estrategia).
 4. **Escribir los tests respetando la secuencia**: antes de tocar el código para bugfixes o refactors; después para casos límite y robustez.
 5. **Medir su calidad** con mutación cuando el proyecto lo permita.

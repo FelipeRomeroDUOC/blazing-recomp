@@ -32,30 +32,13 @@ Para ejemplos buenos y malos de cada tipo, lee `references/tipos.md` si existe.
 
 ## Flujo de trabajo
 
-### Fase 1: Analizar el proyecto
+### Fase 1: Contexto precalculado del proyecto (Blazing Recomp)
 
-Empieza ejecutando el inventario, que reúne en un informe los hechos básicos (lenguajes, manifiestos, puntos de entrada, comandos, tests, documentación existente):
-
-```bash
-python <ruta-de-la-skill>/scripts/inventariar_proyecto.py <ruta-del-proyecto>
-```
-
-El inventario solo da hechos y pistas; no decide el tipo de proyecto ni clasifica la documentación. Eso lo haces tú leyendo el contenido.
-
-Después lee, en este orden: README, archivos de configuración y dependencias (por ejemplo `package.json`, `pyproject.toml`, `Cargo.toml`, `Dockerfile`), punto de entrada, API pública, tests y documentación existente. Los tests suelen mostrar el uso real mejor que los comentarios.
-
-Identifica el **tipo de proyecto**, porque determina qué documentación importa más:
-
-| Tipo de proyecto | Prioridad probable |
-|---|---|
-| Biblioteca / paquete | Referencia de API, guías de uso, un tutorial de primer uso |
-| Aplicación de línea de comandos | Referencia de comandos y opciones, guías por tarea |
-| Aplicación web o móvil | Instalación y ejecución local, arquitectura (explicación), guía de despliegue |
-| API o servicio | Referencia de endpoints, autenticación, guías de integración |
-| Proyecto de datos / IA | Reproducibilidad, descripción de datos y modelos, explicación de decisiones |
-| Infraestructura / configuración | Guías de operación, referencia de variables, explicación de la arquitectura |
-
-Si el proyecto no encaja claramente, dilo y pregunta al usuario. No fuerces una categoría.
+En **Blazing Recomp** no ejecutes `inventariar_proyecto.py` ni leas a ciegas `Cargo.toml` o `pack.toml`: la arquitectura ya es conocida y sus fuentes están pre-indexadas en `graphify-out/wiki/index.md` y `.agents/telemetry/sources_index.json`:
+- **Tipo de proyecto:** Plataforma nativa Android (Rust + C11 AOT + `wgpu` WGSL + AAudio NDK) para *Fire Emblem: The Blazing Blade*.
+- **Entradas principales:** `src/lib.rs` (`cdylib` Android `NativeActivity`), `src/bin/ppu_doble.rs` (visor/comparador PC) y `scripts/`.
+- **Estructura Diátaxis viva:** `docs/guias/`, `docs/referencia/`, `docs/explicacion/` (incluyendo `DECISIONES.md` con 46+ ADRs) y `docs/fuentes/` (solo lectura, especificaciones de hardware GBA y Android).
+- **Para detectar cambios documentables tras editar código:** ejecuta directamente `python .agents/skills/diataxis-docs/scripts/detectar_cambios.py . --json` y valida con `python .agents/skills/diataxis-docs/scripts/validar_docs.py .`.
 
 ### Fase 2: Inventariar lo existente
 

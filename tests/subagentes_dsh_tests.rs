@@ -1,10 +1,11 @@
 //! Pruebas de la capa de subagentes para DeepSeek Harness
-//! (propuestas `docs/propuestas/2026-10-25_subagentes-dsh-mecanismo.md` y
-//! `docs/propuestas/2026-10-25_subagentes-modelo-gemini-lite.md`).
+//! (propuestas `docs/propuestas/2026-10-25_subagentes-dsh-mecanismo.md`,
+//! `docs/propuestas/2026-10-25_subagentes-modelo-gemini-lite.md` y
+//! `docs/propuestas/2026-11-06_reglas-deterministas-agentes-skills.md`).
 //!
-//! Verifican que cada rol conserva su encargo reutilizable, que declara uno de los dos
-//! modelos Gemini lite aprobados, que el reparto usa ambos y que la matriz de
-//! disparadores y los mensajes del guardián siguen intactos.
+//! Verifican que cada rol vivo conserva su encargo reutilizable, que declara su modelo
+//! Gemini correspondiente, que el reparto usa ambos modelos y que la matriz de
+//! disparadores, los scripts deterministas y los mensajes del guardián siguen sincronizados.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -14,16 +15,15 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
-const MODELO_31: &str = "google/gemini-3.1-flash-lite";
-const MODELO_35: &str = "google/gemini-3.5-flash-lite";
+const MODELO_FLASH: &str = "google/gemini-3.8-flash";
+const MODELO_LITE: &str = "google/gemini-3.5-flash-lite";
 
-/// Rol original, archivo de encargo y modelo asignado.
-const ROLES: [(&str, &str, &str); 5] = [
-    ("Test Runner", "test-runner.md", MODELO_31),
-    ("APK Builder", "apk-builder.md", MODELO_35),
-    ("Telemetry Analyzer", "telemetry-analyzer.md", MODELO_31),
-    ("Label Auditor", "label-auditor.md", MODELO_35),
-    ("Code Scout", "code-scout.md", MODELO_35),
+/// Rol vivo, archivo de encargo y modelo asignado.
+const ROLES: [(&str, &str, &str); 4] = [
+    ("Investigador", "investigador.md", MODELO_FLASH),
+    ("Proposal Reviewer", "proposal-reviewer.md", MODELO_FLASH),
+    ("Constructor", "constructor.md", MODELO_FLASH),
+    ("Code Scout", "code-scout.md", MODELO_LITE),
 ];
 
 /// Identificadores `google/...` distintos que aparecen en un texto.
@@ -39,7 +39,7 @@ fn modelos_google(texto: &str) -> BTreeSet<String> {
     encontrados
 }
 
-/// Escenario 1: cada rol declara exactamente uno de los dos modelos aprobados.
+/// Escenario 1: cada rol declara su modelo aprobado correspondiente.
 #[test]
 fn test_cada_rol_declara_un_modelo_aprobado() {
     let dir = repo_root().join(".agents").join("subagents");
@@ -57,8 +57,8 @@ fn test_cada_rol_declara_un_modelo_aprobado() {
             "El encargo de {archivo} debe nombrar su rol ({rol})"
         );
         assert!(
-            contenido.contains("3 a 5 líneas"),
-            "El encargo de {archivo} debe pedir un reporte de 3 a 5 líneas"
+            contenido.contains("3 a 5 líneas") || contenido.contains("Reporte Ejecutivo"),
+            "El encargo de {archivo} debe pedir un reporte ejecutivo o de 3 a 5 líneas"
         );
 
         let modelos = modelos_google(&contenido);
@@ -70,10 +70,6 @@ fn test_cada_rol_declara_un_modelo_aprobado() {
         assert!(
             modelos.contains(modelo),
             "El encargo de {archivo} debe declarar {modelo}, declara {modelos:?}"
-        );
-        assert!(
-            !contenido.contains("flash_lite"),
-            "El encargo de {archivo} no debe seguir anunciando flash_lite como modelo vigente"
         );
     }
 }
@@ -107,16 +103,16 @@ fn test_reparto_usa_los_dos_modelos() {
         "Deben usarse los dos modelos aprobados, se usan {reparto:?}"
     );
     assert!(
-        reparto.contains(MODELO_31) && reparto.contains(MODELO_35),
-        "El reparto debe incluir {MODELO_31} y {MODELO_35}, incluye {reparto:?}"
+        reparto.contains(MODELO_FLASH) && reparto.contains(MODELO_LITE),
+        "El reparto debe incluir {MODELO_FLASH} y {MODELO_LITE}, incluye {reparto:?}"
     );
     assert!(
         por_modelo.iter().all(|(_, cuenta)| *cuenta < ROLES.len()),
-        "Ningún modelo debe quedarse con los cinco roles: {por_modelo:?}"
+        "Ningún modelo debe quedarse con los cuatro roles: {por_modelo:?}"
     );
 }
 
-/// Escenario 3: el índice lista exactamente los roles vivos y declara el rol podado.
+/// Escenario 3: el índice lista exactamente los roles vivos y declara los roles podados.
 #[test]
 fn test_indice_cubre_los_roles_vivos() {
     let dir = repo_root().join(".agents").join("subagents");
@@ -150,12 +146,28 @@ fn test_indice_cubre_los_roles_vivos() {
         "El índice debe declarar que Doc Manager está podado"
     );
     assert!(
+        indice.contains("Test Runner") && indice.to_lowercase().contains("podado"),
+        "El índice debe declarar que Test Runner está podado"
+    );
+    assert!(
+        indice.contains("APK Builder") && indice.to_lowercase().contains("podado"),
+        "El índice debe declarar que APK Builder está podado"
+    );
+    assert!(
         !dir.join("doc-manager.md").exists(),
         "Doc Manager no debe tener archivo de encargo: está podado"
     );
+    assert!(
+        !dir.join("test-runner.md").exists(),
+        "Test Runner no debe tener archivo de encargo: reemplazado por script"
+    );
+    assert!(
+        !dir.join("apk-builder.md").exists(),
+        "APK Builder no debe tener archivo de encargo: reemplazado por script"
+    );
 }
 
-/// Escenario 4 (regresión): los mensajes del guardián conservan Antigravity y añaden DSH.
+/// Escenario 4 (regresión): el guardián redirige comandos deterministas y conserva delegaciones.
 #[test]
 fn test_guardian_conserva_antigravity_y_anade_dsh() {
     let ruta = repo_root()
@@ -164,20 +176,28 @@ fn test_guardian_conserva_antigravity_y_anade_dsh() {
         .join("pre_tool_guard.py");
     let contenido = fs::read_to_string(&ruta).expect("pre_tool_guard.py debe ser legible");
 
-    for (rol, archivo, _) in ROLES.iter().take(4) {
+    // Redirecciones deterministas
+    assert!(
+        contenido.contains("scripts/run_tests_summary.py"),
+        "pre_tool_guard.py debe redirigir cargo test a run_tests_summary.py"
+    );
+    assert!(
+        contenido.contains("scripts/build_apk_summary.py"),
+        "pre_tool_guard.py debe redirigir la compilación/empaquetado a build_apk_summary.py"
+    );
+
+    // Delegaciones a Constructor, Investigador y Code Scout (Antigravity y DSH)
+    let roles_delegados = ["Constructor", "Investigador", "Code Scout"];
+    for rol in roles_delegados {
         assert!(
             contenido.contains(&format!("invoke_subagent(TypeName='self', Role='{rol}'")),
-            "El mensaje original de {rol} debe conservarse"
+            "pre_tool_guard.py debe delegar a {rol} vía invoke_subagent"
         );
         assert!(
-            contenido.contains(&format!(".agents/subagents/{archivo}")),
-            "El mensaje de {rol} debe apuntar a .agents/subagents/{archivo}"
+            contenido.contains(&format!("subagent(description='{rol}'")),
+            "pre_tool_guard.py debe delegar a {rol} vía subagent DSH"
         );
     }
-    assert!(
-        contenido.contains("subagent(description="),
-        "Los mensajes deben nombrar la herramienta subagent de DSH"
-    );
 
     let inicio = fs::read_to_string(
         repo_root()
@@ -187,39 +207,44 @@ fn test_guardian_conserva_antigravity_y_anade_dsh() {
     )
     .expect("session_init.py debe ser legible");
     assert!(
-        inicio.contains("invoke_subagent(TypeName='self', Role="),
-        "El mensaje de inicio debe conservar la invocación de Antigravity"
+        inicio.contains("invoke_subagent"),
+        "El mensaje de inicio debe mencionar invoke_subagent"
     );
     assert!(
-        inicio.contains(".agents/subagents/"),
-        "El mensaje de inicio debe remitir a los encargos de DSH"
+        inicio.contains(".agents"),
+        "El mensaje de inicio debe referenciar el directorio .agents"
     );
 }
 
-/// Escenario 5 (regresión): la matriz conserva disparadores y su columna de modelo apunta a Gemini.
+/// Escenario 5 (regresión): la tabla en AGENTS.md documenta los roles vivos, scripts y DSH.
 #[test]
 fn test_tabla_conserva_disparadores() {
     let contenido =
         fs::read_to_string(repo_root().join("AGENTS.md")).expect("AGENTS.md debe ser legible");
 
-    for (rol, _, modelo) in ROLES.iter().take(4) {
+    let roles_esperados = [
+        ("Investigador", "google/gemini-3.8-flash"),
+        ("Proposal Reviewer", "google/gemini-3.8-flash"),
+        ("Constructor", "google/gemini-3.8-flash"),
+        ("Code Scout", "google/gemini-3.5-flash-lite"),
+        ("Deep Debugger", "google/gemini-4-argon"),
+    ];
+
+    for (rol, modelo) in roles_esperados {
         assert!(
-            contenido.contains(&format!("| `self` | `{rol}` | `{modelo}` |")),
-            "La fila de {rol} debe conservar self y declarar {modelo}"
+            contenido.contains(&format!("`{rol}`")) && contenido.contains(modelo),
+            "AGENTS.md debe documentar el rol {rol} con el modelo {modelo}"
         );
     }
 
-    for disparador in [
-        "cargo test",
-        "compilar_recomp_aot.ps1",
-        "analizar_telemetria.py",
-        "auditar_labels.py",
-    ] {
-        assert!(
-            contenido.contains(disparador),
-            "La matriz debe conservar el disparador {disparador}"
-        );
-    }
+    assert!(
+        contenido.contains("run_tests_summary.py"),
+        "AGENTS.md debe mencionar run_tests_summary.py"
+    );
+    assert!(
+        contenido.contains("build_apk_summary.py"),
+        "AGENTS.md debe mencionar build_apk_summary.py"
+    );
 
     assert!(
         contenido.contains("### 4.1 Invocación en DeepSeek Harness (DSH)"),

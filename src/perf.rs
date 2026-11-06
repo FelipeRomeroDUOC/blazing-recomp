@@ -525,6 +525,121 @@ pub fn resolve_perf_candidates(search_dirs: &[std::path::PathBuf]) -> Vec<std::p
     priority
 }
 
+/// Estado de visibilidad y configuración de capas para telemetría diferencial.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct EstadoCapas {
+    pub dispcnt: u16,
+    pub bg0cnt: u16,
+    pub bg1cnt: u16,
+    pub bg2cnt: u16,
+    pub bg3cnt: u16,
+    pub num_sprites: usize,
+    pub es_nativa: bool,
+    pub num_sprites_ventana: usize,
+}
+
+/// Extrae el estado de capas y BLDCNT a partir del volcado PPU del fotograma.
+pub fn extraer_estado_capas(
+    ps: &crate::pipeline::PpuFrameState,
+    es_nativa: bool,
+) -> (EstadoCapas, u16) {
+    let dispcnt = u16::from_le_bytes([ps.io[0], ps.io[1]]);
+    let bg0cnt = u16::from_le_bytes([ps.io[0x08], ps.io[0x09]]);
+    let bg1cnt = u16::from_le_bytes([ps.io[0x0A], ps.io[0x0B]]);
+    let bg2cnt = u16::from_le_bytes([ps.io[0x0C], ps.io[0x0D]]);
+    let bg3cnt = u16::from_le_bytes([ps.io[0x0E], ps.io[0x0F]]);
+    let bldcnt = u16::from_le_bytes([ps.io[0x50], ps.io[0x51]]);
+
+    let (num_sprites, num_sprites_ventana) =
+        crate::ppu_nativa::EstadoPpuNativa::contar_sprites_oam(&ps.oam[..], dispcnt);
+
+    (
+        EstadoCapas {
+            dispcnt,
+            bg0cnt,
+            bg1cnt,
+            bg2cnt,
+            bg3cnt,
+            num_sprites,
+            es_nativa,
+            num_sprites_ventana,
+        },
+        bldcnt,
+    )
+}
+
+/// Formatea la línea de telemetría `# capas ...` según el estado de las capas.
+pub fn formatear_telemetria_capas(frame: u64, estado: &EstadoCapas, bldcnt: u16) -> String {
+    let dispcnt = estado.dispcnt;
+    let bg0_on = (dispcnt & 0x0100) != 0;
+    let bg1_on = (dispcnt & 0x0200) != 0;
+    let bg2_on = (dispcnt & 0x0400) != 0;
+    let bg3_on = (dispcnt & 0x0800) != 0;
+    let obj_on = (dispcnt & 0x1000) != 0;
+
+    let prio0 = estado.bg0cnt & 3;
+    let prio1 = estado.bg1cnt & 3;
+    let prio2 = estado.bg2cnt & 3;
+    let prio3 = estado.bg3cnt & 3;
+
+    let es_dragon = (dispcnt & 7) == 0
+        && (dispcnt & 0x0C00) == 0x0C00
+        && (bldcnt & 0x2008) == 0x2008
+        && ((bldcnt >> 6) & 3) == 1;
+
+    let s_bg0 = if bg0_on {
+        let rol = if es_dragon { "texto" } else { "bg0" };
+        format!("ON(prio={},{})", prio0, rol)
+    } else {
+        "OFF".to_string()
+    };
+
+    let s_bg1 = if bg1_on {
+        format!("ON(prio={},bg1)", prio1)
+    } else {
+        "OFF".to_string()
+    };
+
+    let s_bg2 = if bg2_on {
+        let rol = if es_dragon { "dragon" } else { "bg2" };
+        format!("ON(prio={},{})", prio2, rol)
+    } else {
+        "OFF".to_string()
+    };
+
+    let s_bg3 = if bg3_on {
+        let rol = if es_dragon { "fuego" } else { "bg3" };
+        format!("ON(prio={},{})", prio3, rol)
+    } else {
+        "OFF".to_string()
+    };
+
+    let s_obj = if obj_on && estado.num_sprites > 0 {
+        format!("ON(cnt={})", estado.num_sprites)
+    } else {
+        "OFF".to_string()
+    };
+
+    let s_comp = if es_dragon {
+        "multicapa_dragon"
+    } else {
+        "estandar"
+    };
+
+    let s_corr = if (dispcnt & 0x8000) != 0 && estado.num_sprites_ventana == 0 {
+        "APLICADA(objwin_purgado)"
+    } else if es_dragon {
+        "ACTIVA(multicapa)"
+    } else {
+        "INACTIVA"
+    };
+
+    format!(
+        "# capas frame={} bg0={} bg1={} bg2={} bg3={} obj={} comp={} correccion={}",
+        frame, s_bg0, s_bg1, s_bg2, s_bg3, s_obj, s_comp, s_corr
+    )
+}
+
 #[cfg(test)]
 #[path = "perf_tests.rs"]
 mod tests;

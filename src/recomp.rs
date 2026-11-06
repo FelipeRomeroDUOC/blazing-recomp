@@ -136,9 +136,18 @@ pub fn run_frame_native(m: &mut Machine, table: &BlockTable, max_steps: u64) -> 
     while !m.bus.frame_ready && steps < max_steps {
         steps += 1;
         // 1. Estados de reposo (Halt) y entrega de interrupciones (IRQ)
+        let scanline = m.bus.scanline();
+        let en_vblank_puro = (160..227).contains(&scanline);
+        let dispstat = m.bus.io[0x04];
+        let raster_irq_habilitado = (dispstat & 0x30) != 0 && m.bus.ime;
+        let irq_video_esperando = m.bus.ime
+            && ((scanline >= 160 && (m.bus.reg_if & 0x01) != 0) || ((m.bus.reg_if & 0x06) != 0));
+
         if m.bus.halted
             || (!m.bus.real_bios && m.cpu.regs[15] == IRQ_RETURN_ADDR && m.cpu.mode() == Mode::Irq)
             || (m.bus.irq_pending() && !m.cpu.flag(FLAG_I))
+            || (irq_video_esperando && m.cpu.flag(FLAG_I))
+            || (raster_irq_habilitado && (!en_vblank_puro || m.cpu.mode() == Mode::Irq))
         {
             m.step();
             continue;
@@ -568,6 +577,75 @@ mod dl {
 /// Intenta cargar la biblioteca de bloques C11 recompilados (`libblazing_recompiled.so`)
 /// presente en el paquete APK en Android. Retorna `None` si la biblioteca no está presente
 /// (en host o entornos de prueba pura), activando el modo intérprete de respaldo.
+#[cfg(target_os = "windows")]
+mod dl_win {
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::Path;
+    use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
+
+    use super::{BlockTable, RcgBlock};
+
+    pub fn load_native_blocks_from_path(path: &Path) -> Option<BlockTable> {
+        let wide: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        unsafe {
+            let handle = LoadLibraryW(wide.as_ptr());
+            if handle.is_null() {
+                log::debug!(
+                    "LoadLibraryW no pudo abrir '{:?}': DLL no encontrada o inválida",
+                    path
+                );
+                return None;
+            }
+
+            let sym_blocks = GetProcAddress(handle, b"rcg_blocks\0".as_ptr());
+            let sym_count = GetProcAddress(handle, b"rcg_block_count\0".as_ptr());
+
+            let sym_blocks = sym_blocks?;
+            let sym_count = sym_count?;
+
+            let blocks_ptr = sym_blocks as *const () as *const RcgBlock;
+            let count_ptr = sym_count as *const () as *const u64;
+
+            if blocks_ptr.is_null() || count_ptr.is_null() {
+                log::warn!("Símbolos rcg_blocks o rcg_block_count nulos en {:?}", path);
+                return None;
+            }
+
+            let count = std::ptr::read_unaligned(count_ptr) as usize;
+            if count == 0 || count > 500_000 {
+                log::warn!("rcg_block_count ({count}) inválido en {:?}", path);
+                return None;
+            }
+
+            let slice = std::slice::from_raw_parts(blocks_ptr, count);
+            log::info!(
+                "Recompilación nativa AOT cargada exitosamente desde {:?}: {} bloques C11 activos",
+                path,
+                count
+            );
+            Some(BlockTable::from_blocks(slice))
+        }
+    }
+}
+
+/// Carga los bloques C11 recompilados desde una ruta específica a una biblioteca dinámica (.dll o .so).
+pub fn load_native_blocks_from_path(path: &std::path::Path) -> Option<BlockTable> {
+    #[cfg(target_os = "windows")]
+    {
+        dl_win::load_native_blocks_from_path(path)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+        None
+    }
+}
+
 pub fn load_native_blocks() -> Option<BlockTable> {
     #[cfg(target_os = "android")]
     {
@@ -594,7 +672,42 @@ pub fn load_native_blocks() -> Option<BlockTable> {
             Some(BlockTable::from_blocks(slice))
         }
     }
-    #[cfg(not(target_os = "android"))]
+    #[cfg(all(target_os = "windows", not(test)))]
+    {
+        let candidates = [
+            std::path::Path::new("out/1575 - Fire Emblem (E)(Independent)-bios.dll"),
+            std::path::Path::new("1575 - Fire Emblem (E)(Independent)-bios.dll"),
+            std::path::Path::new("out/blazing_recompiled.dll"),
+            std::path::Path::new("blazing_recompiled.dll"),
+        ];
+        for cand in &candidates {
+            if cand.is_file() {
+                if let Some(table) = load_native_blocks_from_path(cand) {
+                    return Some(table);
+                }
+            }
+        }
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                for name in [
+                    "1575 - Fire Emblem (E)(Independent)-bios.dll",
+                    "blazing_recompiled.dll",
+                ] {
+                    let cand = dir.join(name);
+                    if cand.is_file() {
+                        if let Some(table) = load_native_blocks_from_path(&cand) {
+                            return Some(table);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+    #[cfg(any(
+        all(target_os = "windows", test),
+        not(any(target_os = "android", target_os = "windows"))
+    ))]
     {
         None
     }

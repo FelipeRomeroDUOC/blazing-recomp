@@ -17,9 +17,10 @@ pub struct FpsCounter {
     last_interval_start: Instant,
     frames_in_interval: u32,
     current_fps: f32,
-    last_rendered: Option<(u32, bool, &'static str)>,
+    last_rendered: Option<(u32, bool, &'static str, bool)>,
     is_native: bool,
     renderer: &'static str,
+    recording: bool,
     dirty: bool,
     buffer: Vec<[u8; 4]>,
 }
@@ -41,12 +42,13 @@ impl FpsCounter {
             last_rendered: None,
             is_native: true,
             renderer: "Vulkan",
+            recording: false,
             dirty: true,
             buffer: vec![[0, 0, 0, 0]; BADGE_WIDTH * BADGE_HEIGHT],
         };
 
         counter.render_badge(60);
-        counter.last_rendered = Some((60, true, "Vulkan"));
+        counter.last_rendered = Some((60, true, "Vulkan", false));
         counter.dirty = true;
         Ok(counter)
     }
@@ -57,7 +59,7 @@ impl FpsCounter {
             self.is_native = is_native;
             let rounded = self.current_fps.round().clamp(0.0, 999.0) as u32;
             self.render_badge(rounded);
-            self.last_rendered = Some((rounded, is_native, self.renderer));
+            self.last_rendered = Some((rounded, is_native, self.renderer, self.recording));
             self.dirty = true;
         }
     }
@@ -68,13 +70,30 @@ impl FpsCounter {
         self.is_native
     }
 
+    /// Actualiza el estado del indicador de volcado/grabación [REC].
+    pub fn set_recording(&mut self, recording: bool) {
+        if self.recording != recording {
+            self.recording = recording;
+            let rounded = self.current_fps.round().clamp(0.0, 999.0) as u32;
+            self.render_badge(rounded);
+            self.last_rendered = Some((rounded, self.is_native, self.renderer, recording));
+            self.dirty = true;
+        }
+    }
+
+    /// Consulta si el indicador de grabación está activo.
+    #[inline]
+    pub fn is_recording(&self) -> bool {
+        self.recording
+    }
+
     /// Actualiza el nombre del renderer activo de la GPU (ej. "Vulkan" u "OpenGL").
     pub fn set_renderer(&mut self, renderer: &'static str) {
         if self.renderer != renderer {
             self.renderer = renderer;
             let rounded = self.current_fps.round().clamp(0.0, 999.0) as u32;
             self.render_badge(rounded);
-            self.last_rendered = Some((rounded, self.is_native, renderer));
+            self.last_rendered = Some((rounded, self.is_native, renderer, self.recording));
             self.dirty = true;
         }
     }
@@ -142,9 +161,12 @@ impl FpsCounter {
                 self.current_fps = (self.frames_in_interval as f32) / secs;
                 let rounded = self.current_fps.round().clamp(0.0, 999.0) as u32;
 
-                if self.last_rendered != Some((rounded, self.is_native, self.renderer)) {
+                if self.last_rendered
+                    != Some((rounded, self.is_native, self.renderer, self.recording))
+                {
                     self.render_badge(rounded);
-                    self.last_rendered = Some((rounded, self.is_native, self.renderer));
+                    self.last_rendered =
+                        Some((rounded, self.is_native, self.renderer, self.recording));
                     self.dirty = true;
                 }
             }
@@ -197,8 +219,10 @@ impl FpsCounter {
             }
         }
 
-        // 2. Selección de color del texto según rendimiento
-        let text_color = if fps_val >= 58 {
+        // 2. Selección de color del texto según rendimiento o grabación
+        let text_color = if self.recording {
+            [248u8, 113u8, 113u8] // Carmesí / Rojo (#F87171) cuando está grabando [REC]
+        } else if fps_val >= 58 {
             [74u8, 222u8, 128u8] // Verde esmeralda (#4ADE80)
         } else if fps_val >= 45 {
             [251u8, 191u8, 36u8] // Ámbar (#FBBF24)
@@ -206,9 +230,13 @@ impl FpsCounter {
             [248u8, 113u8, 113u8] // Carmesí (#F87171)
         };
 
-        // 3. Rasterizado del texto (ej. "60 FPS · AOT · Vulkan")
+        // 3. Rasterizado del texto (ej. "[REC] 60 FPS · AOT" o "60 FPS · AOT · Vulkan")
         let mode_tag = if self.is_native { "AOT" } else { "INT" };
-        let text = format!("{fps_val} FPS · {mode_tag} · {}", self.renderer);
+        let text = if self.recording {
+            format!("[REC] {fps_val} FPS · {mode_tag}")
+        } else {
+            format!("{fps_val} FPS · {mode_tag} · {}", self.renderer)
+        };
         let font_size = 15.5f32;
 
         // Calcular ancho total para centrado

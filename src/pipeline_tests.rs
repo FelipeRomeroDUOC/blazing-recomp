@@ -115,12 +115,28 @@ fn test_mailbox_never_blocks_producer() {
         elapsed < Duration::from_millis(50),
         "1000 depósitos no deben bloquearse (tomó {elapsed:?})"
     );
+    // Con cola FIFO de capacidad 3, los últimos 3 fotogramas retenidos son 998, 999 y 1000.
+    let f1 = bridge
+        .try_recv_frame()
+        .expect("el buzón debe conservar los fotogramas en cola (1/3)");
+    assert_eq!(f1.frame_number, 998);
+
+    let f2 = bridge
+        .try_recv_frame()
+        .expect("el buzón debe conservar los fotogramas en cola (2/3)");
+    assert_eq!(f2.frame_number, 999);
+
     let last = bridge
         .try_recv_frame()
-        .expect("el buzón debe conservar el último fotograma");
+        .expect("el buzón debe conservar el último fotograma (3/3)");
     assert_eq!(last.frame_number, 1000, "el buzón conserva el más reciente");
     assert!(
-        bridge.allocations() <= 2,
+        bridge.try_recv_frame().is_none(),
+        "cola vacía tras consumir los 3 retenidos"
+    );
+
+    assert!(
+        bridge.allocations() <= 4,
         "el pool debe reutilizar búferes (asignaciones={})",
         bridge.allocations()
     );
@@ -135,18 +151,38 @@ fn test_mailbox_keeps_latest_frame() {
         deposit(&bridge, n);
     }
 
-    let p = bridge
+    // Con cola FIFO de capacidad 3, se descartan 1 y 2, reteniendo 3, 4 y 5 en orden FIFO.
+    let p1 = bridge
         .try_recv_frame()
-        .expect("debe recibir el fotograma más reciente");
-    assert_eq!(p.frame_number, 5, "el consumidor recibe el más reciente");
-    assert_eq!(p.rgba.len(), GBA_PIXELS);
+        .expect("debe recibir el fotograma 3");
+    assert_eq!(p1.frame_number, 3);
+    assert_eq!(p1.rgba.len(), GBA_PIXELS);
     assert_eq!(
-        p.rgba[0],
+        p1.rgba[0],
         [10, 20, 30, 255],
         "sin pérdida de píxeles ni alfa"
     );
+
+    let p2 = bridge
+        .try_recv_frame()
+        .expect("debe recibir el fotograma 4");
+    assert_eq!(p2.frame_number, 4);
+
+    let p3 = bridge
+        .try_recv_frame()
+        .expect("debe recibir el fotograma 5");
+    assert_eq!(
+        p3.frame_number, 5,
+        "el último recibido es el más reciente depositado"
+    );
+
     assert!(
-        bridge.allocations() <= 2,
+        bridge.try_recv_frame().is_none(),
+        "la cola debe quedar vacía tras consumir los 3 retenidos"
+    );
+
+    assert!(
+        bridge.allocations() <= 4,
         "el pool reutiliza búferes (asignaciones={})",
         bridge.allocations()
     );
@@ -243,7 +279,7 @@ fn test_ppu_frame_state_pool_recycling() {
         ppu_state: Some(state),
     });
 
-    // Depositar un segundo paquete sin consumir el primero: debe desplazar y reciclar
+    // Depositar un segundo paquete sin consumir el primero
     let mut state2 = bridge.acquire_ppu_state();
     state2.vram[0] = 0x11;
     let rgba2 = bridge.acquire_buffer();
@@ -255,17 +291,37 @@ fn test_ppu_frame_state_pool_recycling() {
         ppu_state: Some(state2),
     });
 
-    let received = bridge
+    // Con cola FIFO de capacidad 3, se consumen en orden: primero frame 1, luego frame 2
+    let recv1 = bridge
         .try_recv_frame()
-        .expect("debe recibir el más reciente");
-    assert_eq!(received.frame_number, 2);
-    let ppu = received.ppu_state.expect("debe tener ppu_state");
-    assert_eq!(ppu.vram[0], 0x11);
+        .expect("debe recibir el primer fotograma en orden FIFO");
+    assert_eq!(recv1.frame_number, 1);
+    let ppu1 = recv1.ppu_state.expect("debe tener ppu_state frame 1");
+    assert_eq!(ppu1.vram[0], 0xAA);
 
-    // Al reciclar, el pool no asigna memoria nueva
-    bridge.recycle_ppu_state(ppu);
+    let recv2 = bridge
+        .try_recv_frame()
+        .expect("debe recibir el segundo fotograma en orden FIFO");
+    assert_eq!(recv2.frame_number, 2);
+    let ppu2 = recv2.ppu_state.expect("debe tener ppu_state frame 2");
+    assert_eq!(ppu2.vram[0], 0x11);
+
+    assert!(
+        bridge.try_recv_frame().is_none(),
+        "la cola debe quedar vacía tras consumir ambos fotogramas"
+    );
+
+    // Al reciclar, el pool no asigna memoria nueva y devuelve el búfer reciclado
+    bridge.recycle_ppu_state(ppu2);
     let reused = bridge.acquire_ppu_state();
     assert_eq!(reused.vram[0], 0x11, "debe ser el búfer reciclado del pool");
+
+    bridge.recycle_ppu_state(ppu1);
+    let reused1 = bridge.acquire_ppu_state();
+    assert_eq!(
+        reused1.vram[0], 0xAA,
+        "debe ser el búfer reciclado del pool"
+    );
 }
 
 #[test]
@@ -309,4 +365,235 @@ fn test_emulation_worker_autosave_debounce() {
         "El archivo de guardado debe haber sido creado por el worker"
     );
     let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_frame_pacer_cumulative_drift_compensation() {
+    let start = Instant::now();
+    let target = Duration::from_nanos(16_666_667);
+    let mut pacer = FramePacer::with_start_time(target, FramePacer::DEFAULT_MAX_LAG, start);
+
+    let mut current_time = start;
+    let mut total_slept = Duration::ZERO;
+
+    for i in 0..60 {
+        // Simular ejecución variable (entre 1 ms y 4 ms)
+        let work = Duration::from_millis(1 + (i % 4));
+        current_time += work;
+
+        let sleep = pacer.advance(current_time);
+        total_slept += sleep;
+
+        // Simular exceso de reposo del kernel (0.8 ms extra cada frame que se duerme)
+        let oversleep = if sleep > Duration::ZERO {
+            Duration::from_micros(800)
+        } else {
+            Duration::ZERO
+        };
+        current_time += sleep + oversleep;
+    }
+
+    // Tras 60 pasos, el tiempo programado para el frame 61 es start + 61 * target
+    let expected_next = start + target * 61;
+    assert_eq!(
+        pacer.next_frame_time(),
+        expected_next,
+        "next_frame_time debe converger exactamente al objetivo acumulativo tras 60 frames"
+    );
+
+    // Con el pacing acumulativo, current_time no debe desviarse más de 1 sobreduerme (800 us)
+    let expected_target = start + target * 60;
+    let drift = if current_time > expected_target {
+        current_time - expected_target
+    } else {
+        expected_target - current_time
+    };
+    assert!(
+        drift <= Duration::from_micros(800),
+        "La deriva acumulada debe ser <= 800 us (obtenido: {:?})",
+        drift
+    );
+}
+
+#[test]
+fn test_frame_pacer_clamp_on_large_lag() {
+    let start = Instant::now();
+    let target = Duration::from_nanos(16_666_667);
+    let mut pacer = FramePacer::with_start_time(target, Duration::from_millis(100), start);
+
+    // Simular que la app se suspende y pasan 250 ms (excede max_lag de 100 ms)
+    let jump_time = start + Duration::from_millis(250);
+    let sleep = pacer.advance(jump_time);
+
+    // Al exceder el lag máximo, debe retornar 0 de reposo y reiniciar el ancla
+    assert_eq!(sleep, Duration::ZERO);
+    assert_eq!(pacer.next_frame_time(), jump_time + target);
+
+    // El siguiente paso normal debe programar reposo normalmente sin arrastrar deuda
+    let normal_step = jump_time + Duration::from_millis(2);
+    let next_sleep = pacer.advance(normal_step);
+    assert_eq!(next_sleep, target - Duration::from_millis(2));
+    assert_eq!(pacer.next_frame_time(), jump_time + target * 2);
+}
+
+#[test]
+fn test_telemetria_dragon_detecta_anomalia_bldcnt() {
+    let mut io_lineas = [[0u8; 0x60]; 160];
+    let dispcnt_dragon = 0x0D00u16.to_le_bytes();
+    let bldcnt_anomalo = 0x0144u16; // Blending apagado para BG3 / modo normal
+    for py in 0..160 {
+        io_lineas[py][0x00] = dispcnt_dragon[0];
+        io_lineas[py][0x01] = dispcnt_dragon[1];
+        let bytes = bldcnt_anomalo.to_le_bytes();
+        io_lineas[py][0x50] = bytes[0];
+        io_lineas[py][0x51] = bytes[1];
+    }
+
+    let mut io_fin = [0u8; 256];
+    let bytes_fin = bldcnt_anomalo.to_le_bytes();
+    io_fin[0x50] = bytes_fin[0];
+    io_fin[0x51] = bytes_fin[1];
+
+    let mut monitor = MonitorRasterDragon::new();
+    let diag = monitor.registrar_fotograma(770, Some(&io_lineas), &io_fin);
+
+    assert!(
+        diag.hay_anomalia,
+        "Debe detectar la anomalía de blending ausente"
+    );
+    assert_eq!(diag.bldcnt_linea50, 0x0144);
+    assert_eq!(diag.bldcnt_fin, 0x0144);
+    assert_eq!(diag.lineas_blend, 0);
+    assert!(diag.tiene_io_lineas);
+    assert_eq!(monitor.anomalias_detectadas, 1);
+}
+
+#[test]
+fn test_telemetria_dragon_silenciosa_en_fotograma_normal() {
+    let mut io_lineas = [[0u8; 0x60]; 160];
+    let dispcnt_dragon = 0x0D00u16.to_le_bytes();
+    for py in 0..160 {
+        io_lineas[py][0x00] = dispcnt_dragon[0];
+        io_lineas[py][0x01] = dispcnt_dragon[1];
+    }
+    let bldcnt_fuego = 0x3F68u16; // Modo alfa (01b) con 1st target BG3 (bit 3)
+    for py in 0..100 {
+        let bytes = bldcnt_fuego.to_le_bytes();
+        io_lineas[py][0x50] = bytes[0];
+        io_lineas[py][0x51] = bytes[1];
+    }
+    let bldcnt_fin = 0x3F61u16;
+    for py in 100..160 {
+        let bytes = bldcnt_fin.to_le_bytes();
+        io_lineas[py][0x50] = bytes[0];
+        io_lineas[py][0x51] = bytes[1];
+    }
+
+    let mut io_fin = [0u8; 256];
+    let bytes_fin = bldcnt_fin.to_le_bytes();
+    io_fin[0x50] = bytes_fin[0];
+    io_fin[0x51] = bytes_fin[1];
+
+    let mut monitor = MonitorRasterDragon::new();
+    let diag = monitor.registrar_fotograma(769, Some(&io_lineas), &io_fin);
+
+    assert!(
+        !diag.hay_anomalia,
+        "Fotograma con fuego normal no debe ser anómalo"
+    );
+    assert_eq!(diag.bldcnt_linea50, 0x3F68);
+    assert_eq!(diag.bldcnt_fin, 0x3F61);
+    assert_eq!(diag.lineas_blend, 100);
+    assert!(diag.tiene_io_lineas);
+    assert_eq!(monitor.anomalias_detectadas, 0);
+}
+
+#[test]
+fn test_telemetria_dragon_ignora_escenas_ordinarias() {
+    let mut io_lineas = [[0u8; 0x60]; 160];
+    // Escena fuera de la cinemática del dragón (por ejemplo menú con DISPCNT = 0x1000 solo OBJ o 0x0000)
+    let dispcnt_menu = 0x1000u16.to_le_bytes();
+    for py in 0..160 {
+        io_lineas[py][0x00] = dispcnt_menu[0];
+        io_lineas[py][0x01] = dispcnt_menu[1];
+    }
+
+    // BLDCNT sin modo alfa (en la cinemática esto dispararía anomalía)
+    let bldcnt_anomalo = 0x0144u16;
+    for py in 0..160 {
+        let bytes = bldcnt_anomalo.to_le_bytes();
+        io_lineas[py][0x50] = bytes[0];
+        io_lineas[py][0x51] = bytes[1];
+    }
+
+    let mut io_fin = [0u8; 256];
+    let bytes_fin = bldcnt_anomalo.to_le_bytes();
+    io_fin[0x50] = bytes_fin[0];
+    io_fin[0x51] = bytes_fin[1];
+
+    let mut monitor = MonitorRasterDragon::new();
+    let diag = monitor.registrar_fotograma(10, Some(&io_lineas), &io_fin);
+
+    assert!(
+        !diag.hay_anomalia,
+        "No debe reportar anomalía fuera de la cinemática del dragón"
+    );
+    assert_eq!(diag.bldcnt_linea50, 0x0144);
+    assert_eq!(diag.bldcnt_fin, 0x0144);
+    assert_eq!(diag.lineas_blend, 0);
+    assert!(diag.tiene_io_lineas);
+    assert_eq!(monitor.anomalias_detectadas, 0);
+
+    // Caso pinturas estáticas del prólogo: DISPCNT = 0x0C00 (coincide con la firma) pero bldcnt == 0x0000
+    let mut io_lineas_prologo = [[0u8; 0x60]; 160];
+    let dispcnt_prologo = 0x0C00u16.to_le_bytes();
+    for py in 0..160 {
+        io_lineas_prologo[py][0x00] = dispcnt_prologo[0];
+        io_lineas_prologo[py][0x01] = dispcnt_prologo[1];
+        // bldcnt queda en 0x0000
+    }
+    let io_fin_prologo = [0u8; 256];
+    let diag_prologo = monitor.registrar_fotograma(11, Some(&io_lineas_prologo), &io_fin_prologo);
+    assert!(
+        !diag_prologo.hay_anomalia,
+        "Pintura estática del prólogo con bldcnt == 0 no debe reportar anomalía"
+    );
+    assert_eq!(diag_prologo.bldcnt_linea50, 0x0000);
+    assert_eq!(diag_prologo.bldcnt_fin, 0x0000);
+    assert_eq!(diag_prologo.lineas_blend, 0);
+    assert_eq!(monitor.anomalias_detectadas, 0);
+}
+
+#[test]
+fn test_drenado_acumulador_anomalias_dragon() {
+    let bridge = EmulationBridge::new();
+    let diag = DiagnosticoDragon {
+        hay_anomalia: true,
+        bldcnt_linea50: 0x0144,
+        bldcnt_fin: 0x0144,
+        lineas_blend: 0,
+        tiene_io_lineas: true,
+    };
+
+    bridge.record_dragon_anomalia(diag);
+
+    let stats = bridge.drain_dragon_anomalias();
+    assert_eq!(stats.count, 1);
+    assert_eq!(stats.bldcnt_l50, 0x0144);
+    assert_eq!(stats.bldcnt_fin, 0x0144);
+    assert_eq!(stats.blend_lines, 0);
+
+    // Segundo drenado debe estar limpio a cero
+    let stats2 = bridge.drain_dragon_anomalias();
+    assert_eq!(stats2.count, 0);
+}
+
+#[test]
+fn test_drenado_dragon_sin_anomalias() {
+    let bridge = EmulationBridge::new();
+    let stats = bridge.drain_dragon_anomalias();
+    assert_eq!(stats.count, 0);
+    assert_eq!(stats.bldcnt_l50, 0);
+    assert_eq!(stats.bldcnt_fin, 0);
+    assert_eq!(stats.blend_lines, 0);
 }

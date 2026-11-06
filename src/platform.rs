@@ -23,6 +23,8 @@ use crate::overlay::{build_elems_with_orientation, build_globals};
 const GBA_W: u32 = 240;
 const GBA_H: u32 = 160;
 const GBA_PIXELS: usize = (GBA_W * GBA_H) as usize;
+const NOMBRE_BANDERA_HASH_CUADROS: &str = "hash-cuadros.flag";
+const NOMBRE_BANDERA_SYNC_VRAM: &str = "sync-vram.flag";
 
 /// Duración de la vibración háptica de pulsación, en ms (~35 ms permite
 /// vencer la inercia mecánica de motores ERM en tablets sin demorar el feedback).
@@ -98,6 +100,7 @@ struct Compositor {
     game_texture: wgpu::Texture,
     game_texture_view: wgpu::TextureView,
     game_params_buffer: wgpu::Buffer,
+    dump_staging_buffer: wgpu::Buffer,
     /// PPU nativa (composición por píxel en la GPU). Se construye de forma
     /// perezosa, la primera vez que se usa.
     ppu_nativa: Option<crate::ppu_nativa::PpuNativaPipeline>,
@@ -227,6 +230,8 @@ const PREFERIR_OPENGL_ES: bool = false;
 /// Para preservar la nitidez nativa y garantizar arranque inmediato a 60 FPS sin tirones,
 /// la calibración permanece en `false`.
 const CALIBRAR_PRESENTACION: bool = false;
+
+pub use crate::perf::{extraer_estado_capas, formatear_telemetria_capas, EstadoCapas};
 
 pub use crate::present::calcular_escala_swapchain;
 
@@ -462,8 +467,15 @@ impl Compositor {
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING
                 | wgpu::TextureUsages::COPY_DST
-                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+                | wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC,
             view_formats: &[],
+        });
+        let dump_staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("dump-staging-buffer"),
+            size: (1024 * GBA_H) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
         });
         let game_texture_view = game_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let game_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -832,6 +844,7 @@ impl Compositor {
             game_texture,
             game_texture_view,
             game_params_buffer,
+            dump_staging_buffer,
             ppu_nativa,
             ppu_nativa_fallida: false,
             overlay_pipeline,
@@ -849,6 +862,60 @@ impl Compositor {
             ultimo_overlay_globals: None,
             ultimo_overlay_elems: None,
         })
+    }
+
+    /// Lee los 240x160 píxeles renderizados en `game_texture` (GPU) hacia un búfer RGB de 8 bits.
+    pub fn leer_textura_juego_rgb(&self) -> Result<Vec<u8>, String> {
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("staging-read-encoder"),
+            });
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.game_texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            wgpu::TexelCopyBufferInfo {
+                buffer: &self.dump_staging_buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(1024),
+                    rows_per_image: Some(GBA_H),
+                },
+            },
+            wgpu::Extent3d {
+                width: GBA_W,
+                height: GBA_H,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.queue.submit(Some(encoder.finish()));
+
+        let slice = self.dump_staging_buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
+        let _ = self.device.poll(wgpu::PollType::Wait);
+        rx.recv()
+            .map_err(|e| format!("fallo al recibir mapeo: {e}"))?
+            .map_err(|e| format!("fallo al mapear staging buffer: {e}"))?;
+
+        let datos = slice.get_mapped_range();
+        let mut rgb = Vec::with_capacity((GBA_W * GBA_H * 3) as usize);
+        for y in 0..GBA_H as usize {
+            let ini = y * 1024;
+            for x in 0..GBA_W as usize {
+                let o = ini + x * 4;
+                rgb.extend_from_slice(&datos[o..o + 3]);
+            }
+        }
+        drop(datos);
+        self.dump_staging_buffer.unmap();
+        Ok(rgb)
     }
 
     /// Modo de presentación activo del swapchain (diagnóstico de telemetría).
@@ -947,6 +1014,7 @@ impl Compositor {
         touch: &TouchController,
         is_native: bool,
         ppu_nativa_activa: bool,
+        sync_vram_activo: bool,
     ) -> Result<DrawPhases, String> {
         let t_render_start = std::time::Instant::now();
         // Dos espacios de coordenadas distintos y no intercambiables:
@@ -1010,6 +1078,9 @@ impl Compositor {
                 Some(&ppu.io_lineas),
                 Some(&ppu.paleta_lineas),
             );
+            if sync_vram_activo {
+                let _ = self.device.poll(wgpu::PollType::Wait);
+            }
             true
         } else {
             debug_assert_eq!(rgba.len(), GBA_PIXELS);
@@ -1686,6 +1757,21 @@ struct AppState {
     calibracion: Option<crate::present::PresentCalibration>,
     /// Ruta del archivo de guardado .sav activo.
     save_path: Option<std::path::PathBuf>,
+    /// Gestor asíncrono de volcado de fotogramas y diagnóstico causal en Android.
+    gestor_volcado: Option<crate::volcado::GestorVolcado>,
+    /// Indica si el volcado de fotogramas a disco está grabando actualmente.
+    volcado_activo: bool,
+    /// Indica si el volcado fue activado manualmente mediante combinación de botones.
+    volcado_manual: bool,
+    /// Estado previo de la bandera `dump-frames.flag` en disco.
+    bandera_volcado_previa: bool,
+    /// Estado previo de la combinación táctil L+R+Select+Start para disparo por flanco.
+    combo_volcado_previo: bool,
+    /// Estado previo del rastreador de capas para telemetría diferencial.
+    estado_capas_previo: Option<EstadoCapas>,
+    hash_cuadros_activo: bool,
+    sync_vram_activo: bool,
+    rel_dragon: Option<u32>,
 }
 
 impl AppState {
@@ -1715,6 +1801,15 @@ impl AppState {
             ppu_nativa_activa: false,
             audio_activo: true,
             calibracion: None,
+            gestor_volcado: None,
+            volcado_activo: false,
+            volcado_manual: false,
+            bandera_volcado_previa: false,
+            combo_volcado_previo: false,
+            estado_capas_previo: None,
+            hash_cuadros_activo: false,
+            sync_vram_activo: false,
+            rel_dragon: None,
         }
     }
 
@@ -1888,6 +1983,7 @@ impl AppState {
             &self.touch,
             is_native,
             self.ppu_nativa_activa,
+            self.sync_vram_activo,
         );
         if compositor.ppu_nativa_fallida && self.ppu_nativa_activa {
             self.ppu_nativa_activa = false;
@@ -1955,6 +2051,59 @@ impl AppState {
         }
         let msg = format!("# audio_nativo={}", if activo { "ON" } else { "OFF" });
         self.append_perf_line(&msg);
+    }
+
+    /// Reevalúa la bandera de activación de volcado de fotogramas periódicamente.
+    fn reevaluar_hash_cuadros(&mut self) {
+        self.hash_cuadros_activo = crate::perf::resolve_perf_candidates(&self.search_dirs)
+            .iter()
+            .any(|dir| dir.join(NOMBRE_BANDERA_HASH_CUADROS).exists());
+        self.sync_vram_activo = crate::perf::resolve_perf_candidates(&self.search_dirs)
+            .iter()
+            .any(|dir| dir.join(NOMBRE_BANDERA_SYNC_VRAM).exists());
+    }
+
+    fn reevaluar_volcado(&mut self) {
+        let por_bandera = crate::volcado::volcado_activado_por_bandera(&self.search_dirs);
+        if por_bandera != self.bandera_volcado_previa {
+            self.bandera_volcado_previa = por_bandera;
+            self.fijar_volcado_activo(self.volcado_manual || por_bandera);
+        }
+    }
+
+    /// Establece el estado de grabación del volcado actualizando worker y HUD.
+    fn fijar_volcado_activo(&mut self, activo: bool) {
+        if self.volcado_activo == activo {
+            return;
+        }
+        self.volcado_activo = activo;
+        if let Some(worker) = &self.worker {
+            worker.bridge().set_dumping_enabled(activo);
+        }
+        if let Some(comp) = self.compositor.as_mut() {
+            comp.fps_counter.set_recording(activo);
+        }
+        if activo {
+            if self.gestor_volcado.is_none() {
+                self.gestor_volcado = Some(crate::volcado::GestorVolcado::new(&self.search_dirs));
+            }
+            log::info!("SISTEMA DE VOLCADO: ACTIVADO [REC]");
+        } else {
+            log::info!("SISTEMA DE VOLCADO: DETENIDO");
+        }
+        let msg = format!("# volcado_rec={}", if activo { "ON" } else { "OFF" });
+        self.append_perf_line(&msg);
+    }
+
+    /// Evalúa si el estado de capas cambió respecto al fotograma previo y registra
+    /// la línea de telemetría `# capas ...` correspondiente.
+    pub fn registrar_cambio_capas(&mut self, frame: u64, actual: EstadoCapas, bldcnt: u16) {
+        if Some(actual) != self.estado_capas_previo {
+            self.estado_capas_previo = Some(actual);
+            let msg = formatear_telemetria_capas(frame, &actual, bldcnt);
+            log::info!("PERF: {}", msg);
+            self.append_perf_line(&msg);
+        }
     }
 
     /// Añade una línea de comentario (`# ...`) al archivo de telemetría con su
@@ -2100,6 +2249,19 @@ impl AppState {
     /// Publica la máscara KEYINPUT combinada (táctil + mando físico) en el `EmulationBridge`.
     fn publish_keys(&mut self) {
         let keys = self.combined_keys();
+
+        // Combinación L + R + Select + Start (0x030C activa en bajo)
+        let combo = (!keys & 0x030C) == 0x030C;
+        if combo && !self.combo_volcado_previo {
+            self.volcado_manual = !self.volcado_manual;
+            log::info!(
+                "Alternando volcado de fotogramas por combinación táctil L+R+Select+Start -> {}",
+                self.volcado_manual
+            );
+            self.fijar_volcado_activo(self.volcado_manual || self.bandera_volcado_previa);
+        }
+        self.combo_volcado_previo = combo;
+
         if let Some(worker) = &self.worker {
             worker.bridge().set_keys(keys);
         }
@@ -2522,6 +2684,185 @@ pub fn android_main(app: android_activity::AndroidApp) {
                             phases.es_nativa,
                         );
                         state.perf.record_ppu_hw(hw_sample);
+
+                        let capas_info = state.latest_frame.as_ref().and_then(|p| {
+                            p.ppu_state.as_ref().map(|ps| {
+                                (p.frame_number, extraer_estado_capas(ps, phases.es_nativa))
+                            })
+                        });
+
+                        if let Some((frame, (actual, bldcnt))) = capas_info {
+                            state.registrar_cambio_capas(frame, actual, bldcnt);
+                            if state.hash_cuadros_activo {
+                                let es_dragon = (actual.dispcnt & 7) == 0
+                                    && (actual.dispcnt & 0x0C00) == 0x0C00
+                                    && (bldcnt & 0x2008) == 0x2008
+                                    && ((bldcnt >> 6) & 3) == 1;
+                                if es_dragon && state.rel_dragon.is_none() {
+                                    state.rel_dragon = Some(0);
+                                }
+                                if let Some(rel) = state.rel_dragon {
+                                    if rel <= 600 {
+                                        if let Some(pkt) = state.latest_frame.as_ref() {
+                                            if let Some(ps) = pkt.ppu_state.as_ref() {
+                                                let (_capas_staging, comps_staging) = crate::ppu_nativa::EstadoPpuNativa::decodificar_lineas(&ps.io_lineas);
+                                                let mut comps_sanadas = comps_staging;
+                                                crate::ppu_nativa::EstadoPpuNativa::sanear_bldcnt_cinematica_dragon(&mut comps_sanadas);
+                                                let h = crate::ppu_nativa::calcular_hash_entrada(
+                                                    &comps_sanadas,
+                                                    &ps.vram[..],
+                                                    &ps.oam[..],
+                                                    &ps.palette[..],
+                                                );
+                                                let hu =
+                                                    crate::ppu_nativa::calcular_huellas_componentes(
+                                                        &comps_sanadas,
+                                                        &ps.vram[..],
+                                                        &ps.oam[..],
+                                                        &ps.palette[..],
+                                                        &*ps.paleta_lineas,
+                                                    );
+                                                let rgb_opt = state
+                                                    .compositor
+                                                    .as_ref()
+                                                    .and_then(|c| c.leer_textura_juego_rgb().ok());
+                                                let sal = rgb_opt
+                                                    .as_ref()
+                                                    .map(|rgb| crate::ppu_nativa::fnv1a_32(rgb))
+                                                    .unwrap_or(0);
+                                                for target in [86, 150] {
+                                                    if rel == target {
+                                                        let txt_lineas =
+                                                            crate::ppu_nativa::volcar_registros_lineas(
+                                                                &ps.io_lineas[..],
+                                                                160,
+                                                            );
+                                                        let txt_bg2 =
+                                                            crate::ppu_nativa::volcar_bg2_y_dma(
+                                                                &ps.io_lineas[..],
+                                                                &ps.io[..],
+                                                            );
+                                                        let candidate_dirs =
+                                                            crate::perf::resolve_perf_candidates(
+                                                                &state.search_dirs,
+                                                            );
+                                                        let guardar_archivo =
+                                                            |nombre: &str, bytes: &[u8]| {
+                                                                let mut guardado = false;
+                                                                for dir in &candidate_dirs {
+                                                                    let ruta = dir.join(nombre);
+                                                                    if std::fs::write(&ruta, bytes)
+                                                                        .is_ok()
+                                                                    {
+                                                                        log::info!(
+                                                                            "Guardado volcado {} en {}",
+                                                                            nombre,
+                                                                            ruta.display()
+                                                                        );
+                                                                        guardado = true;
+                                                                        break;
+                                                                    }
+                                                                }
+                                                                if !guardado
+                                                                    && !state.search_dirs.is_empty()
+                                                                {
+                                                                    let ruta = state.search_dirs[0]
+                                                                        .join(nombre);
+                                                                    if std::fs::write(&ruta, bytes)
+                                                                        .is_ok()
+                                                                    {
+                                                                        log::info!(
+                                                                            "Guardado volcado {} en {}",
+                                                                            nombre,
+                                                                            ruta.display()
+                                                                        );
+                                                                    }
+                                                                }
+                                                            };
+                                                        guardar_archivo(
+                                                            &format!("cuadro-{target}-lineas-android.txt"),
+                                                            txt_lineas.as_bytes(),
+                                                        );
+                                                        guardar_archivo(
+                                                            &format!(
+                                                                "cuadro-{target}-bg2-android.txt"
+                                                            ),
+                                                            txt_bg2.as_bytes(),
+                                                        );
+
+                                                        if let Some(ref rgb) = rgb_opt {
+                                                            let mut ppm =
+                                                                Vec::with_capacity(15 + rgb.len());
+                                                            ppm.extend_from_slice(
+                                                                b"P6\n240 160\n255\n",
+                                                            );
+                                                            ppm.extend_from_slice(rgb);
+                                                            guardar_archivo(
+                                                                &format!(
+                                                                    "cuadro-{target}-android.ppm"
+                                                                ),
+                                                                &ppm,
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                                let msg = format!(
+                                                    "# hash rel={} frame={} ent={:08X} sal={:08X} bld0={:04X} bld50={:04X} bld100={:04X} bld150={:04X} bg3_blend={} hc={:08X} hv={:08X} ho={:08X} hp={:08X} hl={:08X}",
+                                                    rel,
+                                                    frame,
+                                                    h.hash,
+                                                    sal,
+                                                    h.bld0,
+                                                    h.bld50,
+                                                    h.bld100,
+                                                    h.bld150,
+                                                    h.bg3_blend,
+                                                    hu.comps,
+                                                    hu.vram,
+                                                    hu.oam,
+                                                    hu.paleta,
+                                                    hu.paleta_lineas
+                                                );
+                                                log::info!("PERF: {}", msg);
+                                                state.append_perf_line(&msg);
+                                                state.rel_dragon = Some(rel + 1);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if state.volcado_activo {
+                            let packet_ref = state.latest_frame.as_ref().unwrap();
+                            let mut sw_linea_rgb =
+                                Vec::with_capacity(crate::pipeline::GBA_PIXELS * 3);
+                            for px in packet_ref.rgba.iter() {
+                                sw_linea_rgb.extend_from_slice(&px[..3]);
+                            }
+
+                            let nat_rgb = if let Some(comp) = state.compositor.as_ref() {
+                                comp.leer_textura_juego_rgb().unwrap_or_else(|e| {
+                                    log::warn!("Fallo al leer textura GPU para volcado: {e}");
+                                    sw_linea_rgb.clone()
+                                })
+                            } else {
+                                sw_linea_rgb.clone()
+                            };
+
+                            if let Some(gestor) = state.gestor_volcado.as_mut() {
+                                if gestor.esta_grabando() {
+                                    let tarea = crate::volcado::TareaVolcado {
+                                        cuadro: packet_ref.frame_number,
+                                        sw_fin: Vec::new(),
+                                        sw_linea: sw_linea_rgb,
+                                        nat: nat_rgb,
+                                        ppu_state: packet_ref.ppu_state.clone().map(Box::new),
+                                    };
+                                    let _ = gestor.intentar_enviar_cuadro(tarea);
+                                }
+                            }
+                        }
                         state.perf.record_frame(crate::perf::FrameTiming {
                             ejec_ms: last_step_timing.ejec_ms,
                             color_ms: last_step_timing.color_ms,
@@ -2555,10 +2896,23 @@ pub fn android_main(app: android_activity::AndroidApp) {
                         // telemetría de la misma ventana que lo describe.
                         state.reevaluar_ppu_nativa();
                         state.reevaluar_audio_nativo();
+                        state.reevaluar_volcado();
+                        state.reevaluar_hash_cuadros();
                         // La calibración va primero: así sus líneas `#` preceden a
                         // la ventana `t=` a la que describen.
                         state.calibrar_presentacion(&report, (win_w, win_h));
                         state.write_perf_report(&report);
+                        if let Some(worker) = &state.worker {
+                            let stats = worker.bridge().drain_dragon_anomalias();
+                            if stats.count > 0 {
+                                let msg = format!(
+                                    "# dragon_anomalias count={} bldcnt_l50=0x{:04X} bldcnt_fin=0x{:04X} blend_lines={}",
+                                    stats.count, stats.bldcnt_l50, stats.bldcnt_fin, stats.blend_lines
+                                );
+                                log::info!("PERF: {}", msg);
+                                state.append_perf_line(&msg);
+                            }
+                        }
                         if report.second_index % 2 == 0 {
                             let top = crate::recomp::drain_top_hotspots(6);
                             if !top.is_empty() {

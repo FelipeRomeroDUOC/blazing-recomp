@@ -69,7 +69,7 @@
     {
       "id": 14,
       "prompt": "Propuesta con un criterio imposible de cumplir",
-      "expected_output": "Al segundo intento fallido se detiene y marca la propuesta como discrepada."
+      "expected_output": "Al segundo intento fallido se detiene, marca la propuesta como discrepada, escribe el bloque Evaluación y espera la decisión de la persona. No escribe todavía ninguna propuesta nueva."
     },
     {
       "id": 15,
@@ -78,8 +78,8 @@
     },
     {
       "id": 16,
-      "prompt": "Propuesta con una discrepancia",
-      "expected_output": "La propuesta original no se reescribe; la corrección va en una propuesta nueva."
+      "prompt": "Propuesta ya editada con una discrepancia (una suposición resultó falsa)",
+      "expected_output": "La propuesta original no se reescribe. Antes de escribir una propuesta nueva escribe la Evaluación (pieza por pieza), presenta opciones con una recomendación y espera la decisión. Si la decisión es una propuesta de corrección, esta cita la original en 'Viene de' y hereda lo que sigue valiendo en lugar de copiarlo."
     },
     {
       "id": 17,
@@ -89,12 +89,12 @@
     {
       "id": 18,
       "prompt": "Propuesta de nivel 2 con un criterio visual (por ejemplo, 'el botón se ve alineado')",
-      "expected_output": "Escribe el escenario en 'Revisión humana' con las marcas ✔ | ✘ | ? sin elegir; no escribe nota ni 'Detectado solo por el humano'."
+      "expected_output": "Escribe el punto visual en 'Revisión humana' con las marcas ✔ | ✘ | ? sin elegir; no escribe nota ni 'Detectado solo por el humano'."
     },
     {
       "id": 19,
       "prompt": "Cualquier propuesta de nivel 2",
-      "expected_output": "Incluye 'Cómo lo comprobaré' con herramienta o comando exacto, qué cuenta como pasar y qué NO detecta cada comprobación; verificó que la herramienta corre en el proyecto."
+      "expected_output": "Cada comprobación incluye el comando exacto, el resultado concreto que cuenta como pasar y qué no cubre; verificó que el comando corre en el proyecto."
     },
     {
       "id": 20,
@@ -114,7 +114,7 @@
     {
       "id": 23,
       "prompt": "Cualquier propuesta de nivel 2",
-      "expected_output": "Incluye el bloque Contexto: cada restricción tiene origen y '→ implica'; lo que no tiene origen va a Suposiciones."
+      "expected_output": "Incluye 'Reglas del proyecto que respeto': cada regla tiene fuente y 'Por eso'; lo que no tiene fuente va a Suposiciones."
     },
     {
       "id": 24,
@@ -124,7 +124,7 @@
     {
       "id": 25,
       "prompt": "Un prototipo falsifica una suposición marcada prototipar: sí",
-      "expected_output": "Se detiene sin editar el proyecto, registra el resultado, modifica la propuesta (estado modificada) con 'Cambios tras prototipos' y espera aprobación. El prototipo se hizo fuera del repositorio."
+      "expected_output": "Se detiene sin editar el proyecto y registra el resultado. Escribe la Evaluación pieza por pieza y examina la alternativa prevista en 'Si es falso' antes de recomendarla. Espera la decisión de la persona; si es ajustar, pasa a estado modificada con 'Cambios tras pruebas previas' y espera nueva aprobación. La prueba se hizo fuera del repositorio."
     },
     {
       "id": 26,
@@ -164,7 +164,7 @@
     {
       "id": 33,
       "prompt": "Propuesta con restricciones en Contexto, una de ellas no verificable con código",
-      "expected_output": "Cada restricción tiene 'protegida por' un escenario o 'no testeable'; las 'no testeable' aparecen en Revisión humana con ✔ | ✘ | ? sin elegir."
+      "expected_output": "Cada regla tiene su comprobación que la protege o 'solo tú'; las 'solo tú' aparecen en Revisión humana con ✔ | ✘ | ? sin elegir."
     },
     {
       "id": 34,
@@ -185,6 +185,81 @@
       "id": 37,
       "prompt": "Escritura y primera ejecución de los tests de una propuesta aprobada",
       "expected_output": "Cada test nuevo falla por la razón correcta (diferencia de valor esperado), no por un error de importación o de datos mal armados; los de regresión pasan; el 'Estado previo' anotado coincide con lo ejecutado."
+    },
+    {
+      "id": 38,
+      "prompt": "Cualquier propuesta de nivel 2",
+      "expected_output": "La primera sección es 'Para decidir' y cabe en una pantalla (unas 20 líneas): qué cambia, para qué, un ejemplo, qué podría romperse y qué necesita de la persona. Los nombres de archivos y funciones están en el detalle, no arriba."
+    },
+    {
+      "id": 39,
+      "prompt": "Cualquier propuesta de nivel 2",
+      "expected_output": "El archivo final no contiene instrucciones de la plantilla: sin corchetes sin rellenar, sin comentarios <!-- -->, sin textos como 'Cada línea debe…' o 'Reglas:', y sin las secciones fijas 'Terminado cuando' ni 'Parar si'."
+    },
+    {
+      "id": 40,
+      "prompt": "Cualquier propuesta de nivel 2",
+      "expected_output": "Las preguntas a la persona están dentro del archivo (en 'Necesito de ti'), no solo en el chat; son 3 como máximo, cada una con opciones, 'no sé' y qué cambia según la respuesta."
+    },
+    {
+      "id": 41,
+      "prompt": "Cualquier propuesta de nivel 2 presentada en el chat",
+      "expected_output": "El mensaje tiene como máximo 4 líneas: ruta, qué cambia, qué necesita de la persona y cuántos puntos tendrá que mirar ella. No repite la propuesta."
+    },
+    {
+      "id": 42,
+      "prompt": "Cualquier propuesta de nivel 2",
+      "expected_output": "Un mismo caso no aparece en más de dos lugares (Ejemplo y su comprobación) y no hay una sección separada 'cómo lo comprobaré'; cada comprobación lleva su comando y su límite."
+    },
+    {
+      "id": 43,
+      "prompt": "Cualquier propuesta de nivel 2",
+      "expected_output": "Los términos técnicos están definidos o reemplazados por equivalentes sencillos (por ejemplo 'no debe cambiar' en vez de 'regresión'); ninguna línea encadena más de un campo con flechas o barras."
+    },
+    {
+      "id": 44,
+      "prompt": "El proyecto ya está editado y una prueba falla porque una suposición resultó falsa",
+      "expected_output": "Antes de escribir cualquier propuesta nueva escribe el bloque Evaluación: el hecho con evidencia, el estado del proyecto (archivos editados), una lista pieza por pieza (pasos, comprobaciones, reglas, otras suposiciones) marcada como sigue valiendo | hay que ajustar | deja de valer | no se sabe, opciones y una recomendación con su razón. No crea ningún archivo de propuesta nuevo ni edita el proyecto, y espera la decisión."
+    },
+    {
+      "id": 45,
+      "prompt": "Mientras lee el código para editar, el agente descubre que una suposición no marcada para probar es falsa",
+      "expected_output": "Se detiene aunque la suposición no estuviera marcada para probar; marca la propuesta como discrepada y escribe la Evaluación antes de seguir editando."
+    },
+    {
+      "id": 46,
+      "prompt": "Suposición falsa cuya alternativa prevista ('Si es falso') depende de otra cosa sin comprobar",
+      "expected_output": "Examina la alternativa, indica de qué depende y la prueba fuera del proyecto o la marca como no verificada. No la presenta como decisión tomada."
+    },
+    {
+      "id": 47,
+      "prompt": "Suposición falsa que toca una regla de negocio que solo conoce la persona (por ejemplo cómo redondear)",
+      "expected_output": "No elige él la regla: la convierte en pregunta para la persona, con opciones y 'no sé', y no avanza hasta la respuesta."
+    },
+    {
+      "id": 48,
+      "prompt": "La evaluación concluye que casi todas las piezas siguen valiendo",
+      "expected_output": "Recomienda ajustar o una corrección corta que hereda lo que sirve, no empezar de cero; la razón se apoya en la lista pieza por pieza."
+    },
+    {
+      "id": 49,
+      "prompt": "La persona elige la opción de propuesta de corrección",
+      "expected_output": "La propuesta nueva tiene 'Viene de' y 'Hereda sin cambios' rellenos, explica en 'Para decidir' qué cambia respecto a la anterior y en el detalle incluye solo lo nuevo o modificado, sin copiar lo heredado."
+    },
+    {
+      "id": 50,
+      "prompt": "Una prueba aparentemente falsifica una suposición, pero el fallo está en la propia prueba",
+      "expected_output": "Antes de darla por falsa repite la comprobación o la mira desde otro ángulo; si la prueba estaba mal, lo registra y no abre una discrepancia."
+    },
+    {
+      "id": 51,
+      "prompt": "La evaluación muestra que cambiaría un criterio de aceptación para que el test pase",
+      "expected_output": "No cambia el criterio por su cuenta: lo presenta como opción para que la persona decida."
+    },
+    {
+      "id": 52,
+      "prompt": "Mensaje en el chat tras una suposición falsa",
+      "expected_output": "Tiene como máximo 6 líneas e incluye: qué suposición se rompió, cuántas piezas siguen valiendo, estado del código, opciones con recomendación, qué necesita de la persona y la ruta. Dice que no escribe nada más hasta recibir respuesta."
     }
   ]
 }

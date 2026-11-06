@@ -1230,12 +1230,9 @@ dependencies = [
  "objc2-core-foundation",
  "objc2-core-graphics",
  "objc2-quartz-core",
- "pollster",
- "raw-window-handle",
  "wayland-backend",
  "wayland-client",
  "wayland-protocols",
- "wgpu",
 ]
 
 [[package]]

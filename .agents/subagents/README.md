@@ -1,63 +1,66 @@
 # Subagentes de Blazing Recomp
 
-Encargos reutilizables para delegar trabajo técnico fuera del hilo principal. Los roles y sus
+Encargos reutilizables para delegar trabajo técnico con razonamiento real fuera del hilo principal. Los roles y sus
 disparadores son los de la matriz de [AGENTS.md §4](../../AGENTS.md); aquí vive el texto que se le pasa
 al subagente y el modelo Gemini que le corresponde.
 
+> [!IMPORTANT]
+> **Protección de Cuota Argon, Prohibición de `inherit` y Scripts Deterministas:**
+> - El parámetro `Model` en Antigravity debe declararse **siempre explícitamente** (`flash`, `flash_lite` o `pro`). No se permite `inherit`.
+> - **Prioridad Gemini 3.8 Flash (`flash`):** Todo el trabajo analítico, diagnóstico (`Investigador`), auditoría editorial (`Proposal Reviewer`) y construcción de código (`Constructor`) se ejecuta en **Gemini 3.8 Flash**. **Gemini 4 Argon (`pro`)** queda reservado exclusivamente como escalamiento de último recurso (`Deep Debugger`).
+> - **Roles podados / reemplazados por código determinista:**
+>   - `Doc Manager`: podado (automatizado por `post_tool_runner.py`).
+>   - `Test Runner`: podado y reemplazado por `python scripts/run_tests_summary.py`.
+>   - `APK Builder`: podado y reemplazado por `python scripts/build_apk_summary.py`.
+
 ## Índice por División de Capacidades
 
-### 1. División Razonamiento Crítico (Modelos Pro)
+### 1. División Reserva Crítica de Escalamiento (Gemini 4 Argon / Pro)
 | Rol | Encargo | Disparador Principal | Modelo Antigravity | Modelo DSH |
 | :--- | :--- | :--- | :--- | :--- |
-| **Investigador** | [investigador.md](investigador.md) | Diagnóstico de causas raíz, bugs complejos, arquitectura y ROM | `pro` | `google/gemini-1.5-pro` |
-| **Proposal Reviewer** | [proposal-reviewer.md](proposal-reviewer.md) | Auditoría editorial (ISO 24495-1) y verificabilidad de propuestas N2 | `pro` | `google/gemini-1.5-pro` |
-| **Constructor** | [constructor.md](constructor.md) | Programación de código nuevo y módulos aprobados en Rust/C | `pro` (o `flash`) | `google/gemini-1.5-pro` |
+| **Deep Debugger** *(Escalamiento)* | [investigador.md](investigador.md) | Solo si `Investigador` (`3.8 Flash`) no logra aislar un fallo crítico tras un primer intento | `pro` | `google/gemini-4-argon` |
 
-### 2. División Ejecución Mecánica (Modelos Flash-Lite)
+### 2. División Núcleo Técnico y Analítico (Gemini 3.8 Flash)
 | Rol | Encargo | Disparador Principal | Modelo Antigravity | Modelo DSH |
 | :--- | :--- | :--- | :--- | :--- |
-| **Test Runner** | [test-runner.md](test-runner.md) | Ejecución de suites de tests, fotogramas dorados y mutantes | `flash_lite` | `google/gemini-3.1-flash-lite` |
-| **APK Builder** | [apk-builder.md](apk-builder.md) | Compilar AOT C11, `cargo ndk`, `cargo build`, Fat APK | `flash_lite` | `google/gemini-3.5-flash-lite` |
+| **Investigador** | [investigador.md](investigador.md) | Diagnóstico de causas raíz, arquitectura PPU/Audio/DMA, CodeGraph y ROM | `flash` | `google/gemini-3.8-flash` |
+| **Proposal Reviewer** | [proposal-reviewer.md](proposal-reviewer.md) | Auditoría editorial (ISO 24495-1) y verificabilidad de propuestas N2 | `flash` | `google/gemini-3.8-flash` |
+| **Constructor** | [constructor.md](constructor.md) | Programación de código nuevo, tests unitarios y módulos aprobados en Rust/C | `flash` | `google/gemini-3.8-flash` |
+
+### 3. División Exploración Masiva (Flash-Lite)
+| Rol | Encargo | Disparador Principal | Modelo Antigravity | Modelo DSH |
+| :--- | :--- | :--- | :--- | :--- |
 | **Code Scout** | [code-scout.md](code-scout.md) | Contingencia: búsquedas no indexadas de más de 10 archivos completos | `flash_lite` | `google/gemini-3.5-flash-lite` |
-
-## Reparto y cuota
-
-- **Modelos Pro:** Se reservan estrictamente para tareas de razonamiento profundo (diagnóstico de causas raíz, auditoría de propuestas y desarrollo de código algorítmico).
-- **Modelos Flash-Lite:** Cada modelo lite tiene 500 peticiones diarias. Absorben el 90% del trabajo pesado diario (compilación de APKs y suites de tests masivas) con coste despreciable de cuota.
-
-## Cómo se invoca en DeepSeek Harness (DSH)
-
-La herramienta `subagent` acepta `description`, `prompt`, `provider` y `model`. El rol viaja dentro del `prompt`.
-
-1. Abre el archivo del rol y copia su contenido completo.
-2. Ese contenido es el `prompt`. Añade al final la tarea concreta.
-3. Pasa el `provider` y el `model` que declara el encargo, y usa el nombre del rol como `description`.
-
-```text
-subagent(
-  description = "Test Runner",
-  provider    = "google",
-  model       = "gemini-3.1-flash-lite",
-  prompt      = "<contenido de .agents/subagents/test-runner.md>
-
-Tarea: ejecuta la suite de tests unitarios y reporta el resultado en 3 líneas."
-)
-```
 
 ## Cómo se invoca en Antigravity
 
 ```text
-# Para tareas de razonamiento (pro)
-invoke_subagent(TypeName='research', Role='Investigador', Model='pro', Prompt='...')
-invoke_subagent(TypeName='research', Role='Proposal Reviewer', Model='pro', Prompt='...')
-invoke_subagent(TypeName='self', Role='Constructor', Model='pro', Prompt='...')
+# 1. Núcleo Técnico y Analítico (flash -> Gemini 3.8 Flash)
+invoke_subagent(TypeName='self', Role='Investigador', Model='flash', Prompt='...')
+invoke_subagent(TypeName='self', Role='Proposal Reviewer', Model='flash', Prompt='...')
+invoke_subagent(TypeName='self', Role='Constructor', Model='flash', Prompt='...')
 
-# Para tareas mecánicas (flash_lite)
-invoke_subagent(TypeName='self', Role='Test Runner', Model='flash_lite', Prompt='...')
-invoke_subagent(TypeName='self', Role='APK Builder', Model='flash_lite', Prompt='...')
+# 2. Exploración Masiva (flash_lite -> Gemini 3.5 Flash-Lite)
+invoke_subagent(TypeName='self', Role='Code Scout', Model='flash_lite', Prompt='...')
+
+# 3. Escalamiento Crítico de Último Recurso (pro -> Gemini 4 Argon)
+invoke_subagent(TypeName='self', Role='Deep Debugger', Model='pro', Prompt='...')
 ```
 
-## Roles podados o absorbidos
+## Registro Persistente y Consulta entre Agentes (`ledger.py`)
 
-- **Doc Manager (Podado):** Los hooks `post_tool_runner` regeneran índices, validan Diátaxis y actualizan la preview automáticamente.
-- **Telemetry Analyzer y Label Auditor (Absorbidos):** Absorbidos como misiones dinámicas del **Investigador** cuando se requiere análisis profundo de rendimiento o desensamblado ROM.
+Toda acción del Orquestador y de los subagentes queda registrada persistentemente en SQLite (`.agents/telemetry/agent_ledger.db`) y reflejada en `.agents/telemetry/ACTIVITY_LOG.md`.
+
+```bash
+# Ver las últimas 20 acciones de todos los agentes
+python .agents/telemetry/ledger.py --tail 20
+
+# Filtrar acciones de un rol o sesión específica
+python .agents/telemetry/ledger.py --role "Investigador"
+
+# Ver estadísticas de uso por nivel de modelo (Argon, Flash 3.8, Flash-Lite)
+python .agents/telemetry/ledger.py --stats
+
+# Abrir el visor nativo de escritorio (para humanos, sin navegador)
+python .agents/telemetry/ledger.py --gui
+```

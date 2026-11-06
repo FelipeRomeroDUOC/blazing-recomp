@@ -145,6 +145,18 @@ impl GameRunner {
         self.machine.bus.capturar_lut_ligera = enabled;
     }
 
+    /// Permite forzar o anular la omisión de la PPU por software (para volcado de fotogramas).
+    #[inline]
+    pub fn set_omitir_ppu_software(&mut self, omitir: bool) {
+        self.machine.bus.omitir_ppu_software = omitir;
+    }
+
+    /// Indica si se está omitiendo la PPU por software en el bus.
+    #[inline]
+    pub fn is_omitir_ppu_software(&self) -> bool {
+        self.machine.bus.omitir_ppu_software
+    }
+
     /// Indica si el renderizado PPU Shim en GPU esta activo.
     #[inline]
     pub fn is_gpu_ppu_enabled(&self) -> bool {
@@ -269,7 +281,7 @@ impl GameRunner {
         let apu_ms = (hw.apu_ns as f64) / 1_000_000.0;
 
         if self.machine.bus.frame_ready {
-            let color_ms = if self.gpu_ppu_enabled {
+            let color_ms = if self.gpu_ppu_enabled && self.machine.bus.omitir_ppu_software {
                 0.0
             } else {
                 let t2 = std::time::Instant::now();

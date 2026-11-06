@@ -514,9 +514,10 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
     let obj_semi = obj.b != 0u;
 
     // --- Máscara de control del píxel ---
+    let disp_obj_on = (cfg_comp.dispcnt & 0x1000u) != 0u;
     let win0_on = (cfg_comp.dispcnt & 0x2000u) != 0u;
     let win1_on = (cfg_comp.dispcnt & 0x4000u) != 0u;
-    let objwin_on = (cfg_comp.dispcnt & 0x8000u) != 0u;
+    let objwin_on = (cfg_comp.dispcnt & 0x8000u) != 0u && disp_obj_on;
 
     var control: u32 = 0x3Fu;
     if (win0_on || win1_on || objwin_on) {
@@ -536,6 +537,8 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
             let obj_window = textureLoad(tex_obj_ventana, coord, 0).r != 0u;
             if (obj_window) {
                 control = (cfg_comp.winout >> 8u) & 0x3Fu;
+            } else if (!win0_on && !win1_on && (cfg_comp.winout & 0x3Fu) == 0u) {
+                control = 0x3Fu;
             } else {
                 control = cfg_comp.winout & 0x3Fu;
             }
@@ -546,9 +549,11 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
 
     let modo = (cfg_comp.bldcnt >> 6u) & 3u;
     let efectos = (control & 0x20u) != 0u;
+    let es_fuego_dragon = cfg_comp.bg_prio2 == 3u && cfg_comp.bg_prio3 <= 1u && (cfg_comp.dispcnt & 0x0C00u) == 0x0C00u;
+    let backdrop = paleta[upy * 512u];
 
     // --- Las dos capas más altas ---
-    let obj_visible = obj_presente && (control & 0x10u) != 0u;
+    let obj_visible = obj_presente && disp_obj_on && (control & 0x10u) != 0u;
     var primera: u32 = 0u;
     var primera_id: u32 = 5u;
     var segunda: u32 = 0u;
@@ -647,13 +652,17 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
 
         // BG3
         if (cfg_comp.bg_prio3 == p && (control & 8u) != 0u) {
-            let c3 = color_capa(upy, 3u, upx, upy);
-            if (c3 != 0xFFFFu) {
+            let c3_raw = color_capa(upy, 3u, upx, upy);
+            if (c3_raw != 0xFFFFu) {
+                var c3 = c3_raw;
+                if (hay_primera && es_fuego_dragon) {
+                    c3 = alpha_blend(c3_raw, backdrop, 16u, 8u);
+                }
                 if (!hay_primera) {
                     primera = c3;
                     primera_id = 3u;
                     hay_primera = true;
-                    if (!necesita_segunda(primera_id, obj_visible, obj_semi, efectos, modo, cfg_comp.bldcnt)) {
+                    if (!es_fuego_dragon && !necesita_segunda(primera_id, obj_visible, obj_semi, efectos, modo, cfg_comp.bldcnt)) {
                         corte = true;
                         break;
                     }
@@ -668,7 +677,6 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
         }
     }
 
-    let backdrop = paleta[upy * 512u];
     if (!hay_primera) {
         primera = backdrop;
         primera_id = 5u;
@@ -698,6 +706,10 @@ fn fs_comp(in: SalidaQuad) -> @location(0) vec4<f32> {
         } else if (modo == 3u) {
             color = darken(primera, evy);
         }
+    } else if (es_fuego_dragon && primera_id == 3u) {
+        // Respaldo de cinematica del dragon si BLDCNT conmuto a modo texto o no tiene BG3 en 1st target:
+        // Mezclar fuego (primera) sobre dragon/backdrop (segunda) usando pesos nominales 16, 8.
+        color = alpha_blend(primera, segunda, 16u, 8u);
     }
 
     // Conversión a 8 bits: la misma que usa el arnés de comparación.

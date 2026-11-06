@@ -25,11 +25,13 @@ Por qué importa: un documento que solo parafrasea el código línea por línea 
 - Si el nivel del usuario o el origen del código cambian mucho el resultado (por ejemplo, es un examen vs. código de un proyecto propio), haz **una sola pregunta corta**. Si no es crítico, no preguntes: asume y avanza.
 - Para ajustar la profundidad, consulta `references/niveles.md`.
 
-### 3. Redactar con la plantilla
+### 3. Redactar con estructura fija (sin abrir `references/` salvo caso especial)
 
-- Usa la estructura de `references/plantilla-documento.md`. Es fija a propósito: un documento con siempre las mismas secciones se vuelve predecible y es más fácil de recorrer.
-- Aplica las reglas de `references/redaccion-accesible.md` en cada sección. Son la parte que más afecta a si el documento se puede estudiar sin perderse.
-- Si necesitas un modelo de cómo queda, mira `assets/ejemplo-documento.md`.
+- Estructura obligatoria del documento:
+  1. **Qué hace este código en una frase** y **Qué necesitas saber antes** (glosario breve sin dar nada por sabido).
+  2. **Bloques paso a paso:** cada bloque cita **máximo 15 líneas de código** (validado automáticamente por `scripts/validar_propuesta_y_skills.py`), explica **qué hace** y **por qué está escrito así**, y cierra con una pregunta **`Tu turno:`** para que la persona lo explique con sus palabras.
+  3. **Recorrido con valores reales:** tabla de seguimiento paso a paso con una entrada concreta.
+  4. **Respuestas a "Tu turno":** al final del documento para que la persona no las vea antes de pensar.
 - Escribe el documento en el idioma del usuario. Los nombres de variables, funciones y palabras clave del lenguaje se dejan tal cual.
 
 ### 4. Verificar antes de entregar

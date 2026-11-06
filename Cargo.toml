@@ -10,11 +10,11 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 gba-core = { git = "https://github.com/JRickey/gba-recomp.git", rev = "de4edf59b872d887046d6a3b005e2df551b6d44c", features = ["perf-counters"] }
-screen = { git = "https://github.com/JRickey/gba-recomp.git", rev = "de4edf59b872d887046d6a3b005e2df551b6d44c" }
+screen = { git = "https://github.com/JRickey/gba-recomp.git", rev = "de4edf59b872d887046d6a3b005e2df551b6d44c", default-features = false }
 log = "0.4"
 raw-window-handle = "0.6"
 jni = "0.22"
-wgpu = "26"
+wgpu = { version = "26", default-features = false, features = ["vulkan", "wgsl"] }
 bytemuck = "1"
 pollster = "0.4"
 fontdue = "0.9"
@@ -27,6 +27,7 @@ naga = { version = "26", features = ["wgsl-in"] }
 android-activity = { version = "0.6", features = ["native-activity"] }
 android_logger = "0.14"
 ndk = { version = "0.9.0", features = ["audio", "api-level-28"] }
+wgpu = { version = "26", features = ["gles"] }
 
 [profile.release]
 opt-level = 3
@@ -44,6 +45,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_Graphics_Gdi",
     "Win32_System_LibraryLoader",
+    "Win32_System_StationsAndDesktops",
 ] }
 
 [[bin]]

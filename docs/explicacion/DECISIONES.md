@@ -69,6 +69,7 @@ Este registro documenta de manera exhaustiva y transparente cada decisión de di
 44. [Renderizado Directo sobre SurfaceView y Formato de Ventana Opaco RGBX_8888](#44-renderizado-directo-sobre-surfaceview-y-formato-de-ventana-opaco-rgbx_8888) — **[Vigente]**
 45. [Pacing de Cuadros Coordinado con Choreographer / VSync y Cola de Entrada Lock-Free](#45-pacing-de-cuadros-coordinado-con-choreographer--vsync-y-cola-de-entrada-lock-free) — **[Vigente]**
 46. [Omisión Pragmática de Registros MMIO no Consultados por Fire Emblem 7](#46-omisión-pragmática-de-registros-mmio-no-consultados-por-fire-emblem-7) — **[Vigente]**
+47. [Erradicación de Antipatrones en Cinemática del Dragón: Prohibición de Saneamiento Forzado, Purgas Ciegas de OBJWIN y Composición Estática WGSL](#47-erradicación-de-antipatrones-en-cinemática-del-dragón-prohibición-de-saneamiento-forzado-purgas-ciegas-de-objwin-y-composición-estática-wgsl) — **[Vigente]**
 
 ---
 
@@ -1193,6 +1194,36 @@ Una implementación completa de hardware de GBA requiere simular decenas de regi
 #### Alternativas y compromisos
 * **Alternativa descartada: Emulación exhaustiva del chipset GBA al estilo de emuladores universales (mGBA / VBA-M).** Descartada por contradecir la visión de un port nativo especializado y liviano.
 * **Compromiso asumido:** Este diseño es específico para *Fire Emblem 7*; portar otros juegos requerirá auditar sus respectivos mapas de acceso MMIO.
+
+---
+
+### 47. Erradicación de Antipatrones en Cinemática del Dragón: Prohibición de Saneamiento Forzado, Purgas Ciegas de OBJWIN y Composición Estática WGSL
+
+> **Estado:** Vigente. Consolida las 5 familias de suposiciones refutadas en 28 propuestas sobre la cinemática del dragón e impone la arquitectura dinámica de mezcla en GPU fiel al hardware.
+
+#### Contexto
+A lo largo de 28 propuestas orientadas a corregir el parpadeo y divergencias en la cinemática del dragón (introducción de *Fire Emblem 7*), se reiteraron sistemáticamente cinco suposiciones fallidas:
+1. Purgar o enmascarar `OBJWIN` (`DISPCNT & 0x8000`) como si fuera un error parasitario (7 propuestas).
+2. "Sanear" heurísticamente registros inyectando constantes mágicas fijas (`BLDCNT = 0x3F68`, `BLDALPHA = 0x0810`) en scanlines superiores (7 propuestas).
+3. Asumir un orden jerárquico estático de capas (BG3 bajo BG2 o viceversa) cableado en el shader WGSL (5 propuestas).
+4. Suponer desincronización de hilos, esperas de ciclo de CPU (`Halt`/IRQ) o fallos de subida en drivers Vulkan en Android (4 propuestas).
+5. Atribuir diferencias al sistema operativo o precisión matemática móvil vs. PC (3 propuestas).
+
+La medición empírica con `hash-cuadros` y la comparación píxel a píxel demostraron que:
+- El rasterizador de referencia en CPU (`gba_core::ppu::render_scanline`) genera **0 diferencias de 38.400 píxeles** con el silicio de la GBA.
+- Android y PC generan **framebuffers idénticos bit a bit** (0 discrepancias entre plataformas).
+- La CPU y la memoria VRAM/OAM están 100% sincronizadas en el momento del renderizado.
+- FE7 altera legítimamente `DISPCNT` y `BLDALPHA` (ej. el cuadro 677 usa `0x0610` para semitransparencias reales). Forzar valores fijos o purgar ventanas legítimas provocaba parpadeos, secuestro de transiciones y halos más claros (`+0x10` por canal).
+
+#### Decisión e implementación
+1. **Prohibición estricta de parches heurísticos (`sanear_bldcnt_*`):** Queda terminantemente prohibido alterar o sobreescribir los registros de hardware que el juego escribe en memoria o en `io_lineas`. El valor transmitido al pipeline de renderizado debe ser 100% crudo y fiel al estado del silicio GBA.
+2. **Prohibición de enmascaramiento ciego de ventanas OBJ:** No se debe forzar el descarte del bit 15 de `DISPCNT` (`0x8000`). La ventana de sprites se procesa únicamente si existen sprites de tipo ventana en OAM; de lo contrario, el shader debe evaluarla conforme a las reglas nativas de la GBA.
+3. **Ordenamiento dinámico de prioridades en WGSL:** El shader `src/ppu_nativa.wgsl` no debe asumir un orden jerárquico fijo entre BG0..BG3. La composición de fragmentos debe consultar dinámicamente las prioridades de cada scanline según `BG0CNT..BG3CNT` (bits 0–1) y los bits de 1.ª y 2.ª diana de `BLDCNT`, reproduciendo fielmente el pipeline de mezcla de 2 capas que ejecuta la PPU de hardware.
+4. **Validación obligatoria contra CPU de referencia:** Cualquier cambio en la PPU nativa debe verificarse mediante comparación píxel a píxel con el renderizador de software (`gba-core`) en los fotogramas clave de prueba (cuadros 86, 150 y 677).
+
+#### Alternativas y compromisos
+* **Alternativa descartada: Mantener una excepción cableada para la cinemática del dragón.** Descartada porque las heurísticas ad-hoc rompían otras escenas y generaban regresiones visuales.
+* **Compromiso asumido:** El fragment shader WGSL asume una ligera mayor complejidad lógica para resolver el ordenamiento de prioridades por línea en GPU, pero garantiza fidelidad universal en todo el juego sin trucos temporales.
 
 ---
 

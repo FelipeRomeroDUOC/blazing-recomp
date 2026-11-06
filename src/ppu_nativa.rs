@@ -401,6 +401,12 @@ impl PixelObj {
     };
 }
 
+impl Default for PixelObj {
+    fn default() -> Self {
+        PixelObj::VACIO
+    }
+}
+
 /// Compone el píxel final aplicando las reglas de `compose()` de la referencia.
 ///
 /// `bg` son los colores de los cuatro fondos (`TRANSPARENTE` si no se ve) y
@@ -469,6 +475,235 @@ pub fn compone_pixel(
             3 => darken(fc, reg.evy()),
             _ => fc,
         }
+    } else {
+        fc
+    }
+}
+
+/// Indica si la pasada de composición necesita buscar una segunda capa tras encontrar la primera.
+///
+/// Solo se necesita segunda capa si la primera es un sprite semitransparente, o si los
+/// efectos están activos, el modo de mezcla es Alfa (modo 1) y la primera capa está
+/// marcada como 1.er objetivo en `BLDCNT`.
+#[inline]
+pub fn necesita_segunda(
+    primera_id: u32,
+    obj_visible: bool,
+    obj_semi: bool,
+    efectos: bool,
+    modo: u32,
+    bldcnt: u32,
+) -> bool {
+    if obj_visible && primera_id == 4 && obj_semi {
+        return true;
+    }
+    if efectos && modo == 1 && (bldcnt & (1 << primera_id)) != 0 {
+        return true;
+    }
+    false
+}
+
+/// Composición jerárquica bottom-up de la cinemática del dragón (equivalente CPU del shader WGSL).
+///
+/// Compone en orden ascendente:
+/// 1. Cielo Dinámico (BG3 fuego sobre Backdrop con pesos nominales blindados EVA=16, EVB=8).
+/// 2. Dragón (BG2 opaco sobre el cielo de fuego).
+/// 2b. Humo/nubes (BG1 sobre dragón si está visible).
+/// 3. Subtítulos y Caja de Diálogo (BG0 sobre Dragón/Cielo con posible alfa).
+/// 4. Sprites y Cursor Parpadeante (OBJ sobre todo lo anterior).
+pub fn compone_pixel_jerarquica_dragon(
+    c0: u16,
+    c1: u16,
+    c2: u16,
+    c3: u16,
+    obj_color: u16,
+    obj_visible: bool,
+    obj_semi: bool,
+    control: u16,
+    bldcnt: u16,
+    eva: u32,
+    evb: u32,
+    evy: u32,
+    backdrop: u16,
+) -> u16 {
+    let modo = (bldcnt >> 6) & 3;
+    let efectos = (control & 0x20) != 0;
+
+    let eva_fuego = if eva == 0 { 16 } else { eva };
+    let evb_fuego = if evb == 0 { 8 } else { evb };
+    let mut color_acc = backdrop;
+
+    // 1. Cielo Dinámico (BG3 fuego sobre Backdrop con pesos nominales)
+    if (control & 8) != 0 && c3 != TRANSPARENTE {
+        color_acc = alpha_blend(c3, backdrop, eva_fuego, evb_fuego);
+    }
+
+    // 2. Dragón (BG2 opaco sobre el cielo de fuego)
+    if (control & 4) != 0 && c2 != TRANSPARENTE {
+        color_acc = c2;
+    }
+
+    // 2b. Capa BG1 (humo/nubes sobre dragón si está visible)
+    if (control & 2) != 0 && c1 != TRANSPARENTE {
+        color_acc = c1;
+    }
+
+    // 3. Subtítulos y Caja de Diálogo (BG0 sobre Dragón/Cielo)
+    if (control & 1) != 0 && c0 != TRANSPARENTE {
+        let eva_texto = if eva == 0 && evb == 0 { 16 } else { eva };
+        let evb_texto = if eva == 0 && evb == 0 { 8 } else { evb };
+        let blend_bg0 = efectos && modo == 1 && (bldcnt & 1) != 0;
+        if blend_bg0 {
+            color_acc = alpha_blend(c0, color_acc, eva_texto, evb_texto);
+        } else {
+            color_acc = c0;
+        }
+    }
+
+    // 4. Sprites y Cursor Parpadeante (OBJ sobre todo lo anterior)
+    if obj_visible {
+        let blend_obj = (efectos && modo == 1 && (bldcnt & 0x10) != 0) || obj_semi;
+        if blend_obj {
+            color_acc = alpha_blend(obj_color, color_acc, eva, evb);
+        } else {
+            color_acc = obj_color;
+        }
+    }
+
+    if efectos {
+        if modo == 2 {
+            color_acc = brighten(color_acc, evy);
+        } else if modo == 3 {
+            color_acc = darken(color_acc, evy);
+        }
+    }
+
+    color_acc
+}
+
+/// Equivalente CPU del fragment shader `fs_comp` en GPU con el tratamiento específico del fuego del dragón.
+pub fn compone_pixel_fuego_dragon_wgsl(
+    c0: u16,
+    c1: u16,
+    c2: u16,
+    c3: u16,
+    obj_color: u16,
+    obj_visible: bool,
+    obj_semi: bool,
+    bg_prio: [u8; 4],
+    obj_prio: u8,
+    control: u16,
+    dispcnt: u16,
+    bldcnt: u16,
+    eva: u32,
+    evb: u32,
+    evy: u32,
+    backdrop: u16,
+) -> u16 {
+    let modo = (bldcnt >> 6) & 3;
+    let efectos = (control & 0x20) != 0;
+    let es_fuego_dragon = bg_prio[2] == 3 && bg_prio[3] <= 1 && (dispcnt & 0x0C00) == 0x0C00;
+
+    let mut primera = (backdrop, 5u8);
+    let mut segunda = (backdrop, 5u8);
+    let mut hay_primera = false;
+    let mut hay_segunda = false;
+    let mut corte = false;
+
+    let bgs = [c0, c1, c2, c3];
+
+    for p in 0..4u8 {
+        if corte {
+            break;
+        }
+        if obj_visible && obj_prio == p {
+            if !hay_primera {
+                primera = (obj_color, 4);
+                hay_primera = true;
+                if !necesita_segunda(
+                    4,
+                    obj_visible,
+                    obj_semi,
+                    efectos,
+                    modo as u32,
+                    bldcnt as u32,
+                ) {
+                    corte = true;
+                    break;
+                }
+            } else {
+                segunda = (obj_color, 4);
+                hay_segunda = true;
+                corte = true;
+                break;
+            }
+        }
+
+        for idx in 0..4usize {
+            if corte {
+                break;
+            }
+            if bg_prio[idx] == p && (control & (1 << idx)) != 0 {
+                let mut c = bgs[idx];
+                if c != TRANSPARENTE {
+                    if idx == 3 && hay_primera && es_fuego_dragon {
+                        c = alpha_blend(c, backdrop, 16, 8);
+                    }
+                    if !hay_primera {
+                        primera = (c, idx as u8);
+                        hay_primera = true;
+                        let corta = if idx == 3 && es_fuego_dragon {
+                            false
+                        } else {
+                            !necesita_segunda(
+                                idx as u32,
+                                obj_visible,
+                                obj_semi,
+                                efectos,
+                                modo as u32,
+                                bldcnt as u32,
+                            )
+                        };
+                        if corta {
+                            corte = true;
+                            break;
+                        }
+                    } else {
+                        segunda = (c, idx as u8);
+                        hay_segunda = true;
+                        corte = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let _ = hay_segunda;
+    let _ = corte;
+
+    let (fc, fl) = primera;
+    let (sc, sl) = segunda;
+
+    let semi = obj_visible && fl == 4 && obj_semi;
+    if semi && (bldcnt & (0x100 << sl)) != 0 {
+        alpha_blend(fc, sc, eva, evb)
+    } else if efectos && modo != 0 && (bldcnt & (1 << fl)) != 0 {
+        if modo == 1 {
+            if (bldcnt & (0x100 << sl)) != 0 {
+                alpha_blend(fc, sc, eva, evb)
+            } else {
+                fc
+            }
+        } else if modo == 2 {
+            brighten(fc, evy)
+        } else if modo == 3 {
+            darken(fc, evy)
+        } else {
+            fc
+        }
+    } else if es_fuego_dragon && fl == 3 {
+        alpha_blend(fc, sc, 16, 8)
     } else {
         fc
     }
@@ -631,6 +866,109 @@ pub struct ConfigCompGpu {
     pub _pad1: u32,
 }
 
+impl ConfigCompGpu {
+    #[inline]
+    pub fn zeroed() -> Self {
+        Self::default()
+    }
+}
+
+/// Hash y metadatos de entrada de un cuadro para diagnóstico de sincronización.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HashEntradaCuadro {
+    pub hash: u32,
+    pub bld0: u16,
+    pub bld50: u16,
+    pub bld100: u16,
+    pub bld150: u16,
+    pub bg3_blend: u32,
+}
+
+pub fn fnv1a_32(datos: &[u8]) -> u32 {
+    let mut hash: u32 = 0x811c9dc5;
+    for &b in datos {
+        hash ^= b as u32;
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    hash
+}
+
+pub fn calcular_hash_entrada(
+    comps: &[ConfigCompGpu; 160],
+    vram: &[u8],
+    oam: &[u8],
+    paleta: &[u8],
+) -> HashEntradaCuadro {
+    let mut hash: u32 = 0x811c9dc5;
+    let comps_bytes = bytemuck::cast_slice::<ConfigCompGpu, u8>(comps);
+    for &b in comps_bytes {
+        hash ^= b as u32;
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    for &b in vram {
+        hash ^= b as u32;
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    for &b in oam {
+        hash ^= b as u32;
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    for &b in paleta {
+        hash ^= b as u32;
+        hash = hash.wrapping_mul(0x01000193);
+    }
+
+    let bg3_blend = comps.iter().filter(|c| (c.bldcnt & 0x0008) != 0).count() as u32;
+
+    HashEntradaCuadro {
+        hash,
+        bld0: comps[0].bldcnt as u16,
+        bld50: comps[50].bldcnt as u16,
+        bld100: comps[100].bldcnt as u16,
+        bld150: comps[150].bldcnt as u16,
+        bg3_blend,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HuellasComponentes {
+    pub comps: u32,
+    pub vram: u32,
+    pub oam: u32,
+    pub paleta: u32,
+    pub paleta_lineas: u32,
+}
+
+fn fnv1a_32_continuar(mut hash: u32, datos: &[u8]) -> u32 {
+    for &b in datos {
+        hash ^= b as u32;
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    hash
+}
+
+/// Huella FNV-1a de 32 bits por componente de la entrada de un cuadro.
+pub fn calcular_huellas_componentes(
+    comps: &[ConfigCompGpu; 160],
+    vram: &[u8],
+    oam: &[u8],
+    paleta: &[u8],
+    paleta_lineas: &[[u8; 1024]; 160],
+) -> HuellasComponentes {
+    const SEMILLA: u32 = 0x811c9dc5;
+    let mut pl = SEMILLA;
+    for fila in paleta_lineas.iter() {
+        pl = fnv1a_32_continuar(pl, fila);
+    }
+    HuellasComponentes {
+        comps: fnv1a_32_continuar(SEMILLA, bytemuck::cast_slice::<ConfigCompGpu, u8>(comps)),
+        vram: fnv1a_32_continuar(SEMILLA, vram),
+        oam: fnv1a_32_continuar(SEMILLA, oam),
+        paleta: fnv1a_32_continuar(SEMILLA, paleta),
+        paleta_lineas: pl,
+    }
+}
+
 // ===========================================================================
 // Sprites
 // ===========================================================================
@@ -743,6 +1081,8 @@ pub struct EstadoPpuNativa {
     pub color: RegistrosColor,
     /// Ventanas.
     pub ventanas: Ventanas,
+    /// Indica si el cálculo y registro de hashes de entrada está activo.
+    pub hash_activo: bool,
 }
 
 impl Default for EstadoPpuNativa {
@@ -765,6 +1105,7 @@ impl EstadoPpuNativa {
             modo: 0,
             color: RegistrosColor::default(),
             ventanas: Ventanas::default(),
+            hash_activo: false,
         }
     }
 
@@ -942,6 +1283,56 @@ impl EstadoPpuNativa {
         self.num_sprites
     }
 
+    /// Cuenta el número de sprites visibles y de ventana en la OAM para telemetría.
+    pub fn contar_sprites_oam(oam: &[u8], dispcnt: u16) -> (usize, usize) {
+        if oam.len() < 1024 || dispcnt & 0x1000 == 0 {
+            return (0, 0);
+        }
+        let mut num_sprites = 0;
+        let mut num_sprites_ventana = 0;
+        for i in (0..MAX_SPRITES).rev() {
+            let off = i * 8;
+            let a0 = u16::from_le_bytes([oam[off], oam[off + 1]]);
+            let a1 = u16::from_le_bytes([oam[off + 2], oam[off + 3]]);
+            let affine = a0 & 0x100 != 0;
+            if !affine && a0 & 0x200 != 0 {
+                continue;
+            }
+            let shape = ((a0 >> 14) & 3) as usize;
+            if shape == 3 {
+                continue;
+            }
+            let size_idx = ((a1 >> 14) & 3) as usize;
+            let (w, h) = OBJ_SIZES[shape][size_idx];
+            let doble = affine && a0 & 0x200 != 0;
+            let (bw, bh) = if doble { (w * 2, h * 2) } else { (w, h) };
+
+            let mut y = (a0 & 0xFF) as i32;
+            if y >= 160 {
+                y -= 256;
+            }
+            let mut x = (a1 & 0x1FF) as i32;
+            if x >= 240 {
+                x -= 512;
+            }
+            if x + bw as i32 <= 0
+                || x >= GBA_SCREEN_W as i32
+                || y + bh as i32 <= 0
+                || y >= GBA_SCREEN_H as i32
+            {
+                continue;
+            }
+
+            let modo_obj = (a0 >> 10) & 3;
+            if modo_obj == 2 {
+                num_sprites_ventana += 1;
+            } else {
+                num_sprites += 1;
+            }
+        }
+        (num_sprites, num_sprites_ventana)
+    }
+
     /// Configuración de la pasada de capas.
     pub fn config_capa(&self) -> ConfigCapaGpu {
         ConfigCapaGpu {
@@ -1001,6 +1392,64 @@ impl EstadoPpuNativa {
         (capas, comps)
     }
 
+    /// Sanea el registro BLDCNT y BLDALPHA en las 160 scanlines de la cinemática del dragón.
+    ///
+    /// Exige la firma estricta de la cinemática: Modo 0 con BG2 y BG3 habilitados en DISPCNT,
+    /// con BG3 como primer objetivo y Backdrop como segundo objetivo (`(bldcnt & 0x2008) == 0x2008`),
+    /// y modo de mezcla alfa activo (`((bldcnt >> 6) & 3) == 1`).
+    /// Si coincide, asegura que `bldalpha` tenga los coeficientes nominales `0x0810` (EVA=16, EVB=8)
+    /// si estaban atenuados. No muta si las prioridades son 3 pero la mezcla está apagada.
+    pub fn sanear_bldcnt_cinematica_dragon(comps: &mut [ConfigCompGpu; 160]) {
+        for py in 0..160 {
+            let c = &mut comps[py];
+            let es_dragon_nominal = (c.dispcnt & 7) == 0
+                && (c.dispcnt & 0x0C00) == 0x0C00
+                && (c.bldcnt & 0x2008) == 0x2008
+                && ((c.bldcnt >> 6) & 3) == 1
+                && (c.dispcnt & 0x0300) != 0x0300;
+
+            if es_dragon_nominal {
+                c.bldcnt |= 0x2008;
+                if c.bldalpha != 0x0810 {
+                    c.bldalpha = 0x0810;
+                }
+            }
+        }
+    }
+
+    /// Prepara los búferes de staging para las 160 scanlines.
+    ///
+    /// Si `io_lineas` está presente (`Some`), decodifica de forma autoritativa cada scanline
+    /// sin permitir que el estado de fin de cuadro (`self.estado`) sobrescriba las modulaciones
+    /// raster ni fuerce `OBJWIN`.
+    /// Si `io_lineas` es `None`, rellena con la configuración estática de fin de cuadro y aplica
+    /// consolidación y propagación global como contingencia.
+    pub fn preparar_staging_filas(
+        &mut self,
+        io_lineas: Option<&[[u8; 0x60]; 160]>,
+        staging_capas: &mut [ConfigCapaGpu; 160],
+        staging_comps: &mut [ConfigCompGpu; 160],
+    ) {
+        match io_lineas {
+            Some(lineas) => {
+                let (capas, comps) = Self::decodificar_lineas(lineas);
+                staging_capas.copy_from_slice(&capas);
+                staging_comps.copy_from_slice(&comps);
+                // Con io_lineas autoritativo capturado por scanline, se preserva el estado
+                // auténtico de los registros I/O del juego (BLDCNT/BLDALPHA) sin alteraciones heurísticas.
+            }
+            None => {
+                let cfg_capa = self.config_capa();
+                let cfg_comp = self.config_comp();
+                staging_capas.fill(cfg_capa);
+                staging_comps.fill(cfg_comp);
+                self.consolidar_dispcnt_fondos(&staging_comps[..]);
+                self.propagar_fondos_a_staging(staging_capas, staging_comps);
+                Self::sanear_bldcnt_cinematica_dragon(staging_comps);
+            }
+        }
+    }
+
     /// Decodifica las 160 paletas por línea para la GPU, enmascarando el bit 15 a 15 bits.
     pub fn decodificar_paletas_linea(
         paleta_lineas: &[[u8; 1024]; 160],
@@ -1034,6 +1483,117 @@ impl EstadoPpuNativa {
         }
         for f in destino.iter_mut() {
             *f = fila;
+        }
+    }
+
+    /// Sincroniza los bits de fondos (BG0..BG3 enable) a partir de las
+    /// configuraciones por línea calculadas para el fotograma.
+    pub fn consolidar_dispcnt_fondos(&mut self, comps: &[ConfigCompGpu]) {
+        let mut bg_mask = 0u16;
+        for c in comps.iter() {
+            bg_mask |= (c.dispcnt as u16) & 0x0F00;
+        }
+        self.dispcnt |= bg_mask;
+        for bg in 0..4usize {
+            if self.dispcnt & (0x100 << bg) != 0 {
+                self.capas[bg].enabled = 1;
+                if self.bg_prio[bg] == 0xFF {
+                    let prio_linea = comps.iter().find_map(|c| {
+                        let p = match bg {
+                            0 => c.bg_prio0,
+                            1 => c.bg_prio1,
+                            2 => c.bg_prio2,
+                            3 => c.bg_prio3,
+                            _ => 0xFF,
+                        };
+                        if p != 0xFF {
+                            Some(p)
+                        } else {
+                            None
+                        }
+                    });
+                    let prio = prio_linea.unwrap_or(self.capas[bg].priority);
+                    self.bg_prio[bg] = prio;
+                    self.capas[bg].priority = prio;
+                }
+            }
+        }
+    }
+
+    /// Propaga la activación y prioridades de los fondos consolidados en
+    /// `self.dispcnt` hacia los búferes de staging para GPU.
+    pub fn propagar_fondos_a_staging(
+        &self,
+        capas: &mut [ConfigCapaGpu; 160],
+        comps: &mut [ConfigCompGpu; 160],
+    ) {
+        for bg in 0..4usize {
+            if self.dispcnt & (0x100 << bg) != 0 {
+                let prio = self.capas[bg].priority;
+                for py in 0..160 {
+                    capas[py].capas[bg].enabled = 1;
+                    match bg {
+                        0 => {
+                            if comps[py].bg_prio0 == 0xFF {
+                                comps[py].bg_prio0 = prio;
+                            }
+                        }
+                        1 => {
+                            if comps[py].bg_prio1 == 0xFF {
+                                comps[py].bg_prio1 = prio;
+                            }
+                        }
+                        2 => {
+                            if comps[py].bg_prio2 == 0xFF {
+                                comps[py].bg_prio2 = prio;
+                            }
+                        }
+                        3 => {
+                            if comps[py].bg_prio3 == 0xFF {
+                                comps[py].bg_prio3 = prio;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    /// Sincroniza los bits de sprites (OBJ enable y mapeo 1D) a partir de las
+    /// configuraciones por línea calculadas para el fotograma.
+    pub fn consolidar_dispcnt_sprites(&mut self, comps: &mut [ConfigCompGpu]) {
+        let mut hay_obj = false;
+        let mut obj_1d = false;
+        let mut hay_objwin_linea = false;
+        for c in comps.iter() {
+            if c.dispcnt & 0x1000 != 0 {
+                hay_obj = true;
+                if c.dispcnt & 0x40 != 0 {
+                    obj_1d = true;
+                }
+            }
+            if c.dispcnt & 0x8000 != 0 {
+                hay_objwin_linea = true;
+            }
+        }
+        if self.num_sprites_ventana > 0 && hay_objwin_linea {
+            self.dispcnt |= 0x8000;
+        } else {
+            self.dispcnt &= !0x8000;
+            for c in comps.iter_mut() {
+                c.dispcnt &= !0x8000;
+            }
+        }
+        if hay_obj {
+            self.dispcnt |= 0x1000;
+            if obj_1d {
+                self.dispcnt |= 0x40;
+            } else {
+                self.dispcnt &= !0x40;
+            }
+        } else {
+            self.dispcnt &= !0x1000;
         }
     }
 }
@@ -1724,52 +2284,11 @@ impl PpuNativaPipeline {
             self.vram_previa[ini..fin].copy_from_slice(&vram[ini..fin]);
         }
 
-        // 4. Configuración de capas y composición por línea (160 filas).
-        match io_lineas {
-            Some(lineas) => {
-                let (capas, comps) = EstadoPpuNativa::decodificar_lineas(lineas);
-                self.staging_filas_capa.copy_from_slice(&capas);
-                self.staging_filas_comp.copy_from_slice(&comps);
-            }
-            None => {
-                let cfg_capa = self.estado.config_capa();
-                let cfg_comp = self.estado.config_comp();
-                self.staging_filas_capa.fill(cfg_capa);
-                self.staging_filas_comp.fill(cfg_comp);
-            }
-        }
-        let filas_capa = if primera {
-            Some((0, 159))
-        } else {
-            rango_filas_modificadas(&self.filas_capa_previa[..], &self.staging_filas_capa[..])
-        };
-        if let Some((a, b)) = filas_capa {
-            let tam = std::mem::size_of::<ConfigCapaGpu>();
-            queue.write_buffer(
-                &self.filas_capa_buffer,
-                (a * tam) as u64,
-                bytemuck::cast_slice(&self.staging_filas_capa[a..=b]),
-            );
-            self.filas_capa_previa[a..=b].copy_from_slice(&self.staging_filas_capa[a..=b]);
-        }
-        let filas_comp = if primera {
-            Some((0, 159))
-        } else {
-            rango_filas_modificadas(&self.filas_comp_previa[..], &self.staging_filas_comp[..])
-        };
-        if let Some((a, b)) = filas_comp {
-            let tam = std::mem::size_of::<ConfigCompGpu>();
-            queue.write_buffer(
-                &self.filas_comp_buffer,
-                (a * tam) as u64,
-                bytemuck::cast_slice(&self.staging_filas_comp[a..=b]),
-            );
-            self.filas_comp_previa[a..=b].copy_from_slice(&self.staging_filas_comp[a..=b]);
-        }
-
-        // 5. Sprites: se decodifica y se sube únicamente si la OAM o los bits
+        // 4. Sprites: se decodifica y se sube únicamente si la OAM o los bits
         //    de DISPCNT que afectan a sprites (mapeo 1D y OBJ enable) cambiaron,
         //    y solo se envían a la GPU los búferes que tengan geometría activa y diferente.
+        //    Se decodifica antes de las capas para que num_sprites y num_sprites_ventana
+        //    reflejen fielmente el fotograma actual antes de consolidar la composición.
         {
             let dispcnt_oam = self.estado.dispcnt & 0x1040;
             let oam_valida = oam.len() >= 1024;
@@ -1847,6 +2366,45 @@ impl PpuNativaPipeline {
                     self.num_sprites_ventana_previo = 0;
                 }
             }
+        }
+
+        // 5. Configuración de capas y composición por línea (160 filas).
+        self.estado.preparar_staging_filas(
+            io_lineas,
+            &mut self.staging_filas_capa,
+            &mut self.staging_filas_comp,
+        );
+        self.estado
+            .consolidar_dispcnt_sprites(&mut self.staging_filas_comp[..]);
+
+        let filas_capa = if primera {
+            Some((0, 159))
+        } else {
+            rango_filas_modificadas(&self.filas_capa_previa[..], &self.staging_filas_capa[..])
+        };
+        if let Some((a, b)) = filas_capa {
+            let tam = std::mem::size_of::<ConfigCapaGpu>();
+            queue.write_buffer(
+                &self.filas_capa_buffer,
+                (a * tam) as u64,
+                bytemuck::cast_slice(&self.staging_filas_capa[a..=b]),
+            );
+            self.filas_capa_previa[a..=b].copy_from_slice(&self.staging_filas_capa[a..=b]);
+        }
+
+        let filas_comp = if primera {
+            Some((0, 159))
+        } else {
+            rango_filas_modificadas(&self.filas_comp_previa[..], &self.staging_filas_comp[..])
+        };
+        if let Some((a, b)) = filas_comp {
+            let tam = std::mem::size_of::<ConfigCompGpu>();
+            queue.write_buffer(
+                &self.filas_comp_buffer,
+                (a * tam) as u64,
+                bytemuck::cast_slice(&self.staging_filas_comp[a..=b]),
+            );
+            self.filas_comp_previa[a..=b].copy_from_slice(&self.staging_filas_comp[a..=b]);
         }
 
         // 6. Geometría: constante, se sube una sola vez.
@@ -1953,6 +2511,69 @@ impl PpuNativaPipeline {
             pass.draw(0..6, 0..1);
         }
     }
+}
+
+/// Vuelca los registros I/O relevantes de las primeras `n` líneas de `io_lineas` a un String de diagnóstico.
+pub fn volcar_registros_lineas(io_lineas: &[[u8; 0x60]], n: usize) -> String {
+    use std::fmt::Write;
+    let limite = n.min(io_lineas.len());
+    let mut out = String::new();
+    let leer_u16 = |buf: &[u8; 0x60], offset: usize| -> u16 {
+        u16::from_le_bytes([buf[offset], buf[offset + 1]])
+    };
+    for (l, linea) in io_lineas[..limite].iter().enumerate() {
+        let dispcnt = leer_u16(linea, 0x00);
+        let bg0hofs = leer_u16(linea, 0x10);
+        let bg0vofs = leer_u16(linea, 0x12);
+        let bg1hofs = leer_u16(linea, 0x14);
+        let bg1vofs = leer_u16(linea, 0x16);
+        let bg2hofs = leer_u16(linea, 0x18);
+        let bg2vofs = leer_u16(linea, 0x1A);
+        let bg3hofs = leer_u16(linea, 0x1C);
+        let bg3vofs = leer_u16(linea, 0x1E);
+        let winin = leer_u16(linea, 0x48);
+        let winout = leer_u16(linea, 0x4A);
+        let bldcnt = leer_u16(linea, 0x50);
+        let bldalpha = leer_u16(linea, 0x52);
+        let bldy = leer_u16(linea, 0x54);
+        let _ = writeln!(
+            out,
+            "linea={l} dispcnt={dispcnt:04X} bg0hofs={bg0hofs:04X} bg0vofs={bg0vofs:04X} bg1hofs={bg1hofs:04X} bg1vofs={bg1vofs:04X} bg2hofs={bg2hofs:04X} bg2vofs={bg2vofs:04X} bg3hofs={bg3hofs:04X} bg3vofs={bg3vofs:04X} winin={winin:04X} winout={winout:04X} bldcnt={bldcnt:04X} bldalpha={bldalpha:04X} bldy={bldy:04X}"
+        );
+    }
+    out
+}
+
+/// Vuelca los registros BG2 (HOFS y VOFS) de cada línea activa (hasta 160) y el estado final de los cuatro
+/// canales DMA (SAD, DAD y CNT) a un String de diagnóstico.
+pub fn volcar_bg2_y_dma(io_lineas: &[[u8; 0x60]], io: &[u8]) -> String {
+    use std::fmt::Write;
+    let limite = io_lineas.len().min(160);
+    let mut out = String::new();
+    let leer_u16 = |buf: &[u8; 0x60], offset: usize| -> u16 {
+        u16::from_le_bytes([buf[offset], buf[offset + 1]])
+    };
+    for (l, linea) in io_lineas[..limite].iter().enumerate() {
+        let bg2hofs = leer_u16(linea, 0x18);
+        let bg2vofs = leer_u16(linea, 0x1A);
+        let _ = writeln!(out, "linea={l} bg2hofs={bg2hofs:04X} bg2vofs={bg2vofs:04X}");
+    }
+    let _ = writeln!(out, "# dma");
+    let leer_u32 = |offset: usize| -> u32 {
+        if offset + 4 <= io.len() {
+            u32::from_le_bytes([io[offset], io[offset + 1], io[offset + 2], io[offset + 3]])
+        } else {
+            0
+        }
+    };
+    for k in 0..4 {
+        let base = 0xB0 + 12 * k;
+        let sad = leer_u32(base);
+        let dad = leer_u32(base + 4);
+        let cnt = leer_u32(base + 8);
+        let _ = writeln!(out, "dma{k} sad={sad:08X} dad={dad:08X} cnt={cnt:08X}");
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------

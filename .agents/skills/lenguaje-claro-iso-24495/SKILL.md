@@ -33,7 +33,7 @@ Para el detalle de cada directriz y cómo aplicarla, lee `references/principios-
 1. **Piensa en la persona lectora antes de escribir.** Deduce quién es, qué quiere lograr y en qué contexto lee (apuro, móvil, conocimiento previo del tema). En una conversación, la propia pregunta suele dar esa información. Haz una pregunta solo si la respuesta cambiaría de verdad lo que escribes.
 2. **Decide el contenido.** Incluye lo necesario para entender y actuar. Lo que es útil pero secundario va aparte, al final o en una sección propia, para que no tape lo esencial.
 3. **Ordena.** Empieza por la respuesta, la conclusión o la acción principal. Después van el contexto y los detalles. Usa títulos que describan el contenido (no "Introducción" sino "Qué cambia desde marzo").
-4. **Redacta.** Usa palabras que la persona conozca, frases con una idea y párrafos con un solo tema. En `references/guia-espanol.md` están las prácticas específicas del español.
+4. **Redacta.** Usa palabras que la persona conozca, voz activa, frases de una sola idea (máx. ~25 palabras) y párrafos con un solo tema. Evita nominalizaciones y giros burocráticos (*"realizar la ejecución"* → *"ejecutar"*, *"con el objetivo de"* → *"para"*, *"en el supuesto de que"* → *"si"*, *"proceder a"* → verbo directo). No abras `references/` para respuestas normales de chat o propuestas.
 5. **Revisa** con la lista de verificación del final y corrige antes de entregar.
 
 ## Según lo que te pidan

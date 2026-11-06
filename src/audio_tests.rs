@@ -2,7 +2,6 @@
 
 use super::*;
 use std::fs;
-use std::path::PathBuf;
 
 #[test]
 fn test_audio_resampler_and_ring_buffer_transfer() {
@@ -222,4 +221,62 @@ fn test_enhanced_audio_flag_off_reverts_to_faithful() {
 
     let _ = fs::remove_file(&flag_file);
     let _ = fs::remove_dir_all(&temp_dir);
+}
+
+#[test]
+fn test_audio_ring_buffer_initial_priming() {
+    let mut engine = NativeAudioEngine::new(DEFAULT_SAMPLE_RATE);
+    assert_eq!(engine.ring_buffer().available_frames(), 0);
+    assert_eq!(engine.ring_buffer().underruns(), 0);
+
+    engine.start().expect("iniciar engine");
+    assert!(
+        engine.ring_buffer().available_frames() >= TARGET_WATERMARK_FRAMES,
+        "El búfer debe contener al menos TARGET_WATERMARK_FRAMES tras el pre-cebado (obtenido: {})",
+        engine.ring_buffer().available_frames()
+    );
+    assert_eq!(
+        engine.ring_buffer().underruns(),
+        0,
+        "No debe haber underruns tras el cebado"
+    );
+
+    // Consumir un bloque de hardware y verificar que se extrae silencio sin causar underrun
+    let mut dest = vec![1i16; 512 * 2];
+    let popped = engine.ring_buffer().pop(&mut dest);
+    assert_eq!(popped, 512);
+    assert_eq!(dest[0], 0, "Las muestras de cebado deben ser silencio (0)");
+    assert_eq!(dest[1], 0);
+    assert_eq!(engine.ring_buffer().underruns(), 0);
+}
+
+#[test]
+fn test_audio_ring_buffer_zero_underruns_at_steady_rate() {
+    let ring = AudioRingBuffer::new(DEFAULT_RING_CAPACITY_FRAMES);
+    // Cebar inicialmente para simular el arranque del motor de audio
+    ring.prime(TARGET_WATERMARK_FRAMES);
+
+    // Simular 60 ciclos continuos a 60 FPS (1 segundo completo de reproducción)
+    // Productor: 800 frames por ciclo (48.000 frames/segundo)
+    // Consumidor: 800 frames por ciclo (48.000 frames/segundo)
+    let producer_block = vec![1000i16; 800 * 2];
+    let mut consumer_block = vec![0i16; 800 * 2];
+
+    for _ in 0..60 {
+        let pushed = ring.push(&producer_block);
+        assert_eq!(pushed, 800);
+
+        let popped = ring.pop(&mut consumer_block);
+        assert_eq!(popped, 800);
+    }
+
+    assert_eq!(
+        ring.underruns(),
+        0,
+        "No debe haber underruns en régimen estacionario sincronizado a 60 FPS"
+    );
+    assert!(
+        ring.available_frames() >= TARGET_WATERMARK_FRAMES,
+        "El nivel de marca de agua debe mantenerse estable"
+    );
 }

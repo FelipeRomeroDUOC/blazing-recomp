@@ -454,3 +454,27 @@ Remove-Item $unalignedApk, $alignedApk -ErrorAction SilentlyContinue
 
 $apkSizeMB = [Math]::Round((Get-Item $finalApk).Length / 1MB, 2)
 Write-Host "==> Exito: APK generado en $finalApk ($apkSizeMB MB)"
+
+# 13. Copia a carpeta compartida de distribucion si esta disponible
+$desktopPath = [Environment]::GetFolderPath('Desktop')
+$sharedApkDir = if ($env:BLAZING_APK_EXPORT_DIR) {
+    $env:BLAZING_APK_EXPORT_DIR
+} elseif ($desktopPath) {
+    Join-Path $desktopPath 'carpeta-compartida\blazing-recomp-apk'
+} else {
+    $null
+}
+
+if ($sharedApkDir) {
+    try {
+        if (-not (Test-Path $sharedApkDir)) {
+            New-Item -ItemType Directory -Path $sharedApkDir -Force | Out-Null
+        }
+        $destApk = Join-Path $sharedApkDir (Split-Path $finalApk -Leaf)
+        Copy-Item -Path $finalApk -Destination $destApk -Force
+        Write-Host "==> Copia desplegada en: $destApk"
+    } catch {
+        Write-Warning "No se pudo copiar el APK a la carpeta compartida ($sharedApkDir): $_"
+    }
+}
+

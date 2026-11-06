@@ -80,6 +80,8 @@ Las áreas son de trabajo, no las fases del roadmap: una misma área puede repar
   [`verificada por agente`](propuestas/2026-10-21_fondo-afin-bg2-modo-1.md)). El cuadro 900 de
   `secuencias/escena3.txt` da **0 diferencias de 38.400 píxeles** (antes 5222) y el arnés sintético
   da 0 en los siete casos de wrap y de tamaño de mapa.
+- **Consolidación de antipatrones en la cinemática del dragón (ADR 47):** Tras 28 propuestas sobre la escena de la intro, se refutaron cinco familias de suposiciones (purgas de OBJWIN, saneamiento forzado de BLDCNT/BLDALPHA, orden estático de capas en WGSL, desincronización de hilos/Vulkan y diferencias Android vs PC). La PPU de software de referencia da 0 diferencias de 38.400 píxeles. Queda prohibido aplicar parches heurísticos sobre registros I/O; la corrección definitiva exige composición dinámica en el shader WGSL respetando las prioridades de BGxCNT y los bits de 1.ª y 2.ª diana de BLDCNT [Cerrado: 2026-11-06].
+- **Erradicación definitiva de parpadeos en cinemática del dragón (AOT C11 vs Intérprete):** Resuelto mediante paridad AOT en Windows (`2026-11-06_carga-aot-windows-y-paridad-ppu-doble`) y sincronización bidireccional de paso fino en scanlines visibles con interrupciones de raster (`DISPSTAT & 0x30 != 0`) en `run_frame_native` y `rt_chain_gate` (`2026-11-06_paso-fino-scanlines-visibles-y-chain-gate-raster.md`), eliminando el 100% de los parpadeos visuales en PC y Android [Cerrado: 2026-11-06].
 - **Abierto:** la calibración de presentación está **activa** por el experimento
   [`2026-10-14_reactivar-la-calibracion-de-presentacion.md`](propuestas/2026-10-14_reactivar-la-calibracion-de-presentacion.md),
   que espera una sesión en el televisor. El techo de `present` en tablet (51,4 ms) solo bajó con
@@ -155,22 +157,26 @@ Curado a mano a partir del [registro](#registro-de-hallazgos); el registro es la
 
 ## Índice de Propuestas
 
-168 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
+205 propuestas en [`docs/propuestas/`](propuestas/). Se listan por estado; la ficha de cada una tiene su
 propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 
-**168 = 99 `verificada por agente` + 46 `cerrada` + 1 `aprobada` + 3 `pendiente` + 10 `discrepada` + 6 `revisada por humano` + 2 `modificada` + 1 `descartada`.**
+**205 = 122 `verificada por agente` + 49 `cerrada` + 2 `aprobada` + 6 `pendiente` + 14 `discrepada` + 8 `revisada por humano` + 2 `modificada` + 2 `descartada`.**
 
-### Pendientes (3) — sin ejecutar
+### Pendientes (6) — sin ejecutar
 
 - [`2026-10-10_calibracion-multidispositivo-v2.md`](propuestas/2026-10-10_calibracion-multidispositivo-v2.md)
 - [`2026-10-10_optimizacion-compatibilidad-multidispositivo.md`](propuestas/2026-10-10_optimizacion-compatibilidad-multidispositivo.md)
 - [`2026-10-14_saneamiento-de-la-documentacion.md`](propuestas/2026-10-14_saneamiento-de-la-documentacion.md)
+- [`2026-11-02_color-claro-gpu-cuadro-677.md`](propuestas/2026-11-02_color-claro-gpu-cuadro-677.md)
+- [`2026-11-02_gpu-bldalpha-crudo-cuadro-677.md`](propuestas/2026-11-02_gpu-bldalpha-crudo-cuadro-677.md)
+- [`2026-11-02_mezcla-bg3-sobre-bg2-composicion-jerarquica-dragon.md`](propuestas/2026-11-02_mezcla-bg3-sobre-bg2-composicion-jerarquica-dragon.md)
 
-### Aprobadas sin cerrar (1) — alcance pactado, trabajo o medida pendientes
+### Aprobadas sin cerrar (2) — alcance pactado, trabajo o medida pendientes
 
 - [`2026-10-10_optimizacion-rendimiento-gpu-vulkan-y-calibracion-fps.md`](propuestas/2026-10-10_optimizacion-rendimiento-gpu-vulkan-y-calibracion-fps.md)
+- [`2026-11-02_diagnostico-bldalpha-por-linea-intro.md`](propuestas/2026-11-02_diagnostico-bldalpha-por-linea-intro.md)
 
-### Discrepadas (10) — la medida contradijo la premisa
+### Discrepadas (14) — la medida contradijo la premisa
 
 - [`2026-10-12_acceso-memoria-sin-llamada-indirecta.md`](propuestas/2026-10-12_acceso-memoria-sin-llamada-indirecta.md) — el acceso directo al bus no rinde ≈3 %.
 - [`2026-10-12_telemetria-sin-coste-en-el-apk.md`](propuestas/2026-10-12_telemetria-sin-coste-en-el-apk.md) — la sonda del port mide otro reloj del que se quería medir.
@@ -182,8 +188,12 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-18_fondos-tapan-afines-cuadro-7500.md`](propuestas/2026-10-18_fondos-tapan-afines-cuadro-7500.md)
 - [`2026-10-18_sprites-afines-cuadro-7500.md`](propuestas/2026-10-18_sprites-afines-cuadro-7500.md)
 - [`2026-10-23_optimizacion-subida-diferencial-y-encoder-unico-ppu-nativa.md`](propuestas/2026-10-23_optimizacion-subida-diferencial-y-encoder-unico-ppu-nativa.md)
+- [`2026-10-30_sincronizar-lut-hblank-y-prioridades-linea-dragon.md`](propuestas/2026-10-30_sincronizar-lut-hblank-y-prioridades-linea-dragon.md)
+- [`2026-11-06_cobertura-completa-hblank-y-cruce-scanlines-aot.md`](propuestas/2026-11-06_cobertura-completa-hblank-y-cruce-scanlines-aot.md)
+- [`2026-11-06_mezcla-unica-fuego-sobre-dragon-wgsl.md`](propuestas/2026-11-06_mezcla-unica-fuego-sobre-dragon-wgsl.md)
+- [`2026-11-06_sincronia-irq-hblank-vcount-aot.md`](propuestas/2026-11-06_sincronia-irq-hblank-vcount-aot.md)
 
-### Revisada por humano (6)
+### Revisada por humano (8)
 
 - [`2026-10-09_compatibilidad-android-tv-y-armeabi-v7a.md`](propuestas/2026-10-09_compatibilidad-android-tv-y-armeabi-v7a.md)
 - [`2026-10-09_optimizacion-latencia-y-fillrate-gpu-modesta.md`](propuestas/2026-10-09_optimizacion-latencia-y-fillrate-gpu-modesta.md)
@@ -191,8 +201,10 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-17_capa-ganadora-por-pixel-obj-cuadro-1000.md`](propuestas/2026-10-17_capa-ganadora-por-pixel-obj-cuadro-1000.md)
 - [`2026-10-23_eliminar-register-spilling-y-bucle-anidado-fs-comp.md`](propuestas/2026-10-23_eliminar-register-spilling-y-bucle-anidado-fs-comp.md)
 - [`2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md`](propuestas/2026-10-23_pulido-final-subida-sprites-uniformes-y-paso-capas.md)
+- [`2026-11-06_carga-aot-windows-y-paridad-ppu-doble.md`](propuestas/2026-11-06_carga-aot-windows-y-paridad-ppu-doble.md)
+- [`2026-11-06_paso-fino-scanlines-visibles-y-chain-gate-raster.md`](propuestas/2026-11-06_paso-fino-scanlines-visibles-y-chain-gate-raster.md)
 
-### Cerradas (46)
+### Cerradas (49)
 
 - [`2026-10-09_ajustes-fidelidad-ergonomia-overlay.md`](propuestas/2026-10-09_ajustes-fidelidad-ergonomia-overlay.md)
 - [`2026-10-09_auditoria-tests-de-mutacion.md`](propuestas/2026-10-09_auditoria-tests-de-mutacion.md)
@@ -239,9 +251,12 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-25_automatizacion-versionado-aprobacion.md`](propuestas/2026-10-25_automatizacion-versionado-aprobacion.md)
 - [`2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md`](propuestas/2026-10-25_fix-congelamiento-arranque-y-doble-pantalla-calibracion.md)
 - [`2026-10-25_motor-audio-nativo-aaudio.md`](propuestas/2026-10-25_motor-audio-nativo-aaudio.md)
+- [`2026-10-28_pacing-acumulativo-60fps-y-audio-underrun.md`](propuestas/2026-10-28_pacing-acumulativo-60fps-y-audio-underrun.md)
 - [`2026-10-28_persistencia-guardado-sav.md`](propuestas/2026-10-28_persistencia-guardado-sav.md)
+- [`2026-11-06_inyeccion-contexto-fuentes-y-grafos.md`](propuestas/2026-11-06_inyeccion-contexto-fuentes-y-grafos.md)
+- [`2026-11-06_reglas-deterministas-agentes-skills.md`](propuestas/2026-11-06_reglas-deterministas-agentes-skills.md)
 
-### Verificadas por agente (99) — con lo medido dentro; varias esperan el televisor
+### Verificadas por agente (122) — con lo medido dentro; varias esperan el televisor
 
 - [`2026-10-08_controles-tactiles-haptica.md`](propuestas/2026-10-08_controles-tactiles-haptica.md)
 - [`2026-10-08_crate-nativo-android.md`](propuestas/2026-10-08_crate-nativo-android.md)
@@ -342,19 +357,43 @@ propio `Resultado` (predicho vs. real) y su `Revisión humana`.
 - [`2026-10-25_subagentes-dsh-mecanismo.md`](propuestas/2026-10-25_subagentes-dsh-mecanismo.md)
 - [`2026-10-25_subagentes-modelo-gemini-lite.md`](propuestas/2026-10-25_subagentes-modelo-gemini-lite.md)
 - [`2026-10-26_realineacion-estrategica-objetivo-y-plataforma-mods.md`](propuestas/2026-10-26_realineacion-estrategica-objetivo-y-plataforma-mods.md)
+- [`2026-10-28_fix-parpadeo-cinematica-dragon-ppu-nativa.md`](propuestas/2026-10-28_fix-parpadeo-cinematica-dragon-ppu-nativa.md)
+- [`2026-10-28_sistema-volcado-fotogramas-android-visor.md`](propuestas/2026-10-28_sistema-volcado-fotogramas-android-visor.md)
+- [`2026-10-29_fix-parpadeo-capa-fuego-y-blending-cinematica-dragon.md`](propuestas/2026-10-29_fix-parpadeo-capa-fuego-y-blending-cinematica-dragon.md)
+- [`2026-10-30_aislar-staging-lineas-y-preservar-raster-en-ppu-nativa.md`](propuestas/2026-10-30_aislar-staging-lineas-y-preservar-raster-en-ppu-nativa.md)
+- [`2026-10-30_fix-parpadeo-fuego-objwin-y-conmutacion-oam.md`](propuestas/2026-10-30_fix-parpadeo-fuego-objwin-y-conmutacion-oam.md)
+- [`2026-10-30_telemetria-anomalias-raster-cinematica-dragon.md`](propuestas/2026-10-30_telemetria-anomalias-raster-cinematica-dragon.md)
+- [`2026-10-31_activacion-definitiva-composicion-multicapa-dragon.md`](propuestas/2026-10-31_activacion-definitiva-composicion-multicapa-dragon.md)
+- [`2026-10-31_ampliar-saneamiento-bldcnt-y-bldalpha-dragon.md`](propuestas/2026-10-31_ampliar-saneamiento-bldcnt-y-bldalpha-dragon.md)
+- [`2026-10-31_coexistencia-blending-fuego-texto-160-scanlines-dragon.md`](propuestas/2026-10-31_coexistencia-blending-fuego-texto-160-scanlines-dragon.md)
+- [`2026-10-31_composicion-jerarquica-definitiva-gpu-wgsl.md`](propuestas/2026-10-31_composicion-jerarquica-definitiva-gpu-wgsl.md)
+- [`2026-10-31_composicion-jerarquica-multinivel-gpu-wgsl.md`](propuestas/2026-10-31_composicion-jerarquica-multinivel-gpu-wgsl.md)
+- [`2026-10-31_consolidacion-unificada-ppu-nativa-y-sprites.md`](propuestas/2026-10-31_consolidacion-unificada-ppu-nativa-y-sprites.md)
+- [`2026-10-31_desacoplar-sprites-obj-y-acotar-telemetria-dragon.md`](propuestas/2026-10-31_desacoplar-sprites-obj-y-acotar-telemetria-dragon.md)
+- [`2026-10-31_erradicacion-latch-objwin-y-fades-dragon.md`](propuestas/2026-10-31_erradicacion-latch-objwin-y-fades-dragon.md)
+- [`2026-10-31_persistir-anomalias-dragon-en-blazing-perf.md`](propuestas/2026-10-31_persistir-anomalias-dragon-en-blazing-perf.md)
+- [`2026-10-31_restaurar-bldcnt-fuego-scanlines-superiores-dragon.md`](propuestas/2026-10-31_restaurar-bldcnt-fuego-scanlines-superiores-dragon.md)
+- [`2026-11-01_reversion-falso-positivo-composicion-dragon-y-restauracion-pipeline.md`](propuestas/2026-11-01_reversion-falso-positivo-composicion-dragon-y-restauracion-pipeline.md)
+- [`2026-11-02_desglosar-hash-y-medir-salida-gpu-dragon.md`](propuestas/2026-11-02_desglosar-hash-y-medir-salida-gpu-dragon.md)
+- [`2026-11-02_erradicar-parpadeo-dragon-objwin-ppu-nativa.md`](propuestas/2026-11-02_erradicar-parpadeo-dragon-objwin-ppu-nativa.md)
+- [`2026-11-02_hash-cuadros-dragon-android-vs-pc.md`](propuestas/2026-11-02_hash-cuadros-dragon-android-vs-pc.md)
+- [`2026-11-02_prueba-hipotesis-sync-gpu-vram-android.md`](propuestas/2026-11-02_prueba-hipotesis-sync-gpu-vram-android.md)
+- [`2026-11-02_sincronizacion-cinematica-intro-ppu-nativa.md`](propuestas/2026-11-02_sincronizacion-cinematica-intro-ppu-nativa.md)
+- [`2026-11-02_volcado-y-comparacion-pixel-a-pixel-cuadro-86.md`](propuestas/2026-11-02_volcado-y-comparacion-pixel-a-pixel-cuadro-86.md)
 
 ### Modificadas (2) — cambiadas sobre la marcha
 
 - [`2026-10-19_scroll-por-linea-copia-shim-5300.md`](propuestas/2026-10-19_scroll-por-linea-copia-shim-5300.md)
 - [`2026-10-19_sin-mezcla-corregida-shim-5300.md`](propuestas/2026-10-19_sin-mezcla-corregida-shim-5300.md)
 
-### Descartadas (1) — la medición las dejó fuera
+### Descartadas (2) — la medición las dejó fuera
 
 - [`2026-10-19_sin-mezcla-shim-5300.md`](propuestas/2026-10-19_sin-mezcla-shim-5300.md)
+- [`2026-11-02_saneado-bldalpha-cuadro-677.md`](propuestas/2026-11-02_saneado-bldalpha-cuadro-677.md)
 
 ### Esperando el televisor: propuestas con `Revisión humana` pendiente
 
-Son 88 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuello de botella del proyecto ahora mismo.
+Son 96 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuello de botella del proyecto ahora mismo.
 
 - [`2026-10-09_correccion-escala-y-renderizado-overlay.md`](propuestas/2026-10-09_correccion-escala-y-renderizado-overlay.md)
 - [`2026-10-09_fidelidad-visual-overlay-prototipo.md`](propuestas/2026-10-09_fidelidad-visual-overlay-prototipo.md)
@@ -444,6 +483,14 @@ Son 88 en total. Todas piden lo mismo: una sesión en el dispositivo. Es el cuel
 - [`2026-10-25_subagentes-dsh-mecanismo.md`](propuestas/2026-10-25_subagentes-dsh-mecanismo.md)
 - [`2026-10-25_subagentes-modelo-gemini-lite.md`](propuestas/2026-10-25_subagentes-modelo-gemini-lite.md)
 - [`2026-10-26_realineacion-estrategica-objetivo-y-plataforma-mods.md`](propuestas/2026-10-26_realineacion-estrategica-objetivo-y-plataforma-mods.md)
+- [`2026-10-28_sistema-volcado-fotogramas-android-visor.md`](propuestas/2026-10-28_sistema-volcado-fotogramas-android-visor.md)
+- [`2026-10-30_aislar-staging-lineas-y-preservar-raster-en-ppu-nativa.md`](propuestas/2026-10-30_aislar-staging-lineas-y-preservar-raster-en-ppu-nativa.md)
+- [`2026-10-30_fix-parpadeo-fuego-objwin-y-conmutacion-oam.md`](propuestas/2026-10-30_fix-parpadeo-fuego-objwin-y-conmutacion-oam.md)
+- [`2026-10-30_telemetria-anomalias-raster-cinematica-dragon.md`](propuestas/2026-10-30_telemetria-anomalias-raster-cinematica-dragon.md)
+- [`2026-10-31_persistir-anomalias-dragon-en-blazing-perf.md`](propuestas/2026-10-31_persistir-anomalias-dragon-en-blazing-perf.md)
+- [`2026-11-02_desglosar-hash-y-medir-salida-gpu-dragon.md`](propuestas/2026-11-02_desglosar-hash-y-medir-salida-gpu-dragon.md)
+- [`2026-11-02_hash-cuadros-dragon-android-vs-pc.md`](propuestas/2026-11-02_hash-cuadros-dragon-android-vs-pc.md)
+- [`2026-11-02_prueba-hipotesis-sync-gpu-vram-android.md`](propuestas/2026-11-02_prueba-hipotesis-sync-gpu-vram-android.md)
 
 ---
 

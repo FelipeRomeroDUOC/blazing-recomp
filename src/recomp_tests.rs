@@ -510,3 +510,99 @@ fn test_la_linea_de_camino_lleva_el_desglose() {
     assert!(PpuPathCounters::default().is_empty());
     assert_eq!(PpuPathCounters::default().rectas_pct(), 0);
 }
+
+#[test]
+fn test_load_native_blocks_from_path_inexistente_retorna_none() {
+    let ruta_falsa = std::path::Path::new("out/no_existe_recomp_123.dll");
+    assert!(load_native_blocks_from_path(ruta_falsa).is_none());
+}
+
+#[test]
+fn test_load_native_blocks_en_cfg_test_retorna_none() {
+    assert!(
+        load_native_blocks().is_none(),
+        "load_native_blocks debe ser None en cfg(test) para preservar aislamiento de tests con ROM dummy"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn test_windows_load_native_blocks_from_dll_real() {
+    let dll_path = std::path::Path::new("out/1575 - Fire Emblem (E)(Independent)-bios.dll");
+    if dll_path.is_file() {
+        let table = load_native_blocks_from_path(dll_path);
+        assert!(table.is_some(), "Debe cargar la DLL existente en Windows");
+        let table = table.unwrap();
+        assert!(
+            table.len() > 100_000,
+            "Debe contener más de 100.000 bloques recompilados (FE7 tiene ~144.875)"
+        );
+    }
+}
+
+#[test]
+fn test_run_frame_native_sincroniza_hblank_irq_en_modo_irq() {
+    let _guard = bloquear_acumuladores();
+    let mut rom = vec![0u8; 1024 * 1024];
+    rom[0] = 0x2E;
+    rom[3] = 0xEA;
+    let mut machine = Machine::new(rom);
+    let table = BlockTable::empty();
+
+    machine.bus.io[0x04] = 0x10;
+    machine.bus.ime = true;
+    machine.bus.reg_if |= 0x02;
+
+    let initial_clock = machine.bus.clock;
+    let (_native, _fallback) = run_frame_native(&mut machine, &table, 50);
+
+    assert!(machine.bus.clock > initial_clock, "el reloj debe avanzar");
+}
+
+#[test]
+fn test_run_frame_native_sincroniza_ventana_hblank_tardia_y_cruce() {
+    let _guard = bloquear_acumuladores();
+    let mut rom = vec![0u8; 1024 * 1024];
+    rom[0] = 0x2E;
+    rom[3] = 0xEA;
+    let mut machine = Machine::new(rom);
+    let table = BlockTable::empty();
+
+    machine.bus.io[0x04] = 0x10; // HBlank IRQ activo en DISPSTAT
+    machine.bus.ime = true;
+    machine.bus.clock = machine.bus.vline_start + 1150;
+
+    let initial_clock = machine.bus.clock;
+    let (_native, _fallback) = run_frame_native(&mut machine, &table, 50);
+
+    assert!(machine.bus.clock > initial_clock, "el reloj debe avanzar");
+}
+
+#[test]
+fn test_run_frame_native_sincroniza_scanline_visible_con_raster_irq() {
+    let _guard = bloquear_acumuladores();
+    let mut rom = vec![0u8; 1024 * 1024];
+    rom[0] = 0x2E;
+    rom[3] = 0xEA;
+    let mut machine = Machine::new(rom);
+    let table = BlockTable::empty();
+
+    assert!(
+        machine.bus.scanline() < 160,
+        "debe comenzar en scanline visible"
+    );
+    machine.bus.io[0x04] = 0x10; // HBlank IRQ activo en DISPSTAT (bit 4)
+    machine.bus.ime = true;
+
+    let initial_clock = machine.bus.clock;
+    let (native, _fallback) = run_frame_native(&mut machine, &table, 50);
+
+    assert_eq!(
+        native, 0,
+        "con raster IRQ activo en scanline visible no debe despachar bloques nativos"
+    );
+    assert!(
+        machine.bus.clock > initial_clock,
+        "el reloj debe avanzar por el paso fino de m.step()"
+    );
+}

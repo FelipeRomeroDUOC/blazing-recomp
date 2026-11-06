@@ -25,6 +25,7 @@ Directrices de arquitectura, plataforma y reglas operativas para el proyecto **B
   - Creación o versionado de binarios `.gba`, `.bin`, `.elf`.
   - Inserción de rutas absolutas locales del sistema operativo. Toda ruta debe ser relativa al repositorio.
   - Comandos Git destructivos (`git reset`, `git restore`, `git checkout .`).
+  - Uso de `Model='inherit'`, debilitamiento de `assert!`, comparación directa `f32` en `assert_eq!` y módulos mayores a 350 líneas con tests inline.
 
 ---
 
@@ -45,29 +46,39 @@ Directrices de arquitectura, plataforma y reglas operativas para el proyecto **B
 
 ## 4. Subagentes Especializados y Matriz de Disparadores
 
-Para evitar contaminación de contexto en el agente principal y optimizar la cuota semanal, el arnés opera bajo una **arquitectura híbrida**: plantillas de encargo fijas en [`.agents/subagents/`](.agents/subagents/) combinadas con **ciclo de vida efímero** (un subproceso limpio por tarea que se desecha al entregar su reporte). El arnés **bloquea por software** (`PreToolGuard`) la ejecución de comandos verbosos o pesados en el hilo principal.
+Para evitar contaminación de contexto en el agente principal y optimizar la cuota semanal, el arnés reserva los subagentes exclusivamente para tareas que requieren **razonamiento real**, con plantillas fijas en [`.agents/subagents/`](.agents/subagents/) y **ciclo de vida efímero**. Las ejecuciones mecánicas (`cargo test`, empaquetado de APK y validaciones de plantillas) están automatizadas mediante scripts deterministas en `scripts/`.
 
-Los roles se dividen estrictamente según su naturaleza: **Razonamiento Crítico (`pro`)** y **Ejecución Mecánica (`flash_lite`)**:
+Los roles de IA se dividen en tres niveles según su naturaleza técnica, prohibiéndose el uso de herencia pasiva (`inherit`):
 
-### División 1: Razonamiento Crítico (Modelos Pro)
+### División 1: Reserva Crítica de Escalamiento (Gemini 4 Argon / Pro)
 | Evento / Tarea | TypeName | Role | Modelo Antigravity | Modelo DSH | Disparador Obligatorio |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Diagnóstico y Arquitectura** | `research` | `Investigador` | `pro` | `google/gemini-1.5-pro` | Diagnóstico de causas raíz de bugs complejos, análisis de hardware GBA, PPU/Audio y ROM. |
-| **Auditoría de Propuestas** | `research` | `Proposal Reviewer` | `pro` | `google/gemini-1.5-pro` | Auditar borradores de Propuestas N2 (Lenguaje claro ISO 24495-1 y verificabilidad) antes de entregar al usuario. |
-| **Implementación de Código** | `self` | `Constructor` | `pro` (o `flash`) | `google/gemini-1.5-pro` | Programación de nuevos módulos, algoritmos de renderizado/audio y refactorizaciones aprobadas. |
+| **Escalamiento Crítico (Último Recurso)** | `self` | `Deep Debugger` | `pro` | `google/gemini-4-argon` | **Solo bajo escalamiento:** Cuando `Investigador` (`3.8 Flash`) no logre aislar la causa raíz tras un primer intento, o ante fallos críticos de sincronización hardware/ROM. |
 
-### División 2: Ejecución Mecánica (Modelos Flash-Lite)
+### División 2: Núcleo Técnico y Analítico (Gemini 3.8 Flash)
 | Evento / Tarea | TypeName | Role | Modelo Antigravity | Modelo DSH | Disparador Obligatorio (Enforzado por Hook) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Pruebas y Regresiones** | `self` | `Test Runner` | `flash_lite` | `google/gemini-3.1-flash-lite` | Ejecutar `cargo test`, arnés de fotogramas dorados o auditoría de mutantes. |
-| **Compilación y Empaquetado APK** | `self` | `APK Builder` | `flash_lite` | `google/gemini-3.5-flash-lite` | Compilar AOT C11 (`compilar_recomp_aot.ps1`), `cargo ndk`, `cargo build` o Fat APK (`package_apk.ps1`). |
-| **Búsqueda Masiva (Contingencia)**| `research` | `Code Scout` | `flash_lite` | `google/gemini-3.5-flash-lite` | Búsquedas no indexadas de más de 10 archivos completos cuando CodeGraph no baste. |
+| **Extracción y Diagnóstico** | `self` | `Investigador` | `flash` | `google/gemini-3.8-flash` | Ojos del Orquestador: extracción de snippets verbatim, CodeGraph y decodificación de registros (máx 8 llamadas). |
+| **Auditoría de Propuestas (Opcional)** | `self` | `Proposal Reviewer` | `flash` | `google/gemini-3.8-flash` | Auditoría opcional bajo demanda: solo para propuestas críticas de arquitectura Nivel 2 a solicitud explícita. |
+| **Implementación de Código** | `self` | `Constructor` | `flash` | `google/gemini-3.8-flash` | Programación en `src/` o `src-c/`, auto-verificación obligatoria con `cargo check` y unit test puntual (máx 20 llamadas). |
+
+### División 3: Exploración Masiva (Flash-Lite)
+| Evento / Tarea | TypeName | Role | Modelo Antigravity | Modelo DSH | Disparador Obligatorio (Enforzado por Hook) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Búsqueda Masiva (Contingencia)**| `self` | `Code Scout` | `flash_lite` | `google/gemini-3.5-flash-lite` | Búsquedas no indexadas de más de 10 archivos completos cuando CodeGraph no baste (máx 8 llamadas). |
+
+> [!IMPORTANT]
+> **Protección de Cuota Argon, Prohibición de `inherit` y Scripts Deterministas:**
+> - El argumento `Model` en `invoke_subagent` debe especificarse **siempre de forma explícita** (`flash`, `flash_lite` o `pro`). Queda terminantemente prohibido el uso de `inherit`.
+> - **Prioridad 3.8 Flash:** Toda investigación diagnóstica, auditoría de propuestas e implementación de código se ejecuta por defecto en **`Gemini 3.8 Flash` (`Model='flash'`)**. **`Gemini 4 Argon` (`Model='pro'`)** se reserva exclusivamente para escalamiento de último recurso (`Deep Debugger`).
+> - **Ejecutores Deterministas (Sin Subagente):** Las pruebas (`cargo test`) y la compilación de APK (`package_apk.ps1` / `compilar_recomp_aot.ps1`) no usan subagentes; se ejecutan mediante `python scripts/run_tests_summary.py` y `python scripts/build_apk_summary.py`.
 
 > [!NOTE]
-> **Ciclo de vida y absorción de roles:**
-> - **Efímeros por defecto:** Cada subagente se invoca para una tarea puntual, entrega su reporte ejecutivo (3 a 5 líneas) y se destruye. Esto previene la acumulación de logs muertos y protege la cuota semanal.
-> - **Excepción de ciclo corto:** El `Constructor` puede recibir 2 o 3 mensajes iterativos de corrección (`send_message`) únicamente dentro del bucle de depuración de una misma feature activa.
-> - **Roles absorbidos:** `Telemetry Analyzer` y `Label Auditor` quedan absorbidos como misiones dinámicas del `Investigador`. `Doc Manager` está podado (automatizado por `post_tool_runner`).
+> **Ciclo de vida, Micro-Investigación Paralela (Map-Reduce) y Caché de Hallazgos:**
+> - **Efímeros por defecto:** Cada subagente se invoca para una tarea puntual, entrega su reporte ejecutivo (3 a 5 líneas) y se destruye.
+> - **Micro-Investigaciones Paralelas (Map-Reduce):** Queda prohibido enviar megaprompts abiertos a un solo `Investigador`. Cuando un problema involucre varios frentes (ej. registros I/O en volcados, empaquetado en Rust y shader WGSL), el Orquestador debe dividirlo en micro-preguntas atómicas y lanzar **2 o 3 instancias de `Investigador` en paralelo en el mismo turno** (ej. `Role='Investigador: Volcados'`, `Role='Investigador: WGSL'`).
+> - **Caché Persistente de Hallazgos y Circuit Breakers:** Antes de cerrar, cada `Investigador` persiste su descubrimiento con `ledger.py --save-finding` e incluye `archivo:L1-L2`. Presupuesto por subagente: `Investigador` (máx 8 llamadas), `Constructor` (máx 20 llamadas con auto-verificación `cargo check`), `Code Scout` (máx 8 llamadas).
+> - **Roles podados / absorbidos:** `Test Runner` y `APK Builder` están podados (reemplazados por `run_tests_summary.py` y `build_apk_summary.py`). `Telemetry Analyzer` y `Label Auditor` quedan absorbidos como misiones dinámicas del `Investigador` (`3.8 Flash`). `Doc Manager` está podado (automatizado por `post_tool_runner`).
 
 ### 4.1 Invocación en DeepSeek Harness (DSH)
 
@@ -75,28 +86,34 @@ En DSH la herramienta `subagent` acepta `description`, `prompt`, `provider` y `m
 
 | Rol | Encargo | Invocación en DSH |
 | :--- | :--- | :--- |
-| `Investigador` | [investigador.md](.agents/subagents/investigador.md) | `subagent(description='Investigador', provider='google', model='gemini-1.5-pro', prompt=<contenido> + tarea)` |
-| `Proposal Reviewer`| [proposal-reviewer.md](.agents/subagents/proposal-reviewer.md) | `subagent(description='Proposal Reviewer', provider='google', model='gemini-1.5-pro', prompt=<contenido> + tarea)` |
-| `Constructor` | [constructor.md](.agents/subagents/constructor.md) | `subagent(description='Constructor', provider='google', model='gemini-1.5-pro', prompt=<contenido> + tarea)` |
-| `Test Runner` | [test-runner.md](.agents/subagents/test-runner.md) | `subagent(description='Test Runner', provider='google', model='gemini-3.1-flash-lite', prompt=<contenido> + tarea)` |
-| `APK Builder` | [apk-builder.md](.agents/subagents/apk-builder.md) | `subagent(description='APK Builder', provider='google', model='gemini-3.5-flash-lite', prompt=<contenido> + tarea)` |
+| `Investigador` | [investigador.md](.agents/subagents/investigador.md) | `subagent(description='Investigador', provider='google', model='gemini-3.8-flash', prompt=<contenido> + tarea)` |
+| `Proposal Reviewer`| [proposal-reviewer.md](.agents/subagents/proposal-reviewer.md) | `subagent(description='Proposal Reviewer', provider='google', model='gemini-3.8-flash', prompt=<contenido> + tarea)` |
+| `Constructor` | [constructor.md](.agents/subagents/constructor.md) | `subagent(description='Constructor', provider='google', model='gemini-3.8-flash', prompt=<contenido> + tarea)` |
+| `Deep Debugger` | [investigador.md](.agents/subagents/investigador.md) | `subagent(description='Deep Debugger', provider='google', model='gemini-4-argon', prompt=<contenido> + tarea)` *(Solo escalamiento)* |
 | `Code Scout` | [code-scout.md](.agents/subagents/code-scout.md) | `subagent(description='Code Scout', provider='google', model='gemini-3.5-flash-lite', prompt=<contenido> + tarea)` |
 
 - `subagent_fork` no acepta modelo: el hijo hereda el del padre. Solo para tareas que necesiten el contexto de esta conversación.
-- En Antigravity se invoca mediante `invoke_subagent(TypeName='research'|'self', Role='<rol>', Model='pro'|'flash_lite', Prompt='...')`.
+- En Antigravity se invoca mediante `invoke_subagent(TypeName='self', Role='<rol>', Model='flash'|'flash_lite'|'pro', Prompt='...')` (prohibido `inherit`).
 
 ---
 
-## 5. Skills Locales y Pipeline Operativo
+## 5. Skills Locales, Zonas Sensibles y Fuentes de Verdad Auto-Indexadas
 
 Las skills completas residen en [`.agents/skills/`](.agents/skills/):
 - **`propuesta-verificable`:** Flujo obligatorio antes de tocar código: Nivel 0 (trivial/texto), Nivel 1 (1 archivo en chat con Antes/Ahora), Nivel 2 (crítico en `docs/propuestas/`). Prohibido editar sin aprobación previa. En Nivel 2, incrustar obligatoriamente la previsualización interactiva con `<agent-embed>`.
+  - **Zonas Sensibles (fuerzan Propuesta Nivel 2):** `src/ppu_nativa.rs`, `src/ppu_nativa.wgsl`, `src/audio.rs`, `src/recomp.rs`, `src/pipeline.rs`, `src/runner.rs`, `../gba-recomp/crates/gba-core/**`, `Cargo.toml`, `pack.toml`, `android/AndroidManifest.xml` y `.agents/hooks/*.py`.
 - **`diataxis-docs`:** Estructura de documentación (Tutoriales, Guías, Referencia, [Explicación](docs/explicacion/README.md) / [DECISIONES.md](docs/explicacion/DECISIONES.md)).
 - **`test-generation`:** Diseño de pruebas de frontera y robustez. Suite en verde antes de modificar.
 - **`lenguaje-claro-iso-24495`:** Directriz transversal obligatoria: ir directo al grano, sin rodeos ni fórmulas de relleno.
 
+### 5.1 Protocolo Dual de Grafos (CodeGraph vs. Graphify) y Fuentes de Verdad
+
+El hook `session_init.py` y el indexador `scripts/indexar_contexto_y_fuentes.py` mantienen sincronizados y libres de código histórico (`docs/historico/` excluido) dos grafos complementarios:
+- **CodeGraph (`.codegraph/`):** Exclusivo para código fuente vivo (`src/`, `tests/`, `scripts/`, `../gba-recomp/crates/gba-core/`), extracción de snippets verbatim y call-graph.
+- **Graphify (`graphify-out/wiki/index.md` y `.agents/telemetry/sources_index.json`):** Grafo de conocimiento y Fuentes de Verdad ([`docs/fuentes/`](docs/fuentes/README.md), [`docs/referencia/`](docs/referencia/README.md), [`docs/explicacion/DECISIONES.md`](docs/explicacion/DECISIONES.md), [`GLOSSARY.md`](GLOSSARY.md) y símbolos de shaders `src/*.wgsl`). Se auto-expande automáticamente al añadir o editar documentos en `docs/`.
+
 > [!NOTE]
-> **Automatización del Arnés:** Al guardar archivos en `docs/` o `src/`, el hook `post_tool_runner` ejecuta automáticamente `actualizar_indice_propuestas.py`, `validar_docs.py` y `cargo fmt`.
+> **Automatización del Arnés:** Al guardar archivos en `docs/` o `src/`, el hook `post_tool_runner` ejecuta automáticamente `actualizar_indice_propuestas.py`, `validar_propuesta_y_skills.py`, `validar_docs.py`, `indexar_contexto_y_fuentes.py` y `cargo fmt`.
 
 ---
 
@@ -104,6 +121,11 @@ Las skills completas residen en [`.agents/skills/`](.agents/skills/):
 
 | Propósito | Comando Oficial |
 | :--- | :--- |
+| **Resumen Determinista de Tests** | `python scripts/run_tests_summary.py [args]` |
+| **Resumen Determinista de APK / AOT** | `python scripts/build_apk_summary.py` (o `--aot`) |
+| **Indexar Fuentes, WGSL y Grafos** | `python scripts/indexar_contexto_y_fuentes.py` |
+| **Validar Propuestas y Skills** | `python scripts/validar_propuesta_y_skills.py <ruta.md>` |
+| **Activar Live Dock** | `python scripts/activar_live_dock.py [artifact_dir]` |
 | **Verificar Sincronía Versiones** | `python scripts/bump_version.py --check` |
 | **Simular Incremento Versión** | `python scripts/bump_version.py --dry-run --patch` |
 | **Empaquetado Fat APK** | `powershell -ExecutionPolicy Bypass -File scripts/package_apk.ps1` |
@@ -112,3 +134,5 @@ Las skills completas residen en [`.agents/skills/`](.agents/skills/):
 | **Auditoría Labels AOT** | `python scripts/diagnostico/auditar_labels.py` |
 | **Compilar AOT C11** | `powershell -ExecutionPolicy Bypass -File scripts/diagnostico/compilar_recomp_aot.ps1` |
 | **Validar Documentación** | `python .agents/skills/diataxis-docs/scripts/validar_docs.py .` |
+| **Consultar Registro de Agentes** | `python .agents/telemetry/ledger.py --tail 25` (o `--stats`, `--role <rol>`) |
+| **Visor Nativo de Agentes (GUI)** | `python .agents/telemetry/ledger.py --gui` (o `abrir_visor_agentes.bat`) |

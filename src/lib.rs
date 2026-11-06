@@ -38,6 +38,7 @@ pub mod storage;
 pub mod telemetria;
 
 pub mod ppu_nativa;
+pub mod volcado;
 
 // ---------------------------------------------------------------------------
 // Plataforma Android: ciclo de vida, GPU, entrada y háptica.

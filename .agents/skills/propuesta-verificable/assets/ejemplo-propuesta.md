@@ -1,81 +1,125 @@
 # Ejemplo de propuesta de nivel 2 (ilustrativo)
 
-Nota: ejemplo inventado, solo para calibrar cuánta concreción se espera. No copies su contenido ni sus cifras; usa el estilo.
+Nota: ejemplo inventado, solo para calibrar longitud y estilo. No copies su contenido ni sus datos. Los tests de este ejemplo están en `assets/ejemplo-tests.py`.
 
-## Frases vagas → versión verificable
+---
 
-| Vaga | Verificable |
-|------|-------------|
-| "Mejora el cálculo del total" | "`calcular_total` devuelve el total redondeado a 2 decimales (hoy devuelve 35.699999999999996 para 3 unidades de 10)." |
-| "Podría afectar a otras partes" | "Lo usan `app/ui.py` línea 4 y `app/reportes.py` línea 3 (búsqueda: `grep -rn calcular_total app`)." |
-| "Se probará a fondo" | "`pytest tests/test_totales.py::test_total_redondeado`; pasa si devuelve 35.7; no detecta cómo se ve el total en pantalla." |
-| "Se cubrirán los casos importantes" | "Normal: 3 unidades de 10. Límite: un ítem de 0.01. Regresión: la pantalla para 100 × 1 sigue mostrando 'Total: 119.0 [Guardar]'." |
-| "Respeta las convenciones" | "La pantalla mantiene su formato 'Total: X [Guardar]' (origen: respuesta humana, 2026-10-05) → implica: no cambiar `ui.py` → protegida por: escenario 'Pantalla sin cambios'." |
-| "Debería funcionar con la librería" | "Suposición: `round(x, 2)` da el mismo resultado con enteros y decimales → prototipar: sí." |
+# Propuesta: fecha de entrega legible
 
-## Propuesta completa (resumida)
+Fecha: 2026-11-05 · Nivel 2 · Estado: pendiente
+Viene de: no corrige ninguna
+Hereda sin cambios: no aplica
 
-# Propuesta: redondear total
+## Para decidir
 
-Fecha: 2026-10-05
-Nivel: 2 (lógica compartida)
-Estado: pendiente
+**Qué cambia:** la pantalla de pedido muestra la fecha de entrega como 20/11/2026 en vez de 2026-11-20.
 
-### 1. Qué cambia
-El total de un pedido se muestra y se acumula en reportes con 2 decimales, sin restos de cálculo.
+**Para qué:** que la persona que atiende el mostrador lea la fecha sin tener que darle la vuelta.
 
-### 2. Contexto
-- Contexto consultado: `app/totales.py`, `app/ui.py`, `app/reportes.py`, `CONTEXTO.md`.
-- Intención: que el total mostrado y el sumado en reportes coincidan al centavo.
-- Restricciones y decisiones previas:
-  - La pantalla mantiene su formato actual "Total: X [Guardar]" (origen: respuesta humana, 2026-10-05) → implica: no tocar `ui.py` → protegida por: "Pantalla sin cambios".
-  - `reportes.py` ya fue ajustado en una propuesta anterior (origen: `propuestas/2026-10-03_reportes.md`) → implica: no cambiar su estructura → protegida por: no testeable.
-- Alternativas descartadas:
-  - Redondear en `ui.py` → descartada porque `reportes.py` seguiría sumando valores sin redondear.
-- Ante imprevistos, prioriza: no alterar resultados ya guardados antes que simplificar el código.
+**Ejemplo:** pedido con entrega el 20 de noviembre → hoy: "Entrega: 2026-11-20 [Guardar]" → después: "Entrega: 20/11/2026 [Guardar]".
 
-### 3. Ejemplos
-- Normal: 3 unidades de 10 → antes: 35.699999999999996 → ahora: 35.7
-- Límite: un ítem de 0.01 → antes: 0.011899999999999999 → ahora: 0.01
+**Qué voy a hacer:**
+1. Agregar una función nueva que convierte "2026-11-20" en "20/11/2026".
+2. Hacer que la pantalla de pedido use esa función.
+3. Dejar los reportes como están.
 
-### 6. Suposiciones
-- `round(x, 2)` da el mismo resultado con enteros y decimales → prototipar: sí
-  → si es falso: convertir a `Decimal` antes de redondear
-  → resultado del prototipo: (se completa tras la aprobación) | no detecta: otros intérpretes o versiones
-- Ningún otro módulo compara el total con igualdad exacta → prototipar: no
-  → si es falso: habría que revisar esas comparaciones en el mismo cambio
+**Qué podría romperse:** nada que ya funcione, porque no cambio la función que hoy usan la pantalla y el reporte (ver E1). Lo que sí podría pasar es que un pedido guardado con otro formato de fecha dé error (ver S1).
 
-### 8. Criterios de aceptación
-Escenario: Total redondeado a 2 decimales
-Caso de uso: el cliente ve el total de su pedido | Tipo: normal
-  Dado que hay 3 unidades con precio 10
-  Cuando calculo el total
-  Entonces obtengo 35.7
-Test: tests/test_totales.py::test_total_redondeado (se escribe tras la aprobación)
-Estado previo: (se completa al escribir el test)
+**Qué no voy a tocar:** los reportes y el texto "Entrega: … [Guardar]".
 
-Escenario: Total de un solo centavo
-Caso de uso: el cliente compra un artículo de muy bajo precio | Tipo: límite
-  Dado que hay 1 unidad con precio 0.01
-  Cuando calculo el total
-  Entonces obtengo 0.01
-Test: tests/test_totales.py::test_total_un_centavo (se escribe tras la aprobación)
-Estado previo: (se completa al escribir el test)
+**Necesito de ti:**
+1. Si un pedido no tiene fecha, ¿qué debe verse?
+   Opciones: "sin fecha" / dejar en blanco / no sé
+   Si no respondes, uso: "sin fecha"
+   Cambia el plan si: eliges en blanco, el paso 1 devuelve texto vacío en ese caso.
 
-Escenario: Pantalla sin cambios
-Caso de uso: el cliente ve el total en pantalla | Tipo: regresión
-  Dado que hay 1 unidad con precio 100
+Tendrás que mirar tú: que la fecha cabe en la pantalla sin cortarse (no se puede comprobar con código).
+
+---
+
+## Detalle para verificar
+
+### Suposiciones (lo que doy por cierto sin haberlo comprobado)
+
+S1 · Todas las fechas guardadas están escritas como AAAA-MM-DD.
+  Si es falso: la función nueva debe aceptar también el otro formato.
+  Se prueba antes de editar: sí (si es falso, cambia el paso 1; se prueba leyendo los datos de ejemplo del proyecto)
+  Resultado de la prueba: se completa tras la aprobación
+
+S2 · Ningún otro código compara la fecha como texto.
+  Si es falso: habría que revisar esas comparaciones en el mismo cambio.
+  Se prueba antes de editar: no
+
+### Reglas del proyecto que respeto (máximo 3)
+
+R1 · La pantalla siempre muestra "Entrega: X [Guardar]".
+  Fuente: CONTEXTO.md
+  Por eso: solo cambio X, no el texto de alrededor.
+  Se comprueba con: C3
+
+R2 · Los reportes siguen mostrando AAAA-MM-DD.
+  Fuente: respuesta humana, 2026-11-02 (la contadora los importa así)
+  Por eso: no toco la función que usa el reporte.
+  Se comprueba con: C4
+
+### Comprobaciones (criterios de aceptación; no se cambian sin aprobación)
+
+C1 · Fecha en formato día/mes/año — normal
+  Situación real: la persona del mostrador abre un pedido.
+  Dado que el pedido tiene entrega "2026-11-20"
   Cuando se muestra el pedido
-  Entonces la pantalla dice "Total: 119.0 [Guardar]"
-Test: tests/test_ui.py::test_pantalla_sin_cambios (se escribe tras la aprobación)
-Estado previo: (se completa al escribir el test; debe pasar)
+  Entonces la pantalla dice "Entrega: 20/11/2026 [Guardar]"
+  Test: tests/test_entregas.py::test_fecha_en_pantalla · Estado previo: falla
+  Se ejecuta con: `python3 -m pytest tests/test_entregas.py::test_fecha_en_pantalla`
+  No cubre: cómo se ve en pantalla
 
-Los tests de este ejemplo, ya escritos, están en `assets/ejemplo-tests.py`.
+C2 · Pedido sin fecha — extremo
+  Situación real: se abre un pedido antiguo que no guardó fecha.
+  Dado que el pedido no tiene fecha de entrega
+  Cuando se muestra el pedido
+  Entonces la pantalla dice "Entrega: sin fecha [Guardar]"
+  Test: tests/test_entregas.py::test_pedido_sin_fecha · Estado previo: falla
+  Se ejecuta con: `python3 -m pytest tests/test_entregas.py::test_pedido_sin_fecha`
+  No cubre: fechas con formato inválido
 
-### 9. Cómo lo comprobaré
-- Total redondeado → `pytest tests/test_totales.py::test_total_redondeado` → pasa si devuelve 35.7 → no detecta cómo se ve en pantalla
-- Total de un solo centavo → `pytest tests/test_totales.py::test_total_un_centavo` → pasa si devuelve 0.01 → no detecta otros montos pequeños
-- Pantalla sin cambios → `pytest tests/test_ui.py::test_pantalla_sin_cambios` → pasa si el texto es "Total: 119.0 [Guardar]" → no detecta el aspecto visual de la pantalla
+C3 · La pantalla mantiene su formato — no debe cambiar
+  Situación real: la persona sigue viendo el mismo texto alrededor de la fecha.
+  Dado que el pedido tiene entrega "2026-11-20"
+  Cuando se muestra el pedido
+  Entonces el texto empieza con "Entrega: " y termina con " [Guardar]"
+  Test: tests/test_entregas.py::test_pantalla_mantiene_formato · Estado previo: pasa
+  Se ejecuta con: `python3 -m pytest tests/test_entregas.py::test_pantalla_mantiene_formato`
+  No cubre: tamaño ni posición en pantalla
+
+C4 · El reporte sigue igual — no debe cambiar
+  Situación real: la contadora importa el reporte del día.
+  Dado que el pedido 7 tiene entrega "2026-11-20"
+  Cuando se genera su línea de reporte
+  Entonces la línea es "7;2026-11-20"
+  Test: tests/test_entregas.py::test_reporte_sin_cambios · Estado previo: pasa
+  Se ejecuta con: `python3 -m pytest tests/test_entregas.py::test_reporte_sin_cambios`
+  No cubre: la importación en sí
+
+### Archivos
+
+Tocaré: app/entregas.py, app/ui.py
+Podrían verse afectados: app/reportes.py (no lo toco; ver E1)
+
+### Evidencia
+
+E1 · La función actual la usan la pantalla y el reporte — origen: `grep -rn formatear_fecha app` → app/ui.py:5 y app/reportes.py:5
+
+### Decisiones de diseño
+
+Alternativa descartada: cambiar la función actual — porque el reporte dejaría de salir como AAAA-MM-DD (R2).
+Ante imprevistos, prioriza: no alterar el reporte antes que reutilizar código.
+
+### Antes de presentar, corregí
+
+Mi primer borrador cambiaba la función actual; al buscar referencias vi que el reporte la usa (E1) y pasé a una función nueva.
+
+---
 
 ## Revisión humana
-- Restricción "no cambiar la estructura de `reportes.py`" (no testeable): ✔ | ✘ | ?
+
+- La fecha cabe en la pantalla sin cortarse: ✔ | ✘ | ?

@@ -5,6 +5,7 @@
 //! acotado para que el hilo principal de Android los consuma y presente en la GPU
 //! sin retrasos ni contención de cerrojos.
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
@@ -21,6 +22,94 @@ pub const GBA_PIXELS: usize = GBA_W * GBA_H;
 
 /// Duración exacta de un fotograma de GBA a 60 FPS (16.666 ms).
 pub const FRAME_DURATION: Duration = Duration::from_nanos(16_666_667);
+
+/// Temporizador de fotogramas acumulativo para mantener una tasa constante de 60 FPS
+/// compensando los excesos de reposo del planificador del sistema operativo sin deriva temporal.
+pub struct FramePacer {
+    target_interval: Duration,
+    next_frame_time: Instant,
+    max_lag: Duration,
+}
+
+impl FramePacer {
+    /// Retraso máximo tolerado antes de reiniciar el ancla temporal (100 ms).
+    pub const DEFAULT_MAX_LAG: Duration = Duration::from_millis(100);
+
+    /// Crea un nuevo regulador de fotogramas con el intervalo especificado.
+    pub fn new(target_interval: Duration) -> Self {
+        Self::with_max_lag(target_interval, Self::DEFAULT_MAX_LAG)
+    }
+
+    /// Crea un nuevo regulador de fotogramas con intervalo y techo de retraso configurables.
+    pub fn with_max_lag(target_interval: Duration, max_lag: Duration) -> Self {
+        Self {
+            target_interval,
+            next_frame_time: Instant::now() + target_interval,
+            max_lag,
+        }
+    }
+
+    /// Constructor determinista para pruebas unitarias fijando el instante inicial.
+    pub fn with_start_time(
+        target_interval: Duration,
+        max_lag: Duration,
+        start_time: Instant,
+    ) -> Self {
+        Self {
+            target_interval,
+            next_frame_time: start_time + target_interval,
+            max_lag,
+        }
+    }
+
+    /// Reinicia el ancla temporal al tiempo actual más el intervalo objetivo.
+    pub fn reset(&mut self, now: Instant) {
+        self.next_frame_time = now + self.target_interval;
+    }
+
+    /// Consulta el instante límite programado para el siguiente fotograma.
+    pub fn next_frame_time(&self) -> Instant {
+        self.next_frame_time
+    }
+
+    /// Consulta el intervalo objetivo configurado entre fotogramas.
+    pub fn target_interval(&self) -> Duration {
+        self.target_interval
+    }
+
+    /// Consulta el retraso máximo permitido.
+    pub fn max_lag(&self) -> Duration {
+        self.max_lag
+    }
+
+    /// Avanza el temporizador calculando el tiempo de reposo necesario para el fotograma.
+    ///
+    /// Si el hilo acumula retraso debido a sobre-reposo del kernel, el tiempo se deduce
+    /// del siguiente reposo para mantener un promedio exacto de 60.0 FPS. Si el retraso
+    /// supera `max_lag`, se reinicia el ancla temporal para evitar espirales de aceleración.
+    pub fn advance(&mut self, now: Instant) -> Duration {
+        if now + self.max_lag < self.next_frame_time {
+            // Reloj anómalo o salto temporal hacia el pasado
+            self.reset(now);
+            return self.target_interval;
+        }
+
+        if now >= self.next_frame_time + self.max_lag {
+            // Retraso masivo acumulado (> max_lag): reiniciar ancla sin arrastrar deuda
+            self.reset(now);
+            return Duration::ZERO;
+        }
+
+        if now < self.next_frame_time {
+            let sleep_needed = self.next_frame_time - now;
+            self.next_frame_time += self.target_interval;
+            sleep_needed
+        } else {
+            self.next_frame_time += self.target_interval;
+            Duration::ZERO
+        }
+    }
+}
 
 /// Estado de memoria de video para renderizado acelerado en GPU (PPU Nativa).
 #[derive(Clone)]
@@ -80,7 +169,7 @@ pub type WakeFn = Arc<dyn Fn() + Send + Sync>;
 
 pub struct EmulationBridge {
     /// Buzón con el fotograma más reciente pendiente de consumir.
-    mailbox: Mutex<Option<FramePacket>>,
+    mailbox: Mutex<VecDeque<FramePacket>>,
     /// Pool de búferes RGBA reutilizables (evita `Box::new` por fotograma).
     buffer_pool: Mutex<Vec<Box<[[u8; 4]; GBA_PIXELS]>>>,
     /// Pool de volcados de memoria PPU reutilizables.
@@ -91,12 +180,15 @@ pub struct EmulationBridge {
     running: AtomicBool,
     paused: AtomicBool,
     gpu_ppu: AtomicBool,
+    dumping_enabled: AtomicBool,
     audio_enabled: AtomicBool,
     audio_underruns: AtomicU64,
     save_requested: AtomicBool,
     pause_sync: (Mutex<bool>, Condvar),
     /// Notificador opcional para interrumpir la espera del hilo principal.
     waker: Mutex<Option<WakeFn>>,
+    /// Acumulador de anomalías de raster detectadas en la cinemática del dragón.
+    dragon_anomalias: Mutex<AnomaliasDragonAcumuladas>,
 }
 
 impl EmulationBridge {
@@ -108,19 +200,21 @@ impl EmulationBridge {
     /// Crea un nuevo puente con un notificador de eventos opcional.
     pub fn new_with_waker(waker: Option<WakeFn>) -> Self {
         Self {
-            mailbox: Mutex::new(None),
-            buffer_pool: Mutex::new(Vec::with_capacity(2)),
-            ppu_pool: Mutex::new(Vec::with_capacity(2)),
+            mailbox: Mutex::new(VecDeque::with_capacity(4)),
+            buffer_pool: Mutex::new(Vec::with_capacity(4)),
+            ppu_pool: Mutex::new(Vec::with_capacity(4)),
             buffer_allocs: AtomicU64::new(0),
             keys: AtomicU16::new(0x03FF), // Teclas GBA activas en bajo (0x03FF = todas sueltas)
             running: AtomicBool::new(true),
             paused: AtomicBool::new(false),
             gpu_ppu: AtomicBool::new(false),
+            dumping_enabled: AtomicBool::new(false),
             audio_enabled: AtomicBool::new(true),
             audio_underruns: AtomicU64::new(0),
             save_requested: AtomicBool::new(false),
             pause_sync: (Mutex::new(false), Condvar::new()),
             waker: Mutex::new(waker),
+            dragon_anomalias: Mutex::new(AnomaliasDragonAcumuladas::default()),
         }
     }
 
@@ -212,15 +306,30 @@ impl EmulationBridge {
         self.gpu_ppu.store(enabled, Ordering::Release);
     }
 
+    /// Consulta si el volcado de fotogramas para diagnóstico está activo.
+    #[inline]
+    pub fn is_dumping_enabled(&self) -> bool {
+        self.dumping_enabled.load(Ordering::Acquire)
+    }
+
+    /// Activa o desactiva el volcado de fotogramas para diagnóstico.
+    #[inline]
+    pub fn set_dumping_enabled(&self, enabled: bool) {
+        self.dumping_enabled.store(enabled, Ordering::Release);
+    }
+
     /// Deposita el fotograma más reciente en el buzón **sin bloquearse**.
     ///
     /// Si ya había un fotograma pendiente, se descarta y su búfer vuelve al pool:
     /// el consumidor recibirá siempre el fotograma más nuevo.
     pub fn send_frame(&self, packet: FramePacket) {
-        let displaced = match self.mailbox.lock() {
-            Ok(mut slot) => slot.replace(packet),
-            Err(_) => return,
-        };
+        let mut displaced = None;
+        if let Ok(mut queue) = self.mailbox.lock() {
+            if queue.len() >= 3 {
+                displaced = queue.pop_front();
+            }
+            queue.push_back(packet);
+        }
         if let Some(old) = displaced {
             self.recycle_buffer(old.rgba);
             if let Some(ppu) = old.ppu_state {
@@ -239,7 +348,7 @@ impl EmulationBridge {
     /// Devuelve `None` si no hay ningún fotograma pendiente.
     pub fn try_recv_frame(&self) -> Option<FramePacket> {
         match self.mailbox.lock() {
-            Ok(mut slot) => slot.take(),
+            Ok(mut queue) => queue.pop_front(),
             Err(_) => None,
         }
     }
@@ -320,6 +429,24 @@ impl EmulationBridge {
                     }
                 }
             }
+        }
+    }
+
+    /// Registra una anomalía de raster en la cinemática del dragón para el reporte periódico.
+    pub fn record_dragon_anomalia(&self, diag: DiagnosticoDragon) {
+        if let Ok(mut stats) = self.dragon_anomalias.lock() {
+            stats.count += 1;
+            stats.bldcnt_l50 = diag.bldcnt_linea50;
+            stats.bldcnt_fin = diag.bldcnt_fin;
+            stats.blend_lines = diag.lineas_blend;
+        }
+    }
+
+    /// Drena las anomalías acumuladas del dragón, reiniciando el acumulador a su valor por defecto.
+    pub fn drain_dragon_anomalias(&self) -> AnomaliasDragonAcumuladas {
+        match self.dragon_anomalias.lock() {
+            Ok(mut stats) => std::mem::take(&mut *stats),
+            Err(_) => AnomaliasDragonAcumuladas::default(),
         }
     }
 }
@@ -406,6 +533,8 @@ impl EmulationWorker {
 
                 let mut frame_count = 0u64;
                 let mut dirty_since: Option<Instant> = None;
+                let mut pacer = FramePacer::new(FRAME_DURATION);
+                let mut monitor_dragon = MonitorRasterDragon::new();
 
                 while b_clone.is_running() {
                     let audio_target = b_clone.is_audio_enabled();
@@ -427,6 +556,7 @@ impl EmulationWorker {
                         }
                         audio.pause();
                         b_clone.wait_if_paused();
+                        pacer.reset(Instant::now());
                         if b_clone.is_running() && b_clone.is_audio_enabled() {
                             audio.resume();
                         }
@@ -435,16 +565,35 @@ impl EmulationWorker {
                         break;
                     }
 
-                    let t_start = Instant::now();
                     let keys = b_clone.read_keys();
                     runner.set_keys(keys);
 
                     let gpu_ppu = b_clone.is_gpu_ppu_enabled();
+                    let dumping = b_clone.is_dumping_enabled();
                     if runner.is_gpu_ppu_enabled() != gpu_ppu {
                         runner.set_gpu_ppu_enabled(gpu_ppu);
                     }
+                    if dumping {
+                        runner.set_omitir_ppu_software(false);
+                    } else if gpu_ppu {
+                        runner.set_omitir_ppu_software(true);
+                    }
 
                     runner.step_frame();
+
+                    let io_lineas_dragon = if gpu_ppu {
+                        Some(runner.io_lineas())
+                    } else {
+                        None
+                    };
+                    let diag = monitor_dragon.registrar_fotograma(
+                        frame_count,
+                        io_lineas_dragon,
+                        runner.io(),
+                    );
+                    if diag.hay_anomalia {
+                        b_clone.record_dragon_anomalia(diag);
+                    }
 
                     // Comprobación de debounce para autoguardado (1.5 segundos tras detectar modificaciones)
                     if frame_count % 30 == 0 {
@@ -472,7 +621,7 @@ impl EmulationWorker {
                     // Búfer reciclado del pool: sin asignación dinámica por fotograma.
                     // Búfer reciclado del pool: sin asignación dinámica por fotograma.
                     let mut buf = b_clone.acquire_buffer();
-                    if !gpu_ppu {
+                    if !gpu_ppu || dumping {
                         buf.copy_from_slice(runner.frame_rgba());
                     }
 
@@ -503,9 +652,9 @@ impl EmulationWorker {
                     // Depósito no bloqueante: el productor nunca espera a la GPU.
                     b_clone.send_frame(packet);
 
-                    let elapsed = t_start.elapsed();
-                    if elapsed < FRAME_DURATION {
-                        std::thread::sleep(FRAME_DURATION - elapsed);
+                    let sleep_needed = pacer.advance(Instant::now());
+                    if sleep_needed > Duration::ZERO {
+                        std::thread::sleep(sleep_needed);
                     }
                 }
 
@@ -537,6 +686,137 @@ impl EmulationWorker {
 impl Drop for EmulationWorker {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+/// Monitor de diagnóstico en segundo plano para la cinemática del dragón.
+///
+/// Detecta anomalías donde el blending alfa de la llamarada (BG3 sobre BG2)
+/// en las scanlines 0..99 se apaga o desincroniza de forma anómala.
+pub struct MonitorRasterDragon {
+    pub anomalias_detectadas: u32,
+    ultimo_log: Option<Instant>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiagnosticoDragon {
+    pub hay_anomalia: bool,
+    pub bldcnt_linea50: u16,
+    pub bldcnt_fin: u16,
+    pub lineas_blend: u32,
+    pub tiene_io_lineas: bool,
+}
+
+/// Estadísticas agregadas de anomalías de raster en la cinemática del dragón.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct AnomaliasDragonAcumuladas {
+    pub count: u32,
+    pub bldcnt_l50: u16,
+    pub bldcnt_fin: u16,
+    pub blend_lines: u32,
+}
+
+impl MonitorRasterDragon {
+    pub fn new() -> Self {
+        Self {
+            anomalias_detectadas: 0,
+            ultimo_log: None,
+        }
+    }
+
+    /// Analiza los registros I/O del fotograma y detecta si hubo pérdida de modulación raster en la cinemática.
+    pub fn analizar_lineas(
+        io_lineas: Option<&[[u8; 0x60]; 160]>,
+        io_fin: &[u8],
+    ) -> DiagnosticoDragon {
+        let bldcnt_fin = if io_fin.len() >= 0x52 {
+            u16::from_le_bytes([io_fin[0x50], io_fin[0x51]])
+        } else {
+            0
+        };
+
+        let Some(lineas) = io_lineas else {
+            return DiagnosticoDragon {
+                hay_anomalia: false,
+                bldcnt_linea50: 0,
+                bldcnt_fin,
+                lineas_blend: 0,
+                tiene_io_lineas: false,
+            };
+        };
+
+        let dispcnt_l50 = u16::from_le_bytes([lineas[50][0x00], lineas[50][0x01]]);
+        let bldcnt_l50 = u16::from_le_bytes([lineas[50][0x50], lineas[50][0x51]]);
+
+        // Solo se analizan anomalías si la cinemática del dragón está activa
+        // (Modo 0 con BG2 y BG3 habilitados, y BG1 apagado en DISPCNT, y bldcnt != 0).
+        let es_escena_dragon = (dispcnt_l50 & 0x0E07) == 0x0C00 && bldcnt_l50 != 0;
+        if !es_escena_dragon {
+            return DiagnosticoDragon {
+                hay_anomalia: false,
+                bldcnt_linea50: bldcnt_l50,
+                bldcnt_fin,
+                lineas_blend: 0,
+                tiene_io_lineas: true,
+            };
+        }
+
+        let mut lineas_blend = 0u32;
+        for py in 0..100 {
+            let bld = u16::from_le_bytes([lineas[py][0x50], lineas[py][0x51]]);
+            // Modo alfa = 1 (bits 6-7 = 01b), 1st target BG3 (bit 3 = 1)
+            let modo = (bld >> 6) & 3;
+            if modo == 1 && (bld & 8) != 0 {
+                lineas_blend += 1;
+            }
+        }
+
+        // Se considera anomalía si el blending alfa está ausente en scanlines 0..99
+        let hay_anomalia =
+            lineas_blend == 0 || ((bldcnt_l50 >> 6) & 3 != 1) || ((bldcnt_l50 & 8) == 0);
+
+        DiagnosticoDragon {
+            hay_anomalia,
+            bldcnt_linea50: bldcnt_l50,
+            bldcnt_fin,
+            lineas_blend,
+            tiene_io_lineas: true,
+        }
+    }
+
+    /// Procesa el fotograma y emite una advertencia con limitador de tasa si se detecta anomalía.
+    pub fn registrar_fotograma(
+        &mut self,
+        frame: u64,
+        io_lineas: Option<&[[u8; 0x60]; 160]>,
+        io_fin: &[u8],
+    ) -> DiagnosticoDragon {
+        let diag = Self::analizar_lineas(io_lineas, io_fin);
+        if diag.hay_anomalia {
+            self.anomalias_detectadas += 1;
+            let emitir = match self.ultimo_log {
+                Some(inst) => inst.elapsed() >= Duration::from_secs(1),
+                None => true,
+            };
+            if emitir {
+                log::warn!(
+                    "DRAGON_ANOMALY: frame={}, bldcnt_l50=0x{:04X}, bldcnt_fin=0x{:04X}, blend_lines={}/100, io_lineas={}",
+                    frame,
+                    diag.bldcnt_linea50,
+                    diag.bldcnt_fin,
+                    diag.lineas_blend,
+                    diag.tiene_io_lineas
+                );
+                self.ultimo_log = Some(Instant::now());
+            }
+        }
+        diag
+    }
+}
+
+impl Default for MonitorRasterDragon {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

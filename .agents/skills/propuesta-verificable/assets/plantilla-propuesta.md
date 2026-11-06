@@ -1,196 +1,146 @@
 # Propuesta: [nombre corto]
 
-Fecha: AAAA-MM-DD
-Nivel: 2
-Estado: pendiente
+Fecha: AAAA-MM-DD · Nivel 2 · Estado: pendiente
+Viene de: [ruta de la propuesta que corrige] | no corrige ninguna
+Hereda sin cambios: [ids como S2, R1, C3] | no aplica
 
-<!-- Estados: pendiente | aprobada | modificada | descartada |
-     verificada por agente | revisada por humano | discrepada | cerrada -->
+## Para decidir
 
-## Propuesta (la escribe el agente antes de editar)
+**Qué cambia:** [una frase, en lo que verá quien usa la app]
 
-### 1. Qué cambia
+**Para qué:** [qué problema resuelve y cómo se ve el éxito]
 
-[Una frase, desde el punto de vista de quien usa la app, sin nombres de funciones]
+**Ejemplo:** [entrada] → hoy: [A] → después: [B]
 
-### 2. Contexto
+**Qué voy a hacer:**
+1. [una frase por paso, máximo 5]
 
-Cada línea debe cambiar algo que harías. Prueba: "¿qué haría distinto si
-esto fuera falso?". Si la respuesta es "nada", la línea sobra. Máximo ~5
-líneas en total.
+**Qué podría romperse:** [máximo 2, concretos] | nada encontrado (busqué: [qué])
 
-- Contexto consultado: [archivos y documentos que leíste de verdad; "ninguno" si no leíste ninguno]
-- Intención: [qué problema resuelve y cómo se ve el éxito para quien usa la app]
-- Restricciones y decisiones previas (máx. 3):
-  - [decisión] (origen: [archivo, propuesta o "respuesta humana, AAAA-MM-DD"]) → implica: [qué respetar o qué no hacer] → protegida por: [título del escenario] | no testeable
-- Alternativas descartadas (solo si las hubo):
-  - [alternativa] → descartada porque [razón]
-- Ante imprevistos, prioriza: [X sobre Y]
+**Qué no voy a tocar:** [1 a 3 puntos]
 
-Reglas:
-- Toda restricción lleva origen. Sin origen no es una restricción: va a
-  "Suposiciones".
-- "→ implica" convierte la decisión en una conducta concreta.
-- Cada restricción se protege con un escenario de "Criterios de
-  aceptación" o se marca "no testeable"; las "no testeable" quedan en
-  "Revisión humana".
-- Si la persona respondió una pregunta previa, su respuesta entra aquí
-  con "respuesta humana" como origen.
-- Si un documento contradice el código, gana el código: repórtalo como
-  discrepancia en vez de seguir el documento.
+**Necesito de ti:**
+1. [pregunta o decisión]
+   Opciones: [A / B / no sé]
+   Si no respondes, uso: [opción]
+   Cambia el plan si: [qué]
 
-### 3. Ejemplos
+Tendrás que mirar tú: [lo que no se puede comprobar con código] | nada
+[o escribir: solo aprobar]
 
-- Caso normal: [entrada] → antes: [A] → ahora: [B]
-- Caso límite: [entrada] → antes: [A] → ahora: [B]
+---
 
-### 4. Pasos
+## Detalle para verificar
 
-1. [Qué ocurre, una oración]
-2. ...
+### Suposiciones (lo que doy por cierto sin haberlo comprobado)
 
-### 5. Qué más podría verse afectado
+S1 · [afirmación]
+  Si es falso: [cómo cambia el plan]
+  Se prueba antes de editar: sí ([por qué esta]) | no
+  Resultado de la prueba: [se completa tras la aprobación]
 
-[Archivos o funciones concretos, hallados buscando referencias.
-Si no hay, escribir "ninguno encontrado" y la búsqueda hecha.]
+### Reglas del proyecto que respeto (máximo 3)
 
-### 6. Suposiciones
+R1 · [regla]
+  Fuente: [archivo, propuesta o "respuesta humana, AAAA-MM-DD"]
+  Por eso: [qué no haré]
+  Se comprueba con: [C#] | solo tú (no hay test)
 
-- [Lo que se da por cierto sin comprobar] → prototipar: sí | no
-  → si es falso: [cómo cambia el plan]
-  → resultado del prototipo: [una línea; se completa tras la aprobación] | no detecta: [límite]
+### Comprobaciones (criterios de aceptación; no se cambian sin aprobación)
 
-Reglas:
-- Máximo 3 suposiciones con "prototipar: sí".
-- "prototipar: sí" solo si cumple las tres: se puede probar de forma
-  aislada, si fuera falsa el plan cambiaría y probarla es barato.
-- Las demás quedan como suposición sin comprobar ("prototipar: no").
-- Si la persona respondió "no sé" a una pregunta previa, entra aquí.
-
-### 7. Alcance
-
-- Incluye: [2-3 puntos]
-- No incluye: [2-3 puntos]
-
-### 8. Criterios de aceptación (no se modifican sin aprobación)
-
-Cada criterio es un escenario con título en una frase, que también es el
-nombre del test que lo comprueba.
-
-Escenario: [título en una frase]
-Caso de uso: [situación real de quien usa la app] | Tipo: normal | límite | error | regresión
+C1 · [título en una frase] — [normal | extremo | entrada inválida | no debe cambiar]
+  Situación real: [qué hace la persona que usa la app]
   Dado que [estado inicial concreto]
   Cuando [acción concreta]
-  Entonces [resultado observable con valor concreto]
-Test: [ruta o nombre del test; se escribe tras la aprobación]
-Estado previo: [se completa al escribir el test: falla | pasa (regresión)]
+  Entonces [resultado observable, con un valor concreto]
+  Test: [ruta; se escribe tras la aprobación] · Estado previo: [falla | pasa]
+  Se ejecuta con: `[comando exacto]`
+  No cubre: [límite de esta comprobación]
 
-Reglas:
+### Archivos
 
-- El "Entonces" debe incluir un valor o resultado observable.
-  Prohibido: "el sistema funciona correctamente".
-- Cobertura mínima: uno normal, uno límite y, si el cambio afecta
-  comportamiento que ya existe, uno de regresión. Suma uno de error si
-  hay entradas externas.
-- Los tests se definen aquí y se escriben DESPUÉS de la aprobación (y de
-  los prototipos), antes de editar. Deben fallar por la razón correcta;
-  los de regresión deben pasar. Si un test nuevo pasa sin cambios, no
-  mide lo que dice: detenerse y corregir el test o la propuesta.
-- Máximo 3-4 escenarios.
-- Criterios que no se puedan comprobar con código (visuales): marcarlos
-  "(visible)"; quedan para la revisión humana.
+Tocaré: [lista]
+Podrían verse afectados: [lista, con la búsqueda hecha] | ninguno encontrado
 
-### 9. Cómo lo comprobaré
+### Evidencia
 
-Una línea por escenario. Sin esto, la comprobación es una caja negra.
+E1 · [afirmación sobre el código] — origen: [comando ejecutado | archivo y línea]
 
-- [Título del escenario] → herramienta o comando: [ej. `pytest tests/test_x.py::test_y`]
-  → pasa si: [resultado concreto] → no detecta: [límite de esta comprobación]
-- [Escenario "(visible)"] → revisión humana: [qué debe mirar la persona]
-  → no detecta: [límite]
+### Decisiones de diseño (solo si las hubo)
 
-Reglas:
-- Nombra la herramienta o el comando exacto, no "pruebas" en general.
-- "No detecta" es obligatorio: toda comprobación tiene límites. Si de
-  verdad no ves ninguno, escribe "ninguno que yo vea".
-- Antes de proponerla, verifica que la herramienta existe y corre en
-  este proyecto.
-- Si algo no se puede comprobar con ninguna herramienta, dilo aquí en
-  vez de omitirlo.
+Alternativa descartada: [cuál] — porque [razón]
+Ante imprevistos, prioriza: [X sobre Y]
 
-### 10. Terminado cuando
+### Antes de presentar, corregí
 
-Se cumplen todos los criterios de aceptación.
+[qué detecté y corregí en la autocomprobación] | nada
 
-### 11. Parar si
+### Cambios tras pruebas previas (solo si el plan cambió)
 
-2 intentos fallidos seguidos con el mismo criterio. Detenerse, explicar
-qué se probó y marcar la propuesta como "discrepada".
-
-### Correcciones previas a presentar
-
-[Qué detectó y corrigió en su autocomprobación, o "ninguna"]
-
-### Cambios tras prototipos (solo si el plan cambió)
-
-- Antes: [lo que decía la propuesta] → Ahora: [lo que dice] → Por qué: [resultado del prototipo]
+Antes: [lo que decía] · Ahora: [lo que dice] · Por qué: [resultado de la prueba]
 
 ---
 
 ## Resultado (lo completa el agente después de editar)
 
-### Predicho vs. real
+**Veredicto:** coincide con lo predicho | difiere en: [qué]
 
-- [Escenario]: coincide | difiere | no pudo comprobarse
+**Por comprobación:**
+C1 · coincide | difiere | no pudo comprobarse
   Resultado real: [lo que se obtuvo al ejecutar]
   Método: el anunciado | distinto: [cuál y por qué]
 
-### Contexto: ¿se respetó?
+**Reglas:**
+R1 · respetada | no respetada: [qué pasó]
+¿Se tocó algo que una regla prohibía? sí | no: [qué]
+¿Hubo imprevistos? no | sí: [cuáles y qué prioridad se aplicó]
+¿Reapareció una alternativa descartada? sí | no
 
-- [Restricción] → respetada | no respetada: [qué pasó]
-- ¿Se tocó algo que alguna restricción prohibía? sí | no: [qué]
-- Imprevistos que surgieron: [cuáles] → criterio de prioridad aplicado: sí | no | no hubo imprevistos
-- ¿Reapareció alguna alternativa descartada? sí | no
+**Archivos modificados:** [lista real]
+¿Coinciden con los anunciados? sí | no: [cuál]
 
-### Archivos modificados
+**Discrepancias:**
+D1 · [descripción] — [error de juicio | de implementación | suposición falsa | información faltante | omisión | imprevisto]
 
-[Lista real]. ¿Coincide con lo anunciado? sí | no: [cuál]
+**Para la próxima vez:** [una línea concreta]
 
-### Discrepancias
-
-- [Descripción] → error de juicio | de implementación |
-  suposición falsa | información faltante | omisión | imprevisto
-
-### Para la próxima vez
-
-[Una línea concreta]
-
-### Fuera de alcance (hallazgos que no se arreglaron)
-
-- [Una línea por hallazgo] | impacto: bajo | medio
-  (o "ninguno")
+**Fuera de alcance:** [una línea por hallazgo, con impacto bajo | medio] | ninguno
 
 ---
 
-## Discrepancia (solo si el estado es "discrepada")
+## Evaluación (solo si una suposición resultó falsa o hay una discrepancia)
 
-Abierta por: agente | humano
-Punto afectado: [escenario o criterio]
-Motivo: [qué difiere o qué falla]
-Clasificación: error de juicio | de implementación | suposición falsa | información faltante | omisión | imprevisto
-Propuesta de corrección: [enlace al nuevo archivo]
+Abierta por: agente | persona · Fecha: AAAA-MM-DD
+
+**Qué se supuso:** S# · [texto]
+
+**Qué se observó:** [el hecho] — evidencia: [comando y salida | archivo y línea]
+
+**¿Está bien comprobado?** [qué hice para descartar que la prueba esté mal] | no pude
+
+**Estado del proyecto ahora:** [archivos editados y tests escritos, según git status o ls] | sin editar
+
+**Qué sigue valiendo y qué no:**
+Paso 1 · sigue valiendo | hay que ajustar | deja de valer | no se sabe — [por qué]
+C1 · [estado] — [por qué]
+R1 · [estado] — [por qué]
+S2 · [estado] — [por qué]
+
+**Resumen de la lista:** [N] sigue valiendo · [N] hay que ajustar · [N] deja de valer · [N] no se sabe · total [N]
+
+**Opciones:**
+A · [qué se haría] — implica: [qué pasa con lo ya editado y con la propuesta]
+B · [...]
+
+**Recomiendo:** [letra] porque [razón basada en la lista de arriba]
+
+**La alternativa prevista en "Si es falso" depende de:** [otras suposiciones sin comprobar] | nada más
+
+**Decisión de la persona:** [se anota aquí lo que responda en el chat]
 
 ---
 
 ## Revisión humana
-<!-- El agente SÍ edita esta sección: escribe aquí los escenarios que no se
-     pudieron comprobar con código ("(visible)" o "no pudo comprobarse") y las restricciones
-     marcadas "no testeable",
-     uno por línea, dejando las marcas ✔ | ✘ | ? sin elegir.
-     El agente NO elige marca, NO escribe la nota y NO rellena
-     "Detectado solo por el humano": eso es solo de la persona.
-     Si no queda nada para revisar: "ninguno: todo se comprobó con tests
-     ([cuáles])". -->
 
-- [Escenario o punto]: ✔ | ✘ | ?  [nota de la persona, opcional]
+- [punto que solo la persona puede comprobar]: ✔ | ✘ | ?
 - Detectado solo por el humano: [lo completa la persona]
